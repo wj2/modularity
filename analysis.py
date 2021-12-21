@@ -12,11 +12,12 @@ def train_variable_models(group_size, tasks_per_group, group_maker, model_type,
                           n_reps=2, **kwargs):
     out_ms = np.zeros((len(group_size), len(tasks_per_group), len(group_maker),
                        len(model_type), n_reps), dtype=object)
+    print(out_ms.shape)
     for (i, j, k, l) in u.make_array_ind_iterator(out_ms.shape[:-1]):
         out_ms[i, j, k, l] = train_n_models(group_size[i], tasks_per_group[j],
                                             group_maker=group_maker[k],
                                             model_type=model_type[l],
-                                            **kwargs)
+                                            n_reps=n_reps, **kwargs)
     return out_ms    
 
 def train_n_models(group_size, tasks_per_group, group_width=200, fdg=None,
@@ -37,18 +38,6 @@ def train_n_models(group_size, tasks_per_group, group_width=200, fdg=None,
          m_i.fit(epochs=epochs, verbose=verbose, **training_kwargs)
          out.append(m_i)
     return out
-
-def apply_clusters_model_list(ml, func=quantify_clusters, **kwargs):
-    ml = np.array(ml)
-    mats = np.zeros_like(ml, dtype=object)
-    diffs = np.zeros_like(mats)
-    for ind in u.make_array_ind_iterator(ml.shape):
-        m = ml[ind]
-        mat, diff = func(m.out_group_labels, m.model.weights[-2],
-                         **kwargs)
-        mats[ind] = mat
-        diffs[ind] = diff
-    return mats, diffs
 
 def correlate_clusters(groups, w_matrix):
     w = u.make_unit_vector(np.array(w_matrix).T)
@@ -121,3 +110,15 @@ def quantify_clusters(groups, w_matrix, absolute=True):
     avg_in = np.mean(overlap[mask])
     avg_out = np.mean(overlap[np.logical_not(mask)])
     return overlap, avg_in - avg_out
+
+def apply_clusters_model_list(ml, func=quantify_clusters, **kwargs):
+    ml = np.array(ml)
+    mats = np.zeros_like(ml, dtype=object)
+    diffs = np.zeros_like(mats)
+    for ind in u.make_array_ind_iterator(ml.shape):
+        m = ml[ind]
+        mat, diff = func(m.out_group_labels, m.model.weights[-2],
+                         **kwargs)
+        mats[ind] = mat
+        diffs[ind] = diff
+    return mats, diffs
