@@ -25,6 +25,8 @@ def create_parser():
     
     parser.add_argument('--group_size', default=(4,), type=int,
                         help='size of groups', nargs='+')
+    parser.add_argument('--tasks_per_group', default=(4,), type=int,
+                        help='number of tasks for each group', nargs='+')
     parser.add_argument('--group_method', default='random', type=str,
                         help='type of group selection')
     parser.add_argument('--n_groups', default=(5,), type=int,
@@ -71,8 +73,9 @@ if __name__ == '__main__':
     group_selector = selector_dict[args.group_method]
     model_type = model_dict[args.model_type]
     cluster_func = cluster_dict[args.cluster_method]
-    models = ma.train_variable_models(args.group_size, args.n_groups,
+    models = ma.train_variable_models(args.group_size, args.tasks_per_group,
                                       group_selector, model_type, fdg=fdg,
+                                      n_groups=args.n_groups,
                                       n_reps=args.n_reps,
                                       epochs=args.model_epochs)
     mats, diffs = ma.apply_clusters_model_list(models, cluster_func)
