@@ -29,8 +29,8 @@ def create_parser():
                         help='number of tasks for each group', nargs='+')
     parser.add_argument('--group_method', default='random', type=str,
                         help='type of group selection')
-    parser.add_argument('--n_groups', default=(5,), type=int,
-                        help='number of groups', nargs='+')
+    parser.add_argument('--n_groups', default=5, type=int,
+                        help='number of groups')
     parser.add_argument('--model_type', default='coloring', type=str,
                         help='kind of model')
     parser.add_argument('--model_epochs', default=5, type=int,
