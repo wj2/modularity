@@ -4,6 +4,7 @@ import scipy.stats as sts
 import numpy as np
 import pickle
 import functools as ft
+from datetime import datetime
 
 import general.utility as u
 import disentangled.data_generation as dg
@@ -54,12 +55,14 @@ if __name__ == '__main__':
     parser = create_parser()
     args = parser.parse_args()
 
+    args.date = datetime.now()
+
     source_distr = u.MultiBernoulli(.5, args.input_dim)
     fdg_layers = (100,)
     fdg = dg.FunctionalDataGenerator(args.input_dim, fdg_layers, args.rep_dim,
                                      source_distribution=source_distr,
                                      use_pr_reg=True)
-    fdg.fit(epochs=args.fdg_epochs, batch_size=100, verbose=False)
+    fdg.fit(epochs=args.fdg_epochs, batch_size=50, verbose=False)
     rep_dim = fdg.representation_dimensionality(participation_ratio=True)
     print('rep dim: {}'.format(rep_dim))
 
