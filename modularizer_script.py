@@ -66,20 +66,24 @@ if __name__ == '__main__':
     rep_dim = fdg.representation_dimensionality(participation_ratio=True)
     print('rep dim: {}'.format(rep_dim))
 
+    
     cluster_dict = {'threshold':ft.partial(ma.threshold_clusters,
                                            cumu_weight=args.cumu_weight),
                     'cosine_sim':ft.partial(ma.quantify_clusters,
                                             absolute=False),
                     'cosine_sim_absolute':ft.partial(ma.quantify_clusters,
                                                      absolute=True)}
-
     group_selector = selector_dict[args.group_method]
     model_type = model_dict[args.model_type]
-    cluster_func = cluster_dict[args.cluster_method]
     models = ma.train_variable_models(args.group_size, args.tasks_per_group,
                                       group_selector, model_type, fdg=fdg,
                                       n_groups=args.n_groups,
                                       n_reps=args.n_reps,
                                       epochs=args.model_epochs)
-    mats, diffs = ma.apply_clusters_model_list(models, cluster_func)
-    maux.save_model_information(models, mats, diffs, args, args.output_folder)
+    clustering_results = {}
+    for cm, func in cluster_dict.items():
+        mats, diffs = ma.apply_clusters_model_list(models, func)
+        clustering_results[cm + '_mats'] = mats
+        clustering_results[cm + '_diffs'] = diffs
+    maux.save_model_information(models, args.output_folder, args=args,
+                                **clustering_results)

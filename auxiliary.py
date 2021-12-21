@@ -7,8 +7,8 @@ import pandas as pd
 
 import general.utility as u
 
-def save_model_information(models, sim_mats, sim_diffs, args, folder,
-                           file_name='model_results.pkl'):
+def save_model_information(models, folder, file_name='model_results.pkl',
+                           **kwargs):
     weights = np.zeros_like(models)
     group_members = np.zeros_like(models)
     groups = np.zeros_like(models)
@@ -17,8 +17,8 @@ def save_model_information(models, sim_mats, sim_diffs, args, folder,
         group_members[ind] = models[ind].out_group_labels
         groups[ind] = models[ind].groups
     save_dict = dict(weights=weights, group_members=group_members,
-                     groups=groups,
-                     sim_mats=sim_mats, sim_diffs=sim_diffs, args=args)
+                     groups=groups)
+    save_dict.update(kwargs)
     file_path = os.path.join(folder, file_name)
     os.mkdir(folder)
     pickle.dump(save_dict, open(file_path, 'wb'))
