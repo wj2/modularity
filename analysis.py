@@ -3,16 +3,207 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sklearn.decomposition as skd
 import itertools as it
+import scipy.stats as sts
+import scipy.special as ss
 
 import general.utility as u
 import modularity.simple as ms
+import composite_tangling.code_creation as cc
+
+class ModularizerCode(cc.Code):
+
+    def __init__(self, model, group_ind=None, dg_model=None, source_distr=None,
+                 n_values=2, noise_cov=.1**2):
+        if dg_model is not None and source_distr is None:
+            self.n_feats_all = dg_model.input_dim
+        elif dg_model is None and source_distr is not None:
+            self.n_feats_all = source_distr.rvs(1).shape[1]
+        else:
+            raise IOError('one of dg_model or source_distr must be provided')
+        self.group_ind = group_ind
+        if self.group_ind is not None:
+            self.group = model.groups[group_ind]
+        else:
+            self.group = np.arange(self.n_feats_all, dtype=int)
+        self.n_feats = len(self.group)
+        self.n_values = n_values
+        self.n_neurs = model.hidden_dims        
+        self.n_stimuli = self.n_values**self.n_feats
+        self.noise_distr = sts.multivariate_normal(np.zeros(self.n_neurs),
+                                                   noise_cov)
+        self.model = model
+        self.dg_model = dg_model
+        self.power = self._get_avg_power()
+        self.stim = self._get_all_stim()
+
+    def _get_avg_power(self, n_avg=10000):
+        samps, reps = self.dg_model.sample_reps(n_avg)
+        pwr = np.mean(np.sum(self.model.get_representation(reps)**2, axis=1),
+                      axis=0)
+        return pwr
+    
+    def _get_all_stim(self):
+        stim = list(it.product(range(self.n_values), repeat=self.n_feats))
+        return stim
+
+    def get_random_full_stim(self, **kwargs):
+        return self._get_random_stim(self.n_feats_all, **kwargs)
+
+    def get_random_stim(self):
+        return self._get_random_stim(self.n_feats, **kwargs)
+
+    def _get_random_stim(self, n_feats, non_nan=None):
+        s = np.random.choice(np.arange(self.n_values, dtype=float),
+                             size=n_feats)
+        if non_nan is not None:
+            if n_feats < self.n_feats_all:
+                mask = np.logical_not(np.isin(self.group, non_nan))
+            else:
+                mask = np.logical_not(np.isin(np.arange(n_feats), non_nan))
+            s[mask] = np.nan
+        return s
+            
+        
+    def get_full_stim(self, stim):
+        f_stim, _ = self.dg_model.sample_reps(stim.shape[0])
+        f_stim[:, self.group] = stim
+        return f_stim
+
+    def get_nan_stim(self, stim):
+        n_stim, _ = self.dg_model.sample_reps(stim.shape[0])
+        mask = np.logical_not(np.isnan(stim))
+        n_stim[mask] = stim[mask]
+        return n_stim
+    
+    def get_representation(self, stim, noise=False):
+        stim = np.array(stim)
+        if len(stim.shape) == 1:
+            stim = np.expand_dims(stim, 0)
+        if stim.shape[1] == len(self.group):
+            stim = self.get_full_stim(stim)
+        if np.any(np.isnan(stim)):
+            stim = self.get_nan_stim(stim)
+        stim_rep = self.dg_model.get_representation(stim)
+        reps = self.model.get_representation(stim_rep)
+        if noise:
+            reps = self._add_noise(reps)
+        return reps
+
+    def _sample_noisy_reps(self, cs, n, add_noise=True):
+        cs = np.array(cs)
+        if len(cs.shape) == 1:
+            cs = np.expand_dims(cs, 0)
+        r_inds = np.random.choice(cs.shape[0], int(n))
+        rs = self.get_representation(cs[r_inds], noise=add_noise)
+        return rs
+    
+    def compute_shattering(self, n_reps=5, thresh=.6, **dec_args):
+        partitions = self._get_partitions()
+        n_parts = len(partitions)
+        pcorrs = np.zeros((n_parts, n_reps))
+        stim_arr = np.array(self.stim)
+        for i, ps1 in enumerate(partitions):
+            ps2 = list(set(range(self.n_stimuli)).difference(ps1))
+            c1 = stim_arr[ps1]
+            c2 = stim_arr[ps2]
+            pcorrs[i] = self.decode_rep_classes(c1, c2, n_reps=n_reps,
+                                                **dec_args)
+        n_c = np.sum(np.mean(pcorrs, axis=1) > thresh)
+        n_dim = np.log2(2*n_c)
+        n_dim_poss = np.log2(2*n_parts)
+        return n_dim, n_dim_poss, pcorrs
+
+    def compute_within_group_ccgp(self, n_reps=10, max_combos=20,
+                                  **kwargs):
+        combos = it.combinations(self.group, 2)
+        n_possible_combos = int(ss.comb(len(self.group), 2))
+        if n_possible_combos > max_combos:
+            comb_inds = np.random.choice(range(n_possible_combos), max_combos,
+                                         replace=False)
+            combos = np.array(list(combos))[comb_inds]
+            n_possible_combos = max_combos
+        out = np.zeros((n_possible_combos, n_reps))
+        for i, (td, gd) in enumerate(combos):
+            out[i] = self.compute_specific_ccgp(td, gd, n_reps=n_reps,
+                                                **kwargs)
+        return out
+
+    def compute_across_group_ccgp(self, n_reps=10, max_combos=20,
+                                  **kwargs):
+        all_inds = np.arange(self.n_feats_all, dtype=int)
+        non_group_inds = set(all_inds).difference(self.group)
+        combos = it.product(self.group, non_group_inds)
+        n_possible_combos = len(self.group)*len(non_group_inds)
+        if n_possible_combos > max_combos:
+            comb_inds = np.random.choice(range(n_possible_combos), max_combos,
+                                         replace=False)
+            combos = np.array(list(combos))[comb_inds]
+            n_possible_combos = max_combos
+        out = np.zeros((n_possible_combos, n_reps))
+        for i, (td, gd) in enumerate(combos):
+            out[i] = self.compute_specific_ccgp(td, gd, n_reps=n_reps,
+                                                **kwargs)
+        return out
+    
+    def compute_specific_ccgp(self, train_dim, gen_dim, train_dist=1,
+                              gen_dist=1, n_reps=10, ref_stim=None,
+                              train_noise=False, n_train=10, **dec_kwargs):
+        print(train_dim, gen_dim, self.group)
+        if (ref_stim is None and train_dim in self.group
+            and gen_dim in self.group):
+            ref_stim = self.get_random_full_stim(non_nan=(train_dim, gen_dim))
+        elif ref_stim is None:
+            ref_stim = self.get_random_full_stim(non_nan=(train_dim, gen_dim))
+        tr_stim = np.array(tuple(rs + train_dist*(i == train_dim)
+                                 for i, rs in enumerate(ref_stim)))
+        gen_stim1 = np.array(tuple(rs + gen_dist*(i == gen_dim)
+                                   for i, rs in enumerate(ref_stim)))
+        gen_stim2 = np.array(tuple(rs + gen_dist*(i == gen_dim)
+                                   for i, rs in enumerate(tr_stim)))
+        pcorr = self.decode_rep_classes(ref_stim, tr_stim,
+                                        c1_test=gen_stim1,
+                                        c2_test=gen_stim2,
+                                        n_reps=n_reps,
+                                        train_noise=train_noise,
+                                        n_train=n_train,
+                                        **dec_kwargs)
+        return pcorr
+
+    def _get_ccgp_stim_sets(self):
+        f_combs = list(it.combinations(range(self.n_values), 2))
+        train_sets = []
+        test_sets = []
+        for i in range(self.n_feats):
+            for j, comb in enumerate(f_combs):
+                train_stim_ind = np.random.choice(self.n_stimuli, 1)[0]
+                train_stim = self.stim[train_stim_ind]
+
+                c1_eg_stim = list(train_stim)
+                c1_eg_stim[i] = comb[0]
+                c1_eg_stim = tuple(c1_eg_stim)
+                
+                c2_eg_stim = list(train_stim)
+                c2_eg_stim[i] = comb[1]
+                c2_eg_stim = tuple(c2_eg_stim)
+
+                stim_arr = np.array(self.stim)
+                c1_test_stim = stim_arr[stim_arr[:, i] == comb[0]]
+                c1_exclusion = np.any(c1_test_stim != c1_eg_stim, axis=1)
+                c1_test_stim = c1_test_stim[c1_exclusion]
+                
+                c2_test_stim = stim_arr[stim_arr[:, i] == comb[1]]
+                c2_exclusion = np.any(c2_test_stim != c2_eg_stim, axis=1)
+                c2_test_stim = c2_test_stim[c2_exclusion]
+
+                train_sets.append((c1_eg_stim, c2_eg_stim))
+                test_sets.append((c1_test_stim, c2_test_stim))
+        return train_sets, test_sets                
 
 @u.arg_list_decorator
 def train_variable_models(group_size, tasks_per_group, group_maker, model_type,
                           n_reps=2, **kwargs):
     out_ms = np.zeros((len(group_size), len(tasks_per_group), len(group_maker),
                        len(model_type), n_reps), dtype=object)
-    print(out_ms.shape)
     for (i, j, k, l) in u.make_array_ind_iterator(out_ms.shape[:-1]):
         out_ms[i, j, k, l] = train_n_models(group_size[i], tasks_per_group[j],
                                             group_maker=group_maker[k],
@@ -110,6 +301,19 @@ def quantify_clusters(groups, w_matrix, absolute=True):
     avg_in = np.mean(overlap[mask])
     avg_out = np.mean(overlap[np.logical_not(mask)])
     return overlap, avg_in - avg_out
+
+def apply_geometry_model_list(ml, fdg, group_ind=0, **kwargs):
+    ml = np.array(ml)
+    shattering = np.zeros_like(ml, dtype=object)
+    within_ccgp = np.zeros_like(shattering)
+    across_ccgp = np.zeros_like(shattering)
+    for ind in u.make_array_ind_iterator(ml.shape):
+        m = ml[ind]
+        m_code = ModularizerCode(m, dg_model=fdg, group_ind=group_ind)
+        shattering[ind] = m_code.compute_shattering(**kwargs)[-1]
+        within_ccgp[ind] = m_code.compute_within_group_ccgp(**kwargs)
+        across_ccgp[ind] = m_code.compute_across_group_ccgp(**kwargs)
+    return shattering, within_ccgp, across_ccgp
 
 def apply_clusters_model_list(ml, func=quantify_clusters, **kwargs):
     ml = np.array(ml)

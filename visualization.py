@@ -1,6 +1,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 import general.utility as u 
 import general.plotting as gpl
@@ -30,6 +31,19 @@ def _get_cluster_order(ws, n_groups=None, alg=None):
         order[tot:tot + len(inds)] = inds
         tot = tot + len(inds)
     return order
+
+clustering_metrics = ('cosine_sim_diffs',
+                      'cosine_sim_absolute_diffs',
+                      'threshold_diffs')
+def plot_clustering_metrics(df, x='tasks_per_group',
+                            clustering_names=clustering_metrics,
+                            axs=None, fwid=3, **kwargs):
+    if axs is None:
+        n_plots = len(clustering_names)
+        f, axs = plt.subplots(1, n_plots, figsize=(fwid*n_plots, fwid))
+    for i, cn in enumerate(clustering_names):
+        sns.scatterplot(data=df, x=x, y=cn, ax=axs[i], **kwargs)
+    return axs
 
 @gpl.ax_adder
 def plot_param_sweep(mod_mat, x_values, x_label='', y_label='',

@@ -85,5 +85,16 @@ if __name__ == '__main__':
         mats, diffs = ma.apply_clusters_model_list(models, func)
         clustering_results[cm + '_mats'] = mats
         clustering_results[cm + '_diffs'] = diffs
+
+    out = ma.apply_geometry_model_list(models, fdg)
+    shattering, within, across = out
+    geometry_results = {}
+    geometry_results['shattering'] = shattering
+    geometry_results['within_ccgp'] = within
+    geometry_results['across_ccgp'] = across
+
+    all_save = {}
+    all_save.update(clustering_results)
+    all_save.update(geometry_results)
     maux.save_model_information(models, args.output_folder, args=args,
-                                **clustering_results)
+                                **all_save)

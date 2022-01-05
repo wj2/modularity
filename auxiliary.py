@@ -4,6 +4,7 @@ import numpy as np
 import os
 import re
 import pandas as pd
+import itertools as it
 
 import general.utility as u
 
@@ -33,9 +34,13 @@ def _compute_group_overlap(groups):
         overlaps.append(len(set(g_i).intersection(g_j)))
     return np.mean(overlaps)
 
-default_fm_keys = ('sim_mats', 'groups', 'group_members',
-                   'weights')
-def _add_model(df, md, full_mat_keys=default_fm_keys, cluster_key='sim_diffs',
+default_fm_keys = ('weights', 'sim_mats', 'groups', 'group_members',
+                   'threshold_mats', 'cosine_sim_mats',
+                   'cosine_sim_absolute_mats')
+default_cluster_keys = ('sim_diffs', 'threshold_diffs', 'cosine_sim_diffs',
+                        'cosine_sim_absolute_diffs')
+def _add_model(df, md, full_mat_keys=default_fm_keys,
+               cluster_keys=default_cluster_keys,
                group_key='groups', **kwargs):
     group_size = md['args'].group_size
     tasks_per_group = md['args'].tasks_per_group
@@ -46,21 +51,22 @@ def _add_model(df, md, full_mat_keys=default_fm_keys, cluster_key='sim_diffs',
     arg_dict = {}
     for key, v in vars(md['args']).items():
         arg_dict['args_' + key] = v
-        
-    for (i, j, k, l, n) in u.make_array_ind_iterator(md['sim_diffs'].shape):
+    arr_shape = list(md.values())[0].shape
+    for (i, j, k, l, n) in u.make_array_ind_iterator(arr_shape):
         row_dict = dict(group_size=group_size[i],
                         tasks_per_group=tasks_per_group[j],
                         group_method=group_method[k],
                         model_type=model_type[l])
         row_dict.update(kwargs)
         row_dict.update(arg_dict)
-        for fmk in full_mat_keys:
-            if fmk in md.keys():
-                row_dict[fmk] = [md[fmk][(i, j, k, l, n)]]
-        row_dict['clustering'] = md[cluster_key][i, j, k, l, n]
-        if group_key in md.keys():
-            row_dict['overlap'] = _compute_group_overlap(
-                md[group_key][i, j, k, l, n])
+        for mk, vk in md.items():
+            if mk in full_mat_keys:
+                row_dict[mk] = [vk[i, j, k, l, n]]
+            if mk in cluster_keys:
+                row_dict[mk] = vk[i, j, k, l, n]
+            if mk == group_key:
+                row_dict['overlap'] = _compute_group_overlap(
+                    vk[i, j, k, l, n])
         df_ijkl = pd.DataFrame(row_dict)
         df = df.append(df_ijkl)
     return df        

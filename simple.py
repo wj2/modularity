@@ -119,8 +119,7 @@ class Modularizer:
     def __init__(self, inp_dims, groups=None, group_width=2,
                  group_size=2, group_maker=sequential_groups,
                  n_groups=None, tasks_per_group=1, use_mixer=False,
-                 use_dg=None,
-                 mixer_out_dims=200, mixer_kwargs=None, **kwargs):
+                 use_dg=None, mixer_out_dims=200, mixer_kwargs=None, **kwargs):
         if n_groups is None:
             n_groups = int(np.floor(inp_dims / group_size))
         if groups is None:
@@ -146,10 +145,12 @@ class Modularizer:
         self.out_group_labels = np.concatenate(list((i,)*tasks_per_group
                                                     for i in range(n_groups)))
 
-        model = self.make_model(inp_net, self.hidden_dims, self.out_dims,
-                                **kwargs)
-        self.groups = groups
+        out = self.make_model(inp_net, self.hidden_dims, self.out_dims,
+                              **kwargs)
+        model, rep_model = out
+        self.rep_model = rep_model
         self.model = model
+        self.groups = groups
         self.compiled = False
     
     def make_model(self, inp, hidden, out, act_func=tf.nn.relu,
@@ -163,10 +164,15 @@ class Modularizer:
         layer_list.append(lh)
         if noise > 0:
             layer_list.append(tfkl.GaussianNoise(noise))
-        
+
+        rep = tfk.Sequential(layer_list)
         layer_list.append(tfkl.Dense(out, activation=out_act))
         enc = tfk.Sequential(layer_list)
-        return enc
+        return enc, rep
+
+    def get_representation(self, stim, group=None):
+        rep = self.rep_model(stim)
+        return rep
 
     def _compile(self, optimizer=None, loss=None):
         if optimizer is None:
