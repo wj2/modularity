@@ -75,11 +75,12 @@ if __name__ == '__main__':
                                                      absolute=True)}
     group_selector = selector_dict[args.group_method]
     model_type = model_dict[args.model_type]
-    models = ma.train_variable_models(args.group_size, args.tasks_per_group,
-                                      group_selector, model_type, fdg=fdg,
-                                      n_groups=args.n_groups,
-                                      n_reps=args.n_reps,
-                                      epochs=args.model_epochs)
+    out = ma.train_variable_models(args.group_size, args.tasks_per_group,
+                                   group_selector, model_type, fdg=fdg,
+                                   n_groups=args.n_groups,
+                                   n_reps=args.n_reps,
+                                   epochs=args.model_epochs)
+    models, histories = out
     clustering_results = {}
     for cm, func in cluster_dict.items():
         mats, diffs = ma.apply_clusters_model_list(models, func)
@@ -93,8 +94,13 @@ if __name__ == '__main__':
     geometry_results['within_ccgp'] = within
     geometry_results['across_ccgp'] = across
 
+    history = {}
+    history['loss'], history['val_loss'] = ma.process_histories(histories)
+
     all_save = {}
     all_save.update(clustering_results)
     all_save.update(geometry_results)
+    all_save.update(history)
+    
     maux.save_model_information(models, args.output_folder, args=args,
                                 **all_save)

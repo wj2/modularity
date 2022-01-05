@@ -204,12 +204,14 @@ def train_variable_models(group_size, tasks_per_group, group_maker, model_type,
                           n_reps=2, **kwargs):
     out_ms = np.zeros((len(group_size), len(tasks_per_group), len(group_maker),
                        len(model_type), n_reps), dtype=object)
+    out_hs = np.zeros_like(out_ms)
     for (i, j, k, l) in u.make_array_ind_iterator(out_ms.shape[:-1]):
-        out_ms[i, j, k, l] = train_n_models(group_size[i], tasks_per_group[j],
-                                            group_maker=group_maker[k],
-                                            model_type=model_type[l],
-                                            n_reps=n_reps, **kwargs)
-    return out_ms    
+        out = train_n_models(group_size[i], tasks_per_group[j],
+                             group_maker=group_maker[k],
+                             model_type=model_type[l],
+                             n_reps=n_reps, **kwargs)
+        out_ms[i, j, k, l], out_hs[i, j, k, l] = out
+    return out_ms, out_hs
 
 def train_n_models(group_size, tasks_per_group, group_width=200, fdg=None,
                    n_reps=2, n_groups=5, group_maker=ms.random_groups,
@@ -220,15 +222,17 @@ def train_n_models(group_size, tasks_per_group, group_width=200, fdg=None,
     else:
         use_mixer = True
     inp_dim = fdg.input_dim
-    out = []
+    out_ms = []
+    out_hs = []
     for i in range(n_reps):
          m_i = model_type(inp_dim, group_size=group_size, n_groups=n_groups,
                           group_maker=group_maker, use_dg=fdg,
                           group_width=group_width, use_mixer=use_mixer,
                           tasks_per_group=tasks_per_group)
-         m_i.fit(epochs=epochs, verbose=verbose, **training_kwargs)
-         out.append(m_i)
-    return out
+         h_i = m_i.fit(epochs=epochs, verbose=verbose, **training_kwargs)
+         out_ms.append(m_i)
+         out_hs.append(h_i)
+    return out_ms, out_hs
 
 def correlate_clusters(groups, w_matrix):
     w = u.make_unit_vector(np.array(w_matrix).T)
@@ -326,3 +330,14 @@ def apply_clusters_model_list(ml, func=quantify_clusters, **kwargs):
         mats[ind] = mat
         diffs[ind] = diff
     return mats, diffs
+
+def process_histories(hs):
+    hs = np.array(hs)
+    ind = (0,)*len(hs.shape)
+    n_epochs = hs[ind].params['epochs']
+    loss = np.zeros(hs.shape + (n_epochs,))
+    loss_val = np.zeros_like(loss)
+    for ind in u.make_array_ind_iterator(hs.shape):
+        loss[ind] = hs[ind].history['loss']
+        loss_val[ind] = hs[ind].history['val_loss']
+    return loss, loss_val
