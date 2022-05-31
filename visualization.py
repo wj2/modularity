@@ -32,9 +32,15 @@ def _get_cluster_order(ws, n_groups=None, alg=None):
         tot = tot + len(inds)
     return order
 
-clustering_metrics = ('cosine_sim_diffs',
-                      'cosine_sim_absolute_diffs',
-                      'threshold_diffs')
+geometry_metrics = ('shattering', 'within_ccgp', 'across_ccgp')
+def plot_geometry_metrics(*args, geometry_names=geometry_metrics, **kwargs):
+    return plot_clustering_metrics(*args, clustering_names=geometry_names,
+                                   **kwargs)
+
+clustering_metrics_all = ('cosine_sim_diffs',
+                          'cosine_sim_absolute_diffs',
+                          'threshold_diffs', 'brim')
+clustering_metrics = ('brim', 'threshold_diffs')
 def plot_clustering_metrics(df, x='tasks_per_group',
                             clustering_names=clustering_metrics,
                             axs=None, fwid=3, **kwargs):
@@ -84,6 +90,14 @@ def plot_clusters(*ms, axs=None, func=ma.quantify_clusters, fwid=3, **kwargs):
         axs[i].set_title('diff = {:.2f}'.format(diff))
         axs[i].imshow(cluster, vmin=min_all, vmax=max_all)
     return axs
+
+def plot_weight_maps(*ms, axs=None, fhei=10, fwid=3, **kwargs):
+    if axs is None:
+        f, axs = plt.subplots(1, 2*len(ms), figsize=(fwid*2*len(ms), fhei))
+    for i, m in enumerate(ms):
+        plot_weight_map(m, axs=axs[2*i:2*(i+1)])
+    return axs
+
 
 @gpl.ax_adder
 def plot_weight_distribution(m, ax=None, **kwargs):

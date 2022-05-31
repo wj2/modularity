@@ -4,6 +4,7 @@ import scipy.stats as sts
 import numpy as np
 import pickle
 import functools as ft
+import tensorflow as tf
 from datetime import datetime
 
 import general.utility as u
@@ -13,13 +14,15 @@ import modularity.simple as ms
 import modularity.analysis as ma
 import modularity.auxiliary as maux
 
+tfk = tf.keras
+
 def create_parser():
-    parser = argparse.ArgumentParser(description='fit several autoencoders')
+    parser = argparse.ArgumentParser(description='fit several modularizers')
     parser.add_argument('-o', '--output_folder', default='results-n', type=str,
                         help='folder to save the output in')
     parser.add_argument('--input_dim', default=20, type=int,
                         help='dimensionality of input')
-    parser.add_argument('--rep_dim', default=200, type=int,
+    parser.add_argument('--rep_dim', default=400, type=int,
                         help='dimensionality of representation layer')
     parser.add_argument('--fdg_epochs', default=5, type=int,
                         help='epochs to train DG for')
@@ -43,6 +46,11 @@ def create_parser():
                         help='default cumulative weight')
     parser.add_argument('--n_reps', default=5, type=int,
                         help='number of repeats')
+    parser.add_argument('--dg_batch_size', default=100, type=int)
+    parser.add_argument('--brim_threshold', default=1.5, type=float)
+    parser.add_argument('--fdg_weight_init', default=None, type=float)
+    parser.add_argument('--fdg_layers', nargs='+', default=(300,),
+                        type=int)
     return parser
 
 selector_dict = {'random':ms.random_groups,
@@ -58,21 +66,27 @@ if __name__ == '__main__':
     args.date = datetime.now()
 
     source_distr = u.MultiBernoulli(.5, args.input_dim)
-    fdg_layers = (100,)
-    fdg = dg.FunctionalDataGenerator(args.input_dim, fdg_layers, args.rep_dim,
+    if args.fdg_weight_init is None:
+        kernel_init = None
+    else:
+        kernel_init = tfk.initializers.RandomNormal(stddev=args.fdg_weight_init)
+        
+    fdg = dg.FunctionalDataGenerator(args.input_dim, args.fdg_layers,
+                                     args.rep_dim,
                                      source_distribution=source_distr,
-                                     use_pr_reg=True)
-    fdg.fit(epochs=args.fdg_epochs, batch_size=50, verbose=False)
+                                     use_pr_reg=True, kernel_init=kernel_init)
+    fdg.fit(epochs=args.fdg_epochs, batch_size=args.dg_batch_size, verbose=False)
     rep_dim = fdg.representation_dimensionality(participation_ratio=True)
     print('rep dim: {}'.format(rep_dim))
 
-    
     cluster_dict = {'threshold':ft.partial(ma.threshold_clusters,
                                            cumu_weight=args.cumu_weight),
                     'cosine_sim':ft.partial(ma.quantify_clusters,
                                             absolute=False),
                     'cosine_sim_absolute':ft.partial(ma.quantify_clusters,
-                                                     absolute=True)}
+                                                     absolute=True),
+                    'brim':ft.partial(ma.simple_brim,
+                                      threshold=args.brim_threshold)}
     group_selector = selector_dict[args.group_method]
     model_type = model_dict[args.model_type]
     out = ma.train_variable_models(args.group_size, args.tasks_per_group,

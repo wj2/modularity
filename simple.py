@@ -50,7 +50,7 @@ def apply_many_colorings(x, colorings=None, merger=np.sum):
     return merger(out, axis=1, keepdims=True) > .5
 
 def sequential_groups(inp_dims, group_size, *args):
-    assert group_size < inp_dims
+    assert group_size <= inp_dims
     return np.arange(inp_dims).reshape(-1, group_size)
 
 def random_groups(inp_dims, group_size, n_groups):
@@ -119,7 +119,8 @@ class Modularizer:
     def __init__(self, inp_dims, groups=None, group_width=2,
                  group_size=2, group_maker=sequential_groups,
                  n_groups=None, tasks_per_group=1, use_mixer=False,
-                 use_dg=None, mixer_out_dims=200, mixer_kwargs=None, **kwargs):
+                 use_dg=None, mixer_out_dims=200, mixer_kwargs=None,
+                 **kwargs):
         if n_groups is None:
             n_groups = int(np.floor(inp_dims / group_size))
         if groups is None:
@@ -155,18 +156,28 @@ class Modularizer:
     
     def make_model(self, inp, hidden, out, act_func=tf.nn.relu,
                    layer_type=tfkl.Dense, out_act=tf.nn.sigmoid,
-                   noise=.1, inp_noise=.01, **layer_params):
+                   noise=.1, inp_noise=.01,
+                   kernel_reg_type=tfk.regularizers.L2,
+                   kernel_reg_weight=0,
+                   **layer_params):
         layer_list = []
         layer_list.append(tfkl.InputLayer(input_shape=inp))
         if inp_noise > 0:
             layer_list.append(tfkl.GaussianNoise(inp_noise))
-        lh = layer_type(hidden, activation=act_func, **layer_params)
+        if kernel_reg_weight > 0:
+            kernel_reg = kernel_reg_type(kernel_reg_weight)
+        else:
+            kernel_reg = None
+        lh = layer_type(hidden, activation=act_func,
+                        kernel_regularizer=kernel_reg,
+                        **layer_params)
         layer_list.append(lh)
         if noise > 0:
             layer_list.append(tfkl.GaussianNoise(noise))
 
         rep = tfk.Sequential(layer_list)
-        layer_list.append(tfkl.Dense(out, activation=out_act))
+        layer_list.append(tfkl.Dense(out, activation=out_act,
+                                     kernel_regularizer=kernel_reg))
         enc = tfk.Sequential(layer_list)
         return enc, rep
 
@@ -251,6 +262,20 @@ class ColoringModularizer(Modularizer):
                                       merger=task_merger))
         self.group_func = tuple(group_func)
 
+class IdentityModularizer:
+
+    def __init__(self, inp_dims, group_maker=sequential_groups, hidden_dims=100,
+                 group_size=2, n_groups=None, **kwargs):
+        self.hidden_dims = hidden_dims
+        if n_groups is None:
+            n_groups = int(np.floor(inp_dims / group_size))
+        else:
+            group_size = int(np.floor(inp_dims / n_groups))
+        self.groups = group_maker(inp_dims, group_size, n_groups)
+
+    def get_representation(self, stim, group=None):
+        return stim
+        
 class LinearModularizer(Modularizer):
 
     def _make_linear_task_func(self, n_g, n_tasks=1):

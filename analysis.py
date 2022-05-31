@@ -5,9 +5,14 @@ import sklearn.decomposition as skd
 import itertools as it
 import scipy.stats as sts
 import scipy.special as ss
+import tensorflow as tf
+
+tfk = tf.keras
 
 import general.utility as u
+import general.stan_utility as su
 import modularity.simple as ms
+import disentangled.data_generation as dg
 import composite_tangling.code_creation as cc
 
 class ModularizerCode(cc.Code):
@@ -79,10 +84,10 @@ class ModularizerCode(cc.Code):
         stim = np.array(stim)
         if len(stim.shape) == 1:
             stim = np.expand_dims(stim, 0)
-        if stim.shape[1] == len(self.group):
-            stim = self.get_full_stim(stim)
         if np.any(np.isnan(stim)):
             stim = self.get_nan_stim(stim)
+        if stim.shape[1] == len(self.group):
+            stim = self.get_full_stim(stim)
         stim_rep = self.dg_model.get_representation(stim)
         reps = self.model.get_representation(stim_rep)
         if noise:
@@ -148,7 +153,6 @@ class ModularizerCode(cc.Code):
     def compute_specific_ccgp(self, train_dim, gen_dim, train_dist=1,
                               gen_dist=1, n_reps=10, ref_stim=None,
                               train_noise=False, n_train=10, **dec_kwargs):
-        print(train_dim, gen_dim, self.group)
         if (ref_stim is None and train_dim in self.group
             and gen_dim in self.group):
             ref_stim = self.get_random_full_stim(non_nan=(train_dim, gen_dim))
@@ -167,6 +171,7 @@ class ModularizerCode(cc.Code):
                                         train_noise=train_noise,
                                         n_train=n_train,
                                         **dec_kwargs)
+
         return pcorr
 
     def _get_ccgp_stim_sets(self):
@@ -212,6 +217,35 @@ def train_variable_models(group_size, tasks_per_group, group_maker, model_type,
                              n_reps=n_reps, **kwargs)
         out_ms[i, j, k, l], out_hs[i, j, k, l] = out
     return out_ms, out_hs
+
+def contrast_rich_lazy(inp_dim, rep_dim, init_bounds=(.01, 3), n_inits=20,
+                        train_epochs=0, **kwargs):
+    weight_vars = np.linspace(*(init_bounds + (n_inits,)))
+    source_distr = u.MultiBernoulli(.5, inp_dim)
+    for i, wv in enumerate(weight_vars):
+    
+        kernel_init = tfk.initializers.RandomNormal(stddev=wv)
+        fdg_ut = dg.FunctionalDataGenerator(inp_dim, (), rep_dim,
+                                            source_distribution=source_distr, 
+                                            use_pr_reg=True,
+                                            kernel_init=kernel_init,
+                                            **kwargs)
+        fdg_ut.fit(epochs=train_epochs, verbose=False)
+        dim_i = fdg_ut.representation_dimensionality(participation_ratio=True)
+        
+        ident = ms.IdentityModularizer(inp_dim, n_groups=1)
+        out_i = apply_geometry_model_list([ident], fdg_ut, group_ind=None)
+        shatt_i = out_i[0][0]
+        ccgp_i = out_i[1][0]
+        if i == 0:
+            dims = np.zeros(n_inits)
+            shatts = np.zeros((n_inits,) + shatt_i.shape)
+            ccgps = np.zeros((n_inits,) + ccgp_i.shape)
+        shatts[i] = shatt_i
+        ccgps[i] = ccgp_i
+        dims[i] = dim_i
+    return weight_vars, dims, shatts, ccgps
+
 
 def train_n_models(group_size, tasks_per_group, group_width=200, fdg=None,
                    n_reps=2, n_groups=5, group_maker=ms.random_groups,
@@ -284,6 +318,63 @@ def threshold_clusters(groups, w_matrix, cumu_weight=.9):
     avg_in = np.mean(overlap[mask])
     avg_out = np.mean(overlap[np.logical_not(mask)])
     return overlap, avg_in - avg_out    
+
+def _reorg_matrix(wm, groups):
+    u_groups = np.unique(groups)
+    n_groups = len(u_groups)
+    n_tasks = int(len(groups)/n_groups)
+    new_wm = np.zeros((wm.shape[0], n_groups, n_tasks))
+    for i, g in enumerate(u_groups):
+        new_wm[:, i] = wm[:, groups == g]
+    return new_wm
+
+def standardize_wm(wm, flat=True):
+    if flat:
+        axis = None
+    else:
+        axis = 0
+    mu_wm = np.mean(wm, axis=axis, keepdims=True)
+    std_wm = np.std(wm, axis=axis, keepdims=True)
+    new_wm = (wm - mu_wm)/std_wm
+    return new_wm 
+
+def compute_prob_cluster(wt, std_prior=1, model_path='modularity/wm_mixture.pkl',
+                         **kwargs):
+    n_units, n_groups, n_tasks = wt.shape
+    stan_dict = dict(N=n_units, M=n_groups, T=n_tasks,
+                     std_prior=std_prior, W=wt)
+    out = su.fit_model(stan_dict, model_path, arviz_convert=False, **kwargs)
+    fit, fit_az, diag = out
+    return out
+
+def likely_clusters(groups, w_matrix, std_prior=1, **kwargs):
+    w_reorg = _reorg_matrix(w_matrix, groups)
+    n_units, n_groups, n_tasks = w_reorg.shape
+    w_reorg = standardize_wm(w_reorg, flat=True)
+    out = compute_prob_cluster(w_reorg, std_prior=std_prior, **kwargs)
+    # overlap = np.identity(n_groups)*out
+    # return overlap, out
+    return out
+
+def make_group_matrix(groups):
+    u_groups = np.unique(groups)
+    g_mat = np.zeros((len(groups), len(u_groups)))
+    for i, g in enumerate(u_groups):
+        g_mat[:, i] = groups == g
+    return g_mat
+
+def simple_brim(groups, w_matrix, threshold=.1):
+    wm = standardize_wm(w_matrix)
+    conn_m = np.abs(wm) > threshold
+    null_m = np.ones_like(conn_m)*np.mean(conn_m, axis=1, keepdims=True)
+    b_tilde = conn_m - null_m
+    t_mat = make_group_matrix(groups)
+    t_tilde = np.dot(b_tilde, t_mat)
+    inf_groups = np.argmax(t_tilde, axis=1)
+    r_mat = make_group_matrix(inf_groups)
+    prod_mat = np.dot(r_mat.T, t_tilde)
+    out = np.trace(prod_mat)/np.sum(conn_m)
+    return out
 
 def quantify_clusters(groups, w_matrix, absolute=True):
     w = u.make_unit_vector(np.array(w_matrix).T)
