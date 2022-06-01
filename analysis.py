@@ -373,8 +373,9 @@ def simple_brim(groups, w_matrix, threshold=.1):
     inf_groups = np.argmax(t_tilde, axis=1)
     r_mat = make_group_matrix(inf_groups)
     prod_mat = np.dot(r_mat.T, t_tilde)
-    out = np.trace(prod_mat)/np.sum(conn_m)
-    return out
+    out_mod = np.trace(prod_mat)/np.sum(conn_m)
+    out_mat = np.identity(len(np.unique(groups)))*out_mod
+    return out_mat, out_mod
 
 def quantify_clusters(groups, w_matrix, absolute=True):
     w = u.make_unit_vector(np.array(w_matrix).T)
