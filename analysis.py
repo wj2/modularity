@@ -163,7 +163,7 @@ class ModularizerCode(cc.Code):
     
     def compute_specific_ccgp(self, train_dim, gen_dim, train_dist=1,
                               gen_dist=1, n_reps=10, ref_stim=None,
-                              train_noise=False, n_train=100,
+                              train_noise=False, n_train=10,
                               balance_training=False, **dec_kwargs):
         if (ref_stim is None and train_dim in self.group
             and gen_dim in self.group):
