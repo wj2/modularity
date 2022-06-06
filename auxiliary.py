@@ -39,7 +39,7 @@ default_fm_keys = ('weights', 'sim_mats', 'groups', 'group_members',
                    'threshold_mats', 'cosine_sim_mats',
                    'cosine_sim_absolute_mats')
 default_cluster_keys = ('sim_diffs', 'threshold_diffs', 'cosine_sim_diffs',
-                        'cosine_sim_absolute_diffs')
+                        'cosine_sim_absolute_diffs', 'brim_diffs')
 default_geometry_keys = ('shattering', 'within_ccgp', 'across_ccgp')
 default_loss_keys = ('loss', 'val_loss')
 

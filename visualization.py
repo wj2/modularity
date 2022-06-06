@@ -40,7 +40,7 @@ def plot_geometry_metrics(*args, geometry_names=geometry_metrics, **kwargs):
 clustering_metrics_all = ('cosine_sim_diffs',
                           'cosine_sim_absolute_diffs',
                           'threshold_diffs', 'brim')
-clustering_metrics = ('brim', 'threshold_diffs')
+clustering_metrics = ('brim_diffs', 'threshold_diffs')
 def plot_clustering_metrics(df, x='tasks_per_group',
                             clustering_names=clustering_metrics,
                             axs=None, fwid=3, **kwargs):

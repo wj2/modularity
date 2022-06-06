@@ -217,7 +217,7 @@ class Modularizer:
         return x, true, targ
     
     def fit(self, train_x=None, train_true=None, eval_x=None, eval_true=None,
-            n_train=2*10**5, epochs=15, batch_size=32, n_val=10**3, **kwargs): 
+            n_train=2*10**5, epochs=15, batch_size=100, n_val=10**3, **kwargs): 
         if not self.compiled:
             self._compile()
 
@@ -269,7 +269,7 @@ class IdentityModularizer:
         self.hidden_dims = hidden_dims
         if n_groups is None:
             n_groups = int(np.floor(inp_dims / group_size))
-        else:
+        if group_size is None:
             group_size = int(np.floor(inp_dims / n_groups))
         self.groups = group_maker(inp_dims, group_size, n_groups)
 

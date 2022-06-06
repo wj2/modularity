@@ -37,9 +37,10 @@ def create_parser():
                         help='number of groups')
     parser.add_argument('--model_type', default='coloring', type=str,
                         help='kind of model')
-    parser.add_argument('--model_epochs', default=5, type=int,
+    parser.add_argument('--model_epochs', default=40, type=int,
                         help='epochs to train model for')
-
+    parser.add_argument('--model_batch_size', default=100, type=int,
+                        help='batch size for model training')
     parser.add_argument('--cluster_method', default='threshold',
                         type=str, help='method for quantifying clustering')
     parser.add_argument('--cumu_weight', default=.5, type=float,
@@ -93,7 +94,8 @@ if __name__ == '__main__':
                                    group_selector, model_type, fdg=fdg,
                                    n_groups=args.n_groups,
                                    n_reps=args.n_reps,
-                                   epochs=args.model_epochs)
+                                   epochs=args.model_epochs,
+                                   batch_size=args.model_batch_size)
     models, histories = out
     clustering_results = {}
     for cm, func in cluster_dict.items():

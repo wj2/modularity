@@ -74,33 +74,44 @@ class ModularizerCode(cc.Code):
         f_stim[:, self.group] = stim
         return f_stim
 
-    def get_nan_stim(self, stim):
-        n_stim, _ = self.dg_model.sample_reps(stim.shape[0])
+    def get_nan_stim(self, stim, ref_stim=None):
+        if ref_stim is None:
+            n_stim, _ = self.dg_model.sample_reps(stim.shape[0])
+        else:
+            n_stim = ref_stim
         mask = np.logical_not(np.isnan(stim))
         n_stim[mask] = stim[mask]
         return n_stim
     
-    def get_representation(self, stim, noise=False):
+    def get_representation(self, stim, noise=False, ret_stim=False,
+                           ref_stim=None):
         stim = np.array(stim)
         if len(stim.shape) == 1:
             stim = np.expand_dims(stim, 0)
         if np.any(np.isnan(stim)):
-            stim = self.get_nan_stim(stim)
+            stim = self.get_nan_stim(stim, ref_stim=ref_stim)
         if stim.shape[1] == len(self.group):
             stim = self.get_full_stim(stim)
         stim_rep = self.dg_model.get_representation(stim)
         reps = self.model.get_representation(stim_rep)
         if noise:
             reps = self._add_noise(reps)
-        return reps
+        if ret_stim:
+            out = (reps, stim)
+        else:
+            out = reps
+        return out
 
-    def _sample_noisy_reps(self, cs, n, add_noise=True):
+    def _sample_noisy_reps(self, cs, n, add_noise=True, ret_stim=False,
+                           ref_stim=None):
         cs = np.array(cs)
         if len(cs.shape) == 1:
             cs = np.expand_dims(cs, 0)
         r_inds = np.random.choice(cs.shape[0], int(n))
-        rs = self.get_representation(cs[r_inds], noise=add_noise)
-        return rs
+        out = self.get_representation(cs[r_inds], noise=add_noise,
+                                      ret_stim=ret_stim,
+                                      ref_stim=ref_stim)
+        return out
     
     def compute_shattering(self, n_reps=5, thresh=.6, **dec_args):
         partitions = self._get_partitions()
@@ -152,24 +163,29 @@ class ModularizerCode(cc.Code):
     
     def compute_specific_ccgp(self, train_dim, gen_dim, train_dist=1,
                               gen_dist=1, n_reps=10, ref_stim=None,
-                              train_noise=False, n_train=10, **dec_kwargs):
+                              train_noise=False, n_train=100,
+                              balance_training=False, **dec_kwargs):
         if (ref_stim is None and train_dim in self.group
             and gen_dim in self.group):
             ref_stim = self.get_random_full_stim(non_nan=(train_dim, gen_dim))
         elif ref_stim is None:
             ref_stim = self.get_random_full_stim(non_nan=(train_dim, gen_dim))
-        tr_stim = np.array(tuple(rs + train_dist*(i == train_dim)
-                                 for i, rs in enumerate(ref_stim)))
-        gen_stim1 = np.array(tuple(rs + gen_dist*(i == gen_dim)
-                                   for i, rs in enumerate(ref_stim)))
-        gen_stim2 = np.array(tuple(rs + gen_dist*(i == gen_dim)
-                                   for i, rs in enumerate(tr_stim)))
+        tr_stim = np.mod(np.array(tuple(rs + train_dist*(i == train_dim)
+                                        for i, rs in enumerate(ref_stim))),
+                         self.n_values)
+        gen_stim1 = np.mod(np.array(tuple(rs + gen_dist*(i == gen_dim)
+                                          for i, rs in enumerate(ref_stim))),
+                           self.n_values)
+        gen_stim2 = np.mod(np.array(tuple(rs + gen_dist*(i == gen_dim)
+                                          for i, rs in enumerate(tr_stim))),
+                           self.n_values)
         pcorr = self.decode_rep_classes(ref_stim, tr_stim,
                                         c1_test=gen_stim1,
                                         c2_test=gen_stim2,
                                         n_reps=n_reps,
                                         train_noise=train_noise,
                                         n_train=n_train,
+                                        balance_training=balance_training,
                                         **dec_kwargs)
 
         return pcorr
