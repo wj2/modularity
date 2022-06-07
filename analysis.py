@@ -220,6 +220,10 @@ class ModularizerCode(cc.Code):
                 test_sets.append((c1_test_stim, c2_test_stim))
         return train_sets, test_sets                
 
+def expected_pn(modules, tasks, inp_dim, acc=.95, sigma=.1, n_values=2):
+    s = sts.norm(0, 1).ppf(acc)
+    return modules*(s**2)*(sigma**2)*(n_values**inp_dim)
+    
 @u.arg_list_decorator
 def train_variable_models(group_size, tasks_per_group, group_maker, model_type,
                           n_reps=2, **kwargs):

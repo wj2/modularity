@@ -32,7 +32,7 @@ def apply_linear_task(x, task=None):
     return np.sum(task_exp*(x_exp - .5), axis=2) > 0
 
 def generate_coloring(n_g, prob=.5):
-    return np.random.default_rng().uniform(size=n_g) < prob
+    return np.random.default_rng().uniform(size=n_g) <= prob
 
 def generate_many_colorings(n_colorings, n_g, prob=.5):
     return list(generate_coloring(n_g, prob=prob) for i in range(n_colorings))
@@ -47,7 +47,7 @@ def apply_many_colorings(x, colorings=None, merger=np.sum):
     out = np.zeros((len(x), len(colorings)))
     for i, coloring in enumerate(colorings):
         out[:, i] = apply_coloring(x, coloring)
-    return merger(out, axis=1, keepdims=True) > .5
+    return merger(out, axis=1, keepdims=True) > 0
 
 def sequential_groups(inp_dims, group_size, *args):
     assert group_size <= inp_dims
@@ -120,7 +120,10 @@ class Modularizer:
                  group_size=2, group_maker=sequential_groups,
                  n_groups=None, tasks_per_group=1, use_mixer=False,
                  use_dg=None, mixer_out_dims=200, mixer_kwargs=None,
+                 use_early_stopping=True, early_stopping_field='val_loss',
                  **kwargs):
+        self.use_early_stopping = use_early_stopping
+        self.early_stopping_field = early_stopping_field
         if n_groups is None:
             n_groups = int(np.floor(inp_dims / group_size))
         if groups is None:
@@ -159,6 +162,8 @@ class Modularizer:
                    noise=.1, inp_noise=.01,
                    kernel_reg_type=tfk.regularizers.L2,
                    kernel_reg_weight=0,
+                   act_reg_type=tfk.regularizers.l2,
+                   act_reg_weight=0,
                    **layer_params):
         layer_list = []
         layer_list.append(tfkl.InputLayer(input_shape=inp))
@@ -168,8 +173,13 @@ class Modularizer:
             kernel_reg = kernel_reg_type(kernel_reg_weight)
         else:
             kernel_reg = None
+        if act_reg_weight > 0:
+            act_reg = act_reg_type(act_reg_weight)
+        else:
+            act_reg = None
         lh = layer_type(hidden, activation=act_func,
                         kernel_regularizer=kernel_reg,
+                        activity_regularizer=act_reg,
                         **layer_params)
         layer_list.append(lh)
         if noise > 0:
@@ -227,6 +237,15 @@ class Modularizer:
                                                        n_val)
 
         eval_set = (eval_x, eval_targ)
+
+        
+        if self.use_early_stopping:
+            cb = tfk.callbacks.EarlyStopping(monitor=self.early_stopping_field,
+                                             mode='min', patience=2)
+            curr_cb = kwargs.get('callbacks', [])
+            curr_cb.append(cb)
+            kwargs['callbacks'] = curr_cb
+
 
         out = self.model.fit(x=train_x, y=train_targ, epochs=epochs,
                              validation_data=eval_set, batch_size=batch_size,
