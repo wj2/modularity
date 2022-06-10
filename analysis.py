@@ -130,25 +130,29 @@ class ModularizerCode(cc.Code):
         return n_dim, n_dim_poss, pcorrs
 
     def compute_within_group_ccgp(self, n_reps=10, max_combos=20,
-                                  **kwargs):
-        combos = it.combinations(self.group, 2)
-        n_possible_combos = int(ss.comb(len(self.group), 2))
+                                  fix_features=1, **kwargs):
+        combos = it.combinations(self.group, 1 + fix_features)
+        n_possible_combos = int(ss.comb(len(self.group), 1 + fix_features))
         if n_possible_combos > max_combos:
             comb_inds = np.random.choice(range(n_possible_combos), max_combos,
                                          replace=False)
             combos = np.array(list(combos))[comb_inds]
             n_possible_combos = max_combos
         out = np.zeros((n_possible_combos, n_reps))
-        for i, (td, gd) in enumerate(combos):
+        for i, combo in enumerate(combos):
+            td = combo[0]
+            gd = combo[1:]
             out[i] = self.compute_specific_ccgp(td, gd, n_reps=n_reps,
                                                 **kwargs)
         return out
 
     def compute_across_group_ccgp(self, n_reps=10, max_combos=20,
-                                  **kwargs):
+                                  fix_features=1, **kwargs):
         all_inds = np.arange(self.n_feats_all, dtype=int)
         non_group_inds = set(all_inds).difference(self.group)
-        combos = it.product(self.group, non_group_inds)
+
+        ngi_iter = it.combinations(non_group_inds, fix_features)
+        combos = it.product(self.group, ngi_iter)
         n_possible_combos = len(self.group)*len(non_group_inds)
         if n_possible_combos > max_combos:
             comb_inds = np.random.choice(range(n_possible_combos), max_combos,
@@ -165,20 +169,24 @@ class ModularizerCode(cc.Code):
                               gen_dist=1, n_reps=10, ref_stim=None,
                               train_noise=False, n_train=10,
                               balance_training=False, **dec_kwargs):
+        if not u.check_list(gen_dim):
+            gen_dim = (gen_dim,)
+        all_dim = np.concatenate(((train_dim,), gen_dim))
         if (ref_stim is None and train_dim in self.group
             and gen_dim in self.group):
-            ref_stim = self.get_random_full_stim(non_nan=(train_dim, gen_dim))
+            ref_stim = self.get_random_full_stim(non_nan=all_dim)
         elif ref_stim is None:
-            ref_stim = self.get_random_full_stim(non_nan=(train_dim, gen_dim))
+            ref_stim = self.get_random_full_stim(non_nan=all_dim)
         tr_stim = np.mod(np.array(tuple(rs + train_dist*(i == train_dim)
                                         for i, rs in enumerate(ref_stim))),
                          self.n_values)
-        gen_stim1 = np.mod(np.array(tuple(rs + gen_dist*(i == gen_dim)
+        gen_stim1 = np.mod(np.array(tuple(rs + gen_dist*np.isin(i, gen_dim)
                                           for i, rs in enumerate(ref_stim))),
                            self.n_values)
-        gen_stim2 = np.mod(np.array(tuple(rs + gen_dist*(i == gen_dim)
+        gen_stim2 = np.mod(np.array(tuple(rs + gen_dist*np.isin(i, gen_dim)
                                           for i, rs in enumerate(tr_stim))),
                            self.n_values)
+        
         pcorr = self.decode_rep_classes(ref_stim, tr_stim,
                                         c1_test=gen_stim1,
                                         c2_test=gen_stim2,
