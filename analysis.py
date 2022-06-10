@@ -426,7 +426,7 @@ def quantify_clusters(groups, w_matrix, absolute=True):
     avg_out = np.mean(overlap[np.logical_not(mask)])
     return overlap, avg_in - avg_out
 
-def apply_geometry_model_list(ml, fdg, group_ind=0, **kwargs):
+def apply_geometry_model_list(ml, fdg, group_ind=0, n_train=2, **kwargs):
     ml = np.array(ml)
     shattering = np.zeros_like(ml, dtype=object)
     within_ccgp = np.zeros_like(shattering)
@@ -435,8 +435,10 @@ def apply_geometry_model_list(ml, fdg, group_ind=0, **kwargs):
         m = ml[ind]
         m_code = ModularizerCode(m, dg_model=fdg, group_ind=group_ind)
         shattering[ind] = m_code.compute_shattering(**kwargs)[-1]
-        within_ccgp[ind] = m_code.compute_within_group_ccgp(**kwargs)
-        across_ccgp[ind] = m_code.compute_across_group_ccgp(**kwargs)
+        within_ccgp[ind] = m_code.compute_within_group_ccgp(n_train=n_train,
+                                                            **kwargs)
+        across_ccgp[ind] = m_code.compute_across_group_ccgp(n_train=n_train,
+                                                            **kwargs)
     return shattering, within_ccgp, across_ccgp
 
 def apply_clusters_model_list(ml, func=quantify_clusters, **kwargs):
