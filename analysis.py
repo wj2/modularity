@@ -454,13 +454,14 @@ def apply_clusters_model_list(ml, func=quantify_clusters, **kwargs):
         diffs[ind] = diff
     return mats, diffs
 
-def process_histories(hs):
+def process_histories(hs, n_epochs):
     hs = np.array(hs)
     ind = (0,)*len(hs.shape)
-    n_epochs = hs[ind].params['epochs']
+    # n_epochs = hs[ind].params['epochs']
     loss = np.zeros(hs.shape + (n_epochs,))
     loss_val = np.zeros_like(loss)
     for ind in u.make_array_ind_iterator(hs.shape):
-        loss[ind] = hs[ind].history['loss']
-        loss_val[ind] = hs[ind].history['val_loss']
+        ind_epochs = len(hs[ind].history['loss'])
+        loss[ind][:ind_epochs] = hs[ind].history['loss']
+        loss_val[ind][:ind_epochs] = hs[ind].history['val_loss']
     return loss, loss_val

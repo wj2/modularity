@@ -111,7 +111,8 @@ if __name__ == '__main__':
     geometry_results['across_ccgp'] = across
 
     history = {}
-    history['loss'], history['val_loss'] = ma.process_histories(histories)
+    out = ma.process_histories(histories, args.model_epochs)
+    history['loss'], history['val_loss'] = out 
 
     all_save = {}
     all_save.update(clustering_results)
