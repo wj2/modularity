@@ -52,6 +52,8 @@ def create_parser():
     parser.add_argument('--fdg_weight_init', default=None, type=float)
     parser.add_argument('--fdg_layers', nargs='+', default=(300,),
                         type=int)
+    parser.add_argument('--ccgp_n_train', default=2, type=int)                        
+    parser.add_argument('--ccgp_fix_features', default=2, type=int)
     return parser
 
 selector_dict = {'random':ms.random_groups,
@@ -103,7 +105,8 @@ if __name__ == '__main__':
         clustering_results[cm + '_mats'] = mats
         clustering_results[cm + '_diffs'] = diffs
 
-    out = ma.apply_geometry_model_list(models, fdg)
+    out = ma.apply_geometry_model_list(models, fdg, n_train=args.ccgp_n_train,
+                                       fix_features=args.ccgp_fix_features)
     shattering, within, across = out
     geometry_results = {}
     geometry_results['shattering'] = shattering
