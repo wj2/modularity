@@ -426,7 +426,7 @@ def quantify_clusters(groups, w_matrix, absolute=True):
     avg_out = np.mean(overlap[np.logical_not(mask)])
     return overlap, avg_in - avg_out
 
-def apply_geometry_model_list(ml, fdg, group_ind=0, n_train=2,
+def apply_geometry_model_list(ml, fdg, group_ind=0, n_train=4,
                               fix_features=2, **kwargs):
     ml = np.array(ml)
     shattering = np.zeros_like(ml, dtype=object)
