@@ -460,12 +460,6 @@ def _fit_clusters(act, n_components, model=skmx.GaussianMixture, use_init=False)
     labels = m.fit_predict(act.T)
     return m, labels
 
-def apply_act_clusters_list(models, func=quantify_activity_clusters, **kwargs):
-    clust = np.zeros(models.shape)
-    for ind in u.make_array_ind_iterator(models.shape):
-        clust[ind] = func(models[ind], **kwargs)
-    return clust
-
 def quantify_activity_clusters(m, n_samps=1000, use_mean=True,
                                model=skmx.GaussianMixture):
     activity = sample_all_contexts(m, n_samps=n_samps, use_mean=use_mean)
@@ -476,6 +470,12 @@ def quantify_activity_clusters(m, n_samps=1000, use_mean=True,
     f_score = m_full.score(a_full.T)
     o_score = m_one.score(a_full.T)
     return f_score - o_score
+
+def apply_act_clusters_list(models, func=quantify_activity_clusters, **kwargs):
+    clust = np.zeros(models.shape)
+    for ind in u.make_array_ind_iterator(models.shape):
+        clust[ind] = func(models[ind], **kwargs)
+    return clust
 
 def infer_activity_clusters(m, n_samps=1000, use_mean=True, ret_act=False,
                             model=skmx.GaussianMixture):

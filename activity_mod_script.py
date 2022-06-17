@@ -30,8 +30,6 @@ def create_parser():
                         help='size of groups', nargs='+')
     parser.add_argument('--tasks_per_group', default=(10,), type=int,
                         help='number of tasks for each group', nargs='+')
-    parser.add_argument('--group_method', default='random', type=str,
-                        help='type of group selection')
     parser.add_argument('--n_groups', default=3, type=int,
                         help='number of groups')
     parser.add_argument('--model_type', default='coloring', type=str,
@@ -61,7 +59,7 @@ def create_parser():
     parser.add_argument('--fdg_layers', nargs='+', default=(300,),
                         type=int)
     parser.add_argument('--ccgp_n_train', default=2, type=int)                        
-    parser.add_argument('--ccgp_fix_features', default=2, type=int)
+    parser.add_argument('--ccgp_fix_features', default=None, type=int)
     return parser
 
 model_dict = {'xor':ms.XORModularizer,
@@ -122,8 +120,12 @@ if __name__ == '__main__':
         clust = ma.apply_act_clusters_list(models, func)
         clustering_results[cm] = clust
 
+    if args.ccgp_fix_features is None:
+        fix_feats = group_size - 1
+    else:
+        fix_feats = args.ccgp_fix_features
     out = ma.apply_geometry_model_list(models, fdg, n_train=args.ccgp_n_train,
-                                       fix_features=args.ccgp_fix_features)
+                                       fix_features=fix_feats)
     shattering, within, across = out
     geometry_results = {}
     geometry_results['shattering'] = shattering
