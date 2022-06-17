@@ -68,6 +68,11 @@ model_dict = {'xor':ms.XORModularizer,
 clust_methods = {'gm':ma.quantify_activity_clusters}
 
 if __name__ == '__main__':
+    parser = create_parser()
+    args = parser.parse_args()
+
+    args.date = datetime.now()
+
     group_size = args.group_size
     n_overlap = args.group_overlap
     group_maker = ms.overlap_groups
