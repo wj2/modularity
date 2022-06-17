@@ -2,6 +2,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import sklearn.decomposition as skd
+import sklearn.cluster as skcl
+import sklearn.mixture as skmx
 import itertools as it
 import scipy.stats as sts
 import scipy.special as ss
@@ -19,8 +21,12 @@ class ModularizerCode(cc.Code):
 
     def __init__(self, model, group_ind=None, dg_model=None, source_distr=None,
                  n_values=2, noise_cov=.1**2):
+        context_signal = model.integrate_context
         if dg_model is not None and source_distr is None:
-            self.n_feats_all = dg_model.input_dim
+            n_feats_all = dg_model.input_dim
+            if context_signal:
+                n_feats_all = n_feats_all - model.n_groups
+            self.n_feats_all = n_feats_all
         elif dg_model is None and source_distr is not None:
             self.n_feats_all = source_distr.rvs(1).shape[1]
         else:
@@ -30,6 +36,7 @@ class ModularizerCode(cc.Code):
             self.group = model.groups[group_ind]
         else:
             self.group = np.arange(self.n_feats_all, dtype=int)
+        self.context_signal = context_signal
         self.n_feats = len(self.group)
         self.n_values = n_values
         self.n_neurs = model.hidden_dims        
@@ -42,7 +49,7 @@ class ModularizerCode(cc.Code):
         self.stim = self._get_all_stim()
 
     def _get_avg_power(self, n_avg=10000):
-        samps, reps = self.dg_model.sample_reps(n_avg)
+        samps, reps = self.sample_dg_reps(n_avg)
         pwr = np.mean(np.sum(self.model.get_representation(reps)**2, axis=1),
                       axis=0)
         return pwr
@@ -58,25 +65,33 @@ class ModularizerCode(cc.Code):
         return self._get_random_stim(self.n_feats, **kwargs)
 
     def _get_random_stim(self, n_feats, non_nan=None):
-        s = np.random.choice(np.arange(self.n_values, dtype=float),
-                             size=n_feats)
+        s, _ = self.sample_dg_reps(1)
+        s = s[0].astype(float)
         if non_nan is not None:
             if n_feats < self.n_feats_all:
                 mask = np.logical_not(np.isin(self.group, non_nan))
             else:
                 mask = np.logical_not(np.isin(np.arange(n_feats), non_nan))
-            s[mask] = np.nan
+            s[:self.n_feats_all][mask] = np.nan
         return s
             
         
     def get_full_stim(self, stim):
-        f_stim, _ = self.dg_model.sample_reps(stim.shape[0])
+        f_stim, _ = self.sample_dg_reps(stim.shape[0])
         f_stim[:, self.group] = stim
         return f_stim
 
+    def sample_dg_reps(self, n_samps=1000):
+        stim, reps = self.dg_model.sample_reps(n_samps)
+        if self.context_signal:            
+            stim[:, self.n_feats_all:] = 0
+            stim[:, self.n_feats_all + self.group_ind] = 1
+            reps = self.dg_model.get_representation(stim)
+        return stim, reps
+    
     def get_nan_stim(self, stim, ref_stim=None):
         if ref_stim is None:
-            n_stim, _ = self.dg_model.sample_reps(stim.shape[0])
+            n_stim, _ = self.sample_dg_reps(stim.shape[0])
         else:
             n_stim = ref_stim
         mask = np.logical_not(np.isnan(stim))
@@ -113,8 +128,8 @@ class ModularizerCode(cc.Code):
                                       ref_stim=ref_stim)
         return out
     
-    def compute_shattering(self, n_reps=5, thresh=.6, **dec_args):
-        partitions = self._get_partitions()
+    def compute_shattering(self, n_reps=5, thresh=.6, max_parts=100, **dec_args):
+        partitions = self._get_partitions(random_thr=max_parts)
         n_parts = len(partitions)
         pcorrs = np.zeros((n_parts, n_reps))
         stim_arr = np.array(self.stim)
@@ -157,7 +172,7 @@ class ModularizerCode(cc.Code):
         if n_possible_combos > max_combos:
             comb_inds = np.random.choice(range(n_possible_combos), max_combos,
                                          replace=False)
-            combos = np.array(list(combos))[comb_inds]
+            combos = np.array(list(combos), dtype=object)[comb_inds]
             n_possible_combos = max_combos
         out = np.zeros((n_possible_combos, n_reps))
         for i, (td, gd) in enumerate(combos):
@@ -186,7 +201,7 @@ class ModularizerCode(cc.Code):
         gen_stim2 = np.mod(np.array(tuple(rs + gen_dist*np.isin(i, gen_dim)
                                           for i, rs in enumerate(tr_stim))),
                            self.n_values)
-        
+
         pcorr = self.decode_rep_classes(ref_stim, tr_stim,
                                         c1_test=gen_stim1,
                                         c2_test=gen_stim2,
@@ -425,6 +440,51 @@ def quantify_clusters(groups, w_matrix, absolute=True):
     avg_in = np.mean(overlap[mask])
     avg_out = np.mean(overlap[np.logical_not(mask)])
     return overlap, avg_in - avg_out
+
+def sample_all_contexts(m, n_samps=1000, use_mean=False):
+    n_g = m.n_groups
+    activity = []
+    for i in range(n_g):
+        _, _, reps_i = m.sample_reps(n_samps, context=i)
+        if use_mean:
+            reps_i = np.mean(reps_i, axis=0, keepdims=True)
+        activity.append(reps_i) 
+    return activity
+
+def _fit_clusters(act, n_components, model=skmx.GaussianMixture, use_init=False):
+    if use_init and n_components > 1:
+        means_init = np.identity(n_components)[:, :n_components - 1]
+    else:
+        means_init = None
+    m = model(n_components, means_init=means_init)
+    labels = m.fit_predict(act.T)
+    return m, labels
+
+def apply_act_clusters_list(models, func=quantify_activity_clusters, **kwargs):
+    clust = np.zeros(models.shape)
+    for ind in u.make_array_ind_iterator(models.shape):
+        clust[ind] = func(models[ind], **kwargs)
+    return clust
+
+def quantify_activity_clusters(m, n_samps=1000, use_mean=True,
+                               model=skmx.GaussianMixture):
+    activity = sample_all_contexts(m, n_samps=n_samps, use_mean=use_mean)
+    a_full = np.concatenate(activity, axis=0)
+    
+    m_full, _ = _fit_clusters(a_full, len(activity) + 1, model=model)
+    m_one, _ = _fit_clusters(a_full, 1,  model=model)
+    f_score = m_full.score(a_full.T)
+    o_score = m_one.score(a_full.T)
+    return f_score - o_score
+
+def infer_activity_clusters(m, n_samps=1000, use_mean=True, ret_act=False,
+                            model=skmx.GaussianMixture):
+    activity = sample_all_contexts(m, n_samps=n_samps, use_mean=use_mean)
+    act_full = np.concatenate(activity, axis=0)
+    _, out = _fit_clusters(act_full, len(activity) + 1)
+    if ret_act:
+        out = (out, act_full.T)
+    return out
 
 def apply_geometry_model_list(ml, fdg, group_ind=0, n_train=4,
                               fix_features=2, **kwargs):

@@ -2,6 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import sklearn.decomposition as skd
 
 import general.utility as u 
 import general.plotting as gpl
@@ -50,6 +51,67 @@ def plot_clustering_metrics(df, x='tasks_per_group',
     for i, cn in enumerate(clustering_names):
         sns.scatterplot(data=df, x=x, y=cn, ax=axs[i], **kwargs)
     return axs
+
+def plot_context_scatter(m, n_samps=1000, ax=None, fwid=3):
+    if ax is None:
+        f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
+    labels, act = ma.infer_activity_clusters(m, n_samps=n_samps, use_mean=True,
+                                             ret_act=True)
+    if act.shape[1] > 2:
+        p = skd.PCA(2)
+        act = p.fit_transform(act)
+    for i, l in enumerate(np.unique(labels)):
+        mask = labels == l
+        ax.plot(act[mask, 0], act[mask, 1], 'o')
+    return ax
+
+def plot_context_clusters(m, n_samps=1000, ax=None, fwid=3):
+    if ax is None:
+        f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
+    labels = ma.infer_activity_clusters(m, n_samps=n_samps,
+                                        use_mean=True)
+    activity = ma.sample_all_contexts(m, n_samps=n_samps, use_mean=False)
+    sort_inds = np.argsort(labels)
+    a_full = np.concatenate(activity, axis=0)
+    vmax = np.mean(a_full) + np.std(a_full)
+    ax.imshow(a_full[:, sort_inds], aspect='auto', vmax=vmax)
+    return ax
+
+def plot_model_list_activity(m_list, fwid=3, axs=None, **kwargs):
+    n_plots = len(m_list)
+    if axs is None:
+        f, axs = plt.subplots(2, n_plots, figsize=(n_plots*fwid, 2*fwid))
+    for i, m in enumerate(m_list):
+        plot_context_clusters(m, ax=axs[0, i], **kwargs)
+        plot_context_scatter(m, ax=axs[1, i], **kwargs)
+        diff = ma.quantify_activity_clusters(m)
+        axs[1, i].set_title('cluster diff = {:.2f}'.format(diff))
+
+def plot_2context_activity_diff(fdg, m, n_samps=1000, ax=None,
+                                integrate_context=False, n_groups=2,
+                                fwid=3):
+    if ax is None:
+        f, ax = plt.subplots(1, 1, figsize=(fwid*1.5, fwid))
+
+    m_rep0 = m.sample_reps(n_samps, context=0)[2].numpy()
+    m_rep1 = m.sample_reps(n_samps, context=1)[2].numpy()
+
+    mr0 = np.mean(m_rep0**2, axis=0)
+    mr1 = np.mean(m_rep1**2, axis=0)
+
+    sort_inds = np.argsort(mr0 - mr1)
+    mask = (mr0 - mr1) > 0
+
+    plot_arr = np.concatenate((m_rep0[:, sort_inds], 
+                               m_rep1[:, sort_inds]))
+
+    m_arr = np.mean(plot_arr, axis=0)    
+    # ax_corr.plot(mr0 - m_arr, mr1 - m_arr, 'o')
+    vmax = np.mean(plot_arr) + np.std(plot_arr)
+    ax.imshow(plot_arr, aspect='auto', vmax=vmax)
+    ax.set_xlabel('units')
+    ax.set_ylabel('trials')
+    return ax, mask
 
 @gpl.ax_adder
 def plot_param_sweep(mod_mat, x_values, x_label='', y_label='',

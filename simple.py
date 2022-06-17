@@ -49,11 +49,11 @@ def apply_many_colorings(x, colorings=None, merger=np.sum):
         out[:, i] = apply_coloring(x, coloring)
     return merger(out, axis=1, keepdims=True) > 0
 
-def sequential_groups(inp_dims, group_size, *args):
+def sequential_groups(inp_dims, group_size, *args, **kwargs):
     assert group_size <= inp_dims
     return np.arange(inp_dims).reshape(-1, group_size)
 
-def random_groups(inp_dims, group_size, n_groups):
+def random_groups(inp_dims, group_size, n_groups, *args, **kwargs):
     rng = np.random.default_rng()
     groups = []
     for i in range(n_groups):
@@ -61,6 +61,19 @@ def random_groups(inp_dims, group_size, n_groups):
         groups.append(g_i)
     out = np.stack(groups, axis=0)
     return out
+
+def overlap_groups(inp_dims, group_size, n_groups, *args,
+                   n_overlap=1, **kwargs):
+    rng = np.random.default_rng()
+    g_size = (n_groups, group_size - n_overlap)
+    samp_dims = group_size*n_groups
+    assert samp_dims < inp_dims
+    groups = rng.choice(samp_dims, size=g_size, replace=False)
+    g_o = rng.choice(range(samp_dims, inp_dims),
+                     size=(1, n_overlap), replace=False)
+    groups_over = np.tile(g_o, (n_groups, 1))
+    groups = np.concatenate((groups, groups_over), axis=1)
+    return groups
 
 class Mixer:
 
@@ -112,8 +125,7 @@ class Mixer:
             p.fit(rep)
             out = (p.explained_variance_ratio_, p.components_)
         return out
-
-
+    
 class Modularizer:
 
     def __init__(self, inp_dims, groups=None, group_width=2,
@@ -121,13 +133,15 @@ class Modularizer:
                  n_groups=None, tasks_per_group=1, use_mixer=False,
                  use_dg=None, mixer_out_dims=200, mixer_kwargs=None,
                  use_early_stopping=True, early_stopping_field='val_loss',
-                 **kwargs):
+                 single_output=False, integrate_context=False,
+                 n_overlap=0, **kwargs):
         self.use_early_stopping = use_early_stopping
         self.early_stopping_field = early_stopping_field
         if n_groups is None:
             n_groups = int(np.floor(inp_dims / group_size))
         if groups is None:
-            groups = group_maker(inp_dims, group_size, n_groups)
+            groups = group_maker(inp_dims, group_size, n_groups,
+                                 n_overlap=n_overlap)
         if mixer_kwargs is None:
             mixer_kwargs = {} 
         if use_mixer and use_dg is None:
@@ -142,9 +156,22 @@ class Modularizer:
             self.mix = None
             self.mix_func = ident
             inp_net = inp_dims
+        out_dims = n_groups*tasks_per_group
+        self.single_output = single_output
+        if single_output and not integrate_context:
+            inp_net = inp_net + n_groups
+            out_dims = tasks_per_group
+        elif single_output and integrate_context:
+            inp_net = inp_net
+            out_dims = tasks_per_group
+            inp_dims = inp_dims - n_groups
+        self.integrate_context = integrate_context
+        self.inp_net = inp_net
+        self.n_tasks_per_group = tasks_per_group
+        self.n_groups = n_groups        
         self.group_size = group_size
         self.inp_dims = inp_dims
-        self.out_dims = n_groups*tasks_per_group
+        self.out_dims = out_dims
         self.hidden_dims = int(round(len(groups)*group_width))
         self.out_group_labels = np.concatenate(list((i,)*tasks_per_group
                                                     for i in range(n_groups)))
@@ -155,6 +182,7 @@ class Modularizer:
         self.rep_model = rep_model
         self.model = model
         self.groups = groups
+        self.rng = np.random.default_rng()
         self.compiled = False
     
     def make_model(self, inp, hidden, out, act_func=tf.nn.relu,
@@ -164,6 +192,7 @@ class Modularizer:
                    kernel_reg_weight=0,
                    act_reg_type=tfk.regularizers.l2,
                    act_reg_weight=0,
+                   constant_init=None,
                    **layer_params):
         layer_list = []
         layer_list.append(tfkl.InputLayer(input_shape=inp))
@@ -173,6 +202,10 @@ class Modularizer:
             kernel_reg = kernel_reg_type(kernel_reg_weight)
         else:
             kernel_reg = None
+        if constant_init is not None:
+            k_init = tfk.initializers.Constant(constant_init)
+        else:
+            k_init = 'glorot_uniform'
         if act_reg_weight > 0:
             act_reg = act_reg_type(act_reg_weight)
         else:
@@ -180,6 +213,7 @@ class Modularizer:
         lh = layer_type(hidden, activation=act_func,
                         kernel_regularizer=kernel_reg,
                         activity_regularizer=act_reg,
+                        kernel_initializer=k_init,
                         **layer_params)
         layer_list.append(lh)
         if noise > 0:
@@ -195,6 +229,14 @@ class Modularizer:
         rep = self.rep_model(stim)
         return rep
 
+    def sample_reps(self, n_samps=1000, context=None):
+        if context is not None:
+            group_inds = np.ones(n_samps, dtype=int)*context
+        out = self.get_x_true(n_train=n_samps, group_inds=group_inds)
+        x, true, targ = out
+        rep = self.get_representation(x)
+        return true, x, rep 
+
     def _compile(self, optimizer=None, loss=None):
         if optimizer is None:
             optimizer = tf.optimizers.Adam(learning_rate=1e-3)
@@ -203,27 +245,57 @@ class Modularizer:
         self.model.compile(optimizer, loss)
         self.compiled = True
 
-    def generate_target(self, xs):
-        ys = np.zeros((len(xs), self.out_dims))
-        accum_i = 0
+    def _generate_target_so(self, xs, group_inds):
+        ys = np.zeros((self.n_groups, len(xs), self.out_dims))
         for i, g in enumerate(self.groups):
             g_inp = xs[:, g]
             out = self.group_func[i](g_inp)
             if len(out.shape) == 1:
                 out = np.expand_dims(out, axis=1)
-            ys[:, accum_i:accum_i+out.shape[1]] = out
-            accum_i = accum_i + out.shape[1]
+            ys[i] = out
+        ys = ys[group_inds]
         return ys            
+        
+    def generate_target(self, xs, group_inds=None):
+        ys = np.zeros((self.n_groups, len(xs), self.n_tasks_per_group))
+        for i, g in enumerate(self.groups):
+            g_inp = xs[:, g]
+            out = self.group_func[i](g_inp)
+            if len(out.shape) == 1:
+                out = np.expand_dims(out, axis=1)
+            ys[i] = out
+        if self.single_output and group_inds is None:
+            raise IOError('need to provide group_inds if single_output is '
+                          'True')
+        elif self.single_output:
+            trl_inds = np.arange(len(xs))
+            ys = ys[group_inds, trl_inds]
+        else:
+            ys = np.concatenate(ys, axis=1)
+        return ys
 
-    def get_x_true(self, x, true, n_train=10**5):
-        if true is None and x is None:
-            true = sts.uniform().rvs((n_train, self.inp_dims)) < .5
-            x = self.mix_func(true)
+    def sample_stim(self, n_samps):
+        return self.rng.uniform(0, 1, size=(n_samps, self.inp_dims)) < .5
+
+    def get_x_true(self, x=None, true=None, n_train=10**5, group_inds=None):
         if true is None and x is not None:
             raise IOError('need ground truth x')
-        if x is None and true is not None:
+        if true is None:
+            true = self.sample_stim(n_train)
+        if group_inds is None and self.single_output:
+            group_inds = self.rng.choice(self.n_groups,
+                                         n_train)
+        if self.single_output:
+            to_add = np.zeros((n_train, self.n_groups))
+            trl_inds = np.arange(n_train)
+            to_add[trl_inds, group_inds] = 1
+        if self.single_output and self.integrate_context:
+            true = np.concatenate((true, to_add), axis=1)
+        if x is None:
             x = self.mix_func(true)
-        targ = self.generate_target(true)
+        if self.single_output and not self.integrate_context:
+            x = np.concatenate((x, to_add), axis=1)
+        targ = self.generate_target(true, group_inds=group_inds)
         return x, true, targ
     
     def fit(self, train_x=None, train_true=None, eval_x=None, eval_true=None,
@@ -238,7 +310,6 @@ class Modularizer:
 
         eval_set = (eval_x, eval_targ)
 
-        
         if self.use_early_stopping:
             cb = tfk.callbacks.EarlyStopping(monitor=self.early_stopping_field,
                                              mode='min', patience=2)
