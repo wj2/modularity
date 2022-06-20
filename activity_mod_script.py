@@ -59,7 +59,7 @@ def create_parser():
     parser.add_argument('--fdg_layers', nargs='+', default=(300,),
                         type=int)
     parser.add_argument('--ccgp_n_train', default=2, type=int)                        
-    parser.add_argument('--ccgp_fix_features', default=None, type=int)
+    parser.add_argument('--ccgp_fix_features', default=-1, type=int)
     return parser
 
 model_dict = {'xor':ms.XORModularizer,
@@ -98,7 +98,7 @@ if __name__ == '__main__':
     fdg.fit(epochs=args.fdg_epochs, verbose=False,
             batch_size=args.dg_batch_size)
     print('dg dim', fdg.representation_dimensionality(participation_ratio=True))
-    
+
     m_constructor = model_dict[args.model_type]
     out = ma.train_variable_models(
         group_size,
@@ -106,9 +106,9 @@ if __name__ == '__main__':
         group_maker,
         m_constructor,
         n_reps=args.n_reps,
-        use_dg=fdg,
+        fdg=fdg,
+        n_groups=n_groups,
         group_width=group_width,
-        use_mixer=True,
         act_reg_weight=act_reg,
         noise=sigma,
         constant_init=const_init,
