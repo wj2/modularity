@@ -47,38 +47,49 @@ def _add_model(df, md, full_mat_keys=default_fm_keys,
                cluster_keys=default_cluster_keys,
                group_key='groups', geometry_keys=default_geometry_keys,
                loss_keys = default_loss_keys, **kwargs):
-    group_size = md['args'].group_size
-    tasks_per_group = md['args'].tasks_per_group
-    group_method = md['args'].group_method
-    model_type = md['args'].model_type
-    n_groups = md['args'].n_groups
+    all_args = vars(md['args'])
+    group_size = all_args.pop('group_size')
+    tasks_per_group = all_args.pop('tasks_per_group')
+    try:
+        group_method = all_args.pop('group_method')
+        group_overlap = (-1,)
+    except:
+        group_method = 'overlap'
+        group_overlap = all_args.pop('group_overlap')
+    model_type = all_args.pop('model_type')
+    n_groups = all_args.pop('n_groups')
     n_tasks = n_groups*tasks_per_group
     out = _make_lists(group_size, tasks_per_group, group_method, model_type)
     group_size, tasks_per_group, group_method, model_type = out
     arg_dict = {}
-    for key, v in vars(md['args']).items():
+    for key, v in all_args.items():
         arg_dict['args_' + key] = v
     arr_shape = list(md.values())[0].shape
-    for (i, j, k, l, n) in u.make_array_ind_iterator(arr_shape):
+    for (i, j, k, l, m, n) in u.make_array_ind_iterator(arr_shape):
         row_dict = dict(group_size=group_size[i],
                         tasks_per_group=tasks_per_group[j],
                         group_method=group_method[k],
                         model_type=model_type[l],
+                        group_overlap=group_overlap[m],
                         n_groups=n_groups)
         row_dict.update(kwargs)
         row_dict.update(arg_dict)        
         for mk, vk in md.items():
+            if mk != 'args':
+                vk_ind = vk[i, j, k, l, m, n]
+            else:
+                vk_ind = None
             if mk in full_mat_keys:
-                row_dict[mk] = [vk[i, j, k, l, n]]
+                row_dict[mk] = [vk_ind]
             if mk in cluster_keys:
-                row_dict[mk] = vk[i, j, k, l, n]
+                row_dict[mk] = vk_ind
             if mk in geometry_keys:
-                row_dict[mk] = np.mean(vk[i, j, k, l, n])
+                row_dict[mk] = np.mean(vk_ind)
             if mk in loss_keys:
-                row_dict[mk] = vk[i, j, k, l, n][-1]/n_tasks[i]
+                row_dict[mk] = vk_ind[-1]/n_tasks[i]
             if mk == group_key:
                 row_dict['overlap'] = _compute_group_overlap(
-                    vk[i, j, k, l, n])
+                    vk_ind)
         df_ijkl = pd.DataFrame(row_dict)
         df = pd.concat((df, df_ijkl), ignore_index=True)
     return df        

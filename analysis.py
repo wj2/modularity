@@ -147,7 +147,7 @@ class ModularizerCode(cc.Code):
     def compute_within_group_ccgp(self, n_reps=10, max_combos=20,
                                   fix_features=1, **kwargs):
         if fix_features < 0:
-            fix_features = len(self.group) - fix_features
+            fix_features = len(self.group) + fix_features
         combos = it.combinations(self.group, 1 + fix_features)
         n_possible_combos = int(ss.comb(len(self.group), 1 + fix_features))
         if n_possible_combos > max_combos:
@@ -166,7 +166,7 @@ class ModularizerCode(cc.Code):
     def compute_across_group_ccgp(self, n_reps=10, max_combos=20,
                                   fix_features=1, **kwargs):
         if fix_features < 0:
-            fix_features = len(self.group) - fix_features
+            fix_features = len(self.group) + fix_features
         all_inds = np.arange(self.n_feats_all, dtype=int)
         non_group_inds = set(all_inds).difference(self.group)
 
@@ -533,7 +533,6 @@ def process_histories(hs, n_epochs):
     loss = np.zeros(hs.shape + (n_epochs,))
     loss_val = np.zeros_like(loss)
     for ind in u.make_array_ind_iterator(hs.shape):
-        print(hs[ind].history.keys())
         ind_epochs = len(hs[ind].history['loss'])
         loss[ind][:ind_epochs] = hs[ind].history['loss']
         loss_val[ind][:ind_epochs] = hs[ind].history['val_loss']
