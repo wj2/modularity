@@ -3,6 +3,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import tensorflow_hub as tfhub
 import functools as ft
+import itertools as it
 
 import scipy.stats as sts
 import numpy as np
@@ -35,7 +36,10 @@ def generate_coloring(n_g, prob=.5):
     return np.random.default_rng().uniform(size=n_g) <= prob
 
 def generate_many_colorings(n_colorings, n_g, prob=.5):
-    return list(generate_coloring(n_g, prob=prob) for i in range(n_colorings))
+    rng = np.random.default_rng()
+    inds = rng.choice(2**n_g, n_colorings, replace=False)
+    out = np.array(list(it.product((0, 1), repeat=n_g)))[inds]
+    return out
 
 def apply_coloring(x, coloring=None):
     return np.all(x == coloring, axis=1)

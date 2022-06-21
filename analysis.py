@@ -148,8 +148,8 @@ class ModularizerCode(cc.Code):
                                   fix_features=1, **kwargs):
         if fix_features < 0:
             fix_features = len(self.group) + fix_features
-        combos = it.combinations(self.group, 1 + fix_features)
-        n_possible_combos = int(ss.comb(len(self.group), 1 + fix_features))
+        combos = it.combinations(self.group, fix_features)
+        n_possible_combos = int(ss.comb(len(self.group), fix_features))
         if n_possible_combos > max_combos:
             comb_inds = np.random.choice(range(n_possible_combos), max_combos,
                                          replace=False)
@@ -157,8 +157,8 @@ class ModularizerCode(cc.Code):
             n_possible_combos = max_combos
         out = np.zeros((n_possible_combos, n_reps))
         for i, combo in enumerate(combos):
-            td = combo[0]
-            gd = combo[1:]
+            td = np.random.choice(list(set(self.group).difference(combo)), 1)[0]
+            gd = combo
             out[i] = self.compute_specific_ccgp(td, gd, n_reps=n_reps,
                                                 **kwargs)
         return out
@@ -169,7 +169,7 @@ class ModularizerCode(cc.Code):
             fix_features = len(self.group) + fix_features
         all_inds = np.arange(self.n_feats_all, dtype=int)
         non_group_inds = set(all_inds).difference(self.group)
-
+        
         ngi_iter = it.combinations(non_group_inds, fix_features)
         combos = it.product(self.group, ngi_iter)
         n_possible_combos = len(self.group)*len(non_group_inds)
@@ -265,6 +265,14 @@ def train_variable_models(group_size, tasks_per_group, group_maker, model_type,
                              n_reps=n_reps, **kwargs)
         out_ms[i, j, k, l, m], out_hs[i, j, k, l, m] = out
     return out_ms, out_hs
+
+def avg_corr(k, n=2):
+    n_s = .5*ss.binom(n**k, n**(k - 1))
+    f = np.arange(1, n**(k - 2) + 1)
+    n_f = k*2*ss.binom(n**(k - 1), f)
+    r = 1 - 4*f/(n**k)
+    corr = (1/n_s)*(k + np.sum(n_f*r))
+    return corr
 
 def contrast_rich_lazy(inp_dim, rep_dim, init_bounds=(.01, 3), n_inits=20,
                         train_epochs=0, **kwargs):

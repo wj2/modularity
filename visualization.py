@@ -47,9 +47,10 @@ def plot_clustering_metrics(df, x='tasks_per_group',
                             axs=None, fwid=3, **kwargs):
     if axs is None:
         n_plots = len(clustering_names)
-        f, axs = plt.subplots(1, n_plots, figsize=(fwid*n_plots, fwid))
+        f, axs = plt.subplots(1, n_plots, figsize=(fwid*n_plots, fwid),
+                              squeeze=False)
     for i, cn in enumerate(clustering_names):
-        sns.scatterplot(data=df, x=x, y=cn, ax=axs[i], **kwargs)
+        sns.scatterplot(data=df, x=x, y=cn, ax=axs[0, i], **kwargs)
     return axs
 
 def plot_context_scatter(m, n_samps=1000, ax=None, fwid=3):
