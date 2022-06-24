@@ -129,7 +129,16 @@ class Mixer:
             p.fit(rep)
             out = (p.explained_variance_ratio_, p.components_)
         return out
-    
+
+def parity(inps, minigroup=None):
+    return np.mod(np.sum(inps[:, minigroup]), 2)
+
+def make_ai_func(inp_dims, ai_dep, ai_func):
+    rng = np.random.default_rng()
+    subset = rng.choice(inp_dims, size=ai_rep, replace=False)
+    func = ft.partial(ai_func, minigroup=subset)
+    return func
+
 class Modularizer:
 
     def __init__(self, inp_dims, groups=None, group_width=2,
@@ -138,14 +147,32 @@ class Modularizer:
                  use_dg=None, mixer_out_dims=200, mixer_kwargs=None,
                  use_early_stopping=True, early_stopping_field='val_loss',
                  single_output=False, integrate_context=False,
-                 n_overlap=0, **kwargs):
+                 n_overlap=0, augmented_inputs=0,
+                 common_augmented_inputs=False,
+                 augmented_input_dep=2,
+                 augmented_input_func=parity, **kwargs):
         self.use_early_stopping = use_early_stopping
         self.early_stopping_field = early_stopping_field
+        if not common_augmented_inputs:
+            inp_dims_anc = inp_dims + augmented_inputs
+        else:
+            inp_dims_anc = inp_dims
         if n_groups is None:
             n_groups = int(np.floor(inp_dims / group_size))
         if groups is None:
-            groups = group_maker(inp_dims, group_size, n_groups,
+            groups = group_maker(inp_dims_anc, group_size, n_groups,
                                  n_overlap=n_overlap)
+        if common_augmented_inputs:
+            ai_group = np.arange(inp_dims, inp_dims + augmented_inputs)
+            groups = np.concatenate((groups, np.tile(ai_group,
+                                                     (len(groups), 1))),
+                                    axis=1)
+        if augmented_inputs > 0:
+            self.ai_funcs = list(make_ai_func(inp_dims, augmented_input_dep,
+                                              augmented_input_func)
+                                 for i in range(augmented_inputs))
+        else:
+            self.ai_funcs = None
         if mixer_kwargs is None:
             mixer_kwargs = {} 
         if use_mixer and use_dg is None:

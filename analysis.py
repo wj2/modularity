@@ -2,6 +2,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import sklearn.decomposition as skd
+import sklearn.preprocessing as skp
+import sklearn.linear_model as sklm
 import sklearn.cluster as skcl
 import sklearn.mixture as skmx
 import itertools as it
@@ -274,6 +276,53 @@ def avg_corr(k, n=2):
     corr = (1/n_s)*(k + np.sum(n_f*r))
     return corr
 
+def cluster_graph(m, n_clusters=4):
+    ws = m.model.weights
+    w_ih = ws[0]
+    w_ho = ws[2]
+    n_hidden_neurs = w_ih.shape[1]
+    n_out_neurs = w_ho.shape[1]
+    
+    w_ih_abs = np.abs(w_ih)
+    w_ho_abs = np.abs(w_ho)
+    z_i = np.zeros((w_ih.shape[0], w_ih.shape[0]))
+    z_io = np.zeros((w_ih.shape[0], w_ho.shape[1]))
+    
+    z_h = np.zeros((w_ih.shape[1], w_ih.shape[1]))
+    z_o = np.zeros((w_ho.shape[1], w_ho.shape[1]))
+    
+    wm_full = np.block([[z_i, w_ih_abs, z_io],
+                        [w_ih_abs.T, z_h, w_ho_abs],
+                        [z_io.T, w_ho_abs.T, z_o]])
+
+    cl = skcl.SpectralClustering(n_clusters, affinity='precomputed')
+    clusters = cl.fit_predict(wm_full)
+    h_clusters = clusters[-(n_hidden_neurs + n_out_neurs):-n_out_neurs]
+    return h_clusters
+
+exp_fields = ['group_size', 'tasks_per_group', 'group_method', 'model_type',
+              'group_overlap', 'n_groups', 
+              'args_kernel_init_std', 'args_group_width', 'args_activity_reg',]
+target_fields = ['gm', 'shattering', 'within_ccgp', 'across_ccgp']
+def explain_clustering(df, target_field=target_fields,
+                       explainer_fields=exp_fields):
+    targ = df[target_fields]
+    targ = targ - np.mean(targ, axis=0)
+    ohe = skp.OneHotEncoder()
+    preds = ohe.fit_transform(df[explainer_fields])
+    fnames = ohe.get_feature_names_out(explainer_fields)
+    r = sklm.Ridge()
+    r.fit(preds, targ)
+
+    coefs_all = r.coef_
+    out_coefs = {}
+    for fn in explainer_fields:
+        mask = np.array(list((fn in el) for el in fnames))
+        vals = list(el.split('_')[-1] for i, el in enumerate(fnames)
+                    if mask[i])
+        out_coefs[fn] = (vals, coefs_all[:, mask])
+    return out_coefs, target_fields
+
 def contrast_rich_lazy(inp_dim, rep_dim, init_bounds=(.01, 3), n_inits=20,
                         train_epochs=0, **kwargs):
     weight_vars = np.linspace(*(init_bounds + (n_inits,)))
@@ -471,11 +520,14 @@ def sample_all_contexts(m, n_samps=1000, use_mean=False):
         activity.append(reps_i) 
     return activity
 
-def _fit_clusters(act, n_components, model=skmx.GaussianMixture, use_init=False):
+def _fit_clusters(act, n_components, model=skmx.GaussianMixture, use_init=False,
+                  demean=True):
     if use_init and n_components > 1:
         means_init = np.identity(n_components)[:, :n_components - 1]
     else:
         means_init = None
+    if demean:
+        act = act - np.mean(act, axis=0, keepdims=True)
     m = model(n_components, means_init=means_init)
     labels = m.fit_predict(act.T)
     return m, labels
@@ -485,11 +537,13 @@ def quantify_activity_clusters(m, n_samps=1000, use_mean=True,
     activity = sample_all_contexts(m, n_samps=n_samps, use_mean=use_mean)
     a_full = np.concatenate(activity, axis=0)
     
-    m_full, _ = _fit_clusters(a_full, len(activity) + 1, model=model)
+    m_full_p1, _ = _fit_clusters(a_full, len(activity) + 1, model=model)
+    m_full, _ = _fit_clusters(a_full, len(activity), model=model)
     m_one, _ = _fit_clusters(a_full, 1,  model=model)
+    fp1_score = m_full_p1.score(a_full.T)
     f_score = m_full.score(a_full.T)
     o_score = m_one.score(a_full.T)
-    return f_score - o_score
+    return max(f_score, fp1_score) - o_score
 
 def apply_act_clusters_list(models, func=quantify_activity_clusters, **kwargs):
     clust = np.zeros(models.shape)

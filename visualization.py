@@ -53,6 +53,36 @@ def plot_clustering_metrics(df, x='tasks_per_group',
         sns.scatterplot(data=df, x=x, y=cn, ax=axs[0, i], **kwargs)
     return axs
 
+def plot_linear_model(coef_dict, targ_fields, axs=None, fwid=3, label=''):
+    n_rows = len(targ_fields)
+    n_cols = len(coef_dict)
+    if axs is None:
+        f, axs = plt.subplots(n_rows, n_cols, figsize=(fwid*n_cols, fwid*n_rows))
+    for i, (fn, (x_vals, weights)) in enumerate(coef_dict.items()):
+        x_num = np.arange(len(x_vals))
+        for j, w_ij in enumerate(weights):
+            if i == 0:
+                axs[j, i].set_ylabel(targ_fields[j])
+            l = axs[j, i].plot(x_num, w_ij)
+            if i == 0 and j == 0:
+                use_label = label
+            else:
+                use_label = ''
+            axs[j, i].plot(x_num, w_ij, 'o', color=l[0].get_color(),
+                           label=use_label)
+            axs[j, i].set_xticks(x_num)
+            axs[j, i].set_xticklabels(x_vals)
+            gpl.clean_plot(axs[j, i], i)
+            if i > 0:
+                axs[j, i].sharey(axs[j, i - 1])
+                axs[j, i].autoscale()
+            if j == len(weights) - 1:
+                axs[j, i].set_xlabel(fn)
+            if i == 0 and j == 0 and len(label) > 0:  
+                axs[j, i].legend(frameon=False)
+            gpl.add_hlines(0, axs[j, i])
+    return axs
+
 def plot_context_scatter(m, n_samps=1000, ax=None, fwid=3):
     if ax is None:
         f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
@@ -77,6 +107,28 @@ def plot_context_clusters(m, n_samps=1000, ax=None, fwid=3):
     vmax = np.mean(a_full) + np.std(a_full)
     ax.imshow(a_full[:, sort_inds], aspect='auto', vmax=vmax)
     return ax
+
+def compare_act_weight_clusters(m, n_samps=1000, axs=None, fwid=3):
+    g_cluster = ma.cluster_graph(m)
+    a_cluster = ma.infer_activity_clusters(m, use_mean=True, n_samps=n_samps)
+
+    g_sort = np.argsort(g_cluster)
+    a_sort = np.argsort(a_cluster)
+
+    act = np.concatenate(ma.sample_all_contexts(m, use_mean=False,
+                                                n_samps=n_samps),
+                         axis=0)
+
+    vmax = np.mean(act) + np.std(act)
+
+    if axs is None:
+        f, axs = plt.subplots(2, 1, figsize=(fwid, fwid*2))
+    (ax1, ax2) = axs
+    ax1.imshow(act[:, g_sort], vmax=vmax)
+    ax2.imshow(act[:, a_sort], vmax=vmax)
+
+    ax1.set_aspect('auto')
+    ax2.set_aspect('auto')
 
 def plot_model_list_activity(m_list, fwid=3, axs=None, **kwargs):
     n_plots = len(m_list)
