@@ -87,7 +87,8 @@ def _add_model(df, md, full_mat_keys=default_fm_keys,
             if mk in geometry_keys:
                 row_dict[mk] = np.mean(vk_ind)
             if mk in loss_keys:
-                row_dict[mk] = vk_ind[-1]/n_tasks[i]
+                lv = vk_ind[vk_ind > 0][-1]
+                row_dict[mk] = lv # vk_ind[-1]/n_tasks[i]
             if mk == group_key:
                 row_dict['overlap'] = _compute_group_overlap(
                     vk_ind)

@@ -380,6 +380,23 @@ def train_n_models(group_size, tasks_per_group, group_width=200, fdg=None,
          out_hs.append(h_i)
     return out_ms, out_hs
 
+def task_dimensionality(n_tasks, n_g, contexts, m_type, n_overlap=0,
+                        group_maker=ms.overlap_groups, group_inds=None):
+    inp_dim = n_g*contexts + contexts
+    source_distr = u.MultiBernoulli(.5, inp_dim)
+
+    fdg = dg.FunctionalDataGenerator(inp_dim, (300,), 400,
+                                     source_distribution=source_distr, 
+                                     use_pr_reg=True)
+    m = m_type(inp_dim, group_size=n_g, n_groups=contexts, use_dg=fdg,
+               group_maker=group_maker,
+               use_mixer=True, tasks_per_group=n_tasks, n_overlap=n_overlap,
+               single_output=True, integrate_context=True)
+    x, true, targ = m.get_x_true(group_inds=group_inds)
+    
+    return true, targ
+    
+
 def correlate_clusters(groups, w_matrix):
     w = u.make_unit_vector(np.array(w_matrix).T)
     w_abs = np.abs(w)
@@ -532,6 +549,18 @@ def _fit_clusters(act, n_components, model=skmx.GaussianMixture, use_init=False,
     labels = m.fit_predict(act.T)
     return m, labels
 
+def _quantify_model_ln(m, n, n_samps=1000, **kwargs):
+    activity = sample_all_contexts(m, n_samps=n_samps)
+    act_all = np.concatenate(activity, axis=0)
+    norm = np.mean(np.sum(np.abs(act_all)**n, axis=1))
+    return norm
+
+def quantify_model_l1(m, **kwargs):
+    return _quantify_model_ln(m, 1, **kwargs)
+
+def quantify_model_l2(m, **kwargs):
+    return _quantify_model_ln(m, 2, **kwargs)
+
 def quantify_activity_clusters(m, n_samps=1000, use_mean=True,
                                model=skmx.GaussianMixture):
     activity = sample_all_contexts(m, n_samps=n_samps, use_mean=use_mean)
@@ -594,6 +623,8 @@ def process_histories(hs, n_epochs):
     # n_epochs = hs[ind].params['epochs']
     loss = np.zeros(hs.shape + (n_epochs,))
     loss_val = np.zeros_like(loss)
+    loss[:] = np.nan
+    loss_val[:] = np.nan
     for ind in u.make_array_ind_iterator(hs.shape):
         ind_epochs = len(hs[ind].history['loss'])
         loss[ind][:ind_epochs] = hs[ind].history['loss']

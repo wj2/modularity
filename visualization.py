@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import sklearn.decomposition as skd
+import itertools as it
 
 import general.utility as u 
 import general.plotting as gpl
@@ -165,6 +166,43 @@ def plot_2context_activity_diff(fdg, m, n_samps=1000, ax=None,
     ax.set_xlabel('units')
     ax.set_ylabel('trials')
     return ax, mask
+
+def plot_task_heat(data, task_field='tasks_per_group',
+                   dim_field='args_group_width', heat_field='gm', fax=None,
+                   fwid=3, ng_field='group_size', val_field='val_loss',
+                   n_groups_field='n_groups', val_thr=.1):
+    if fax is None:
+        fax = plt.subplots(1, 1, figsize=(fwid, fwid))
+    f, ax = fax
+    n_tasks = np.unique(data[task_field])
+    widths = np.unique(data[dim_field])
+
+    combos = it.product(range(len(n_tasks)), range(len(widths)))
+    plot_arr = np.zeros((len(n_tasks), len(widths)))
+    for (nt_ind, wi_ind) in combos:
+        nt = n_tasks[nt_ind]
+        wi = widths[wi_ind]
+        mask = np.logical_and(data[task_field] == nt,
+                              data[dim_field] == wi)
+        out = data[heat_field][mask]
+        val_mask = data[val_field][mask] < val_thr
+        plot_arr[nt_ind, wi_ind] = np.nanmean(out[val_mask])
+
+    m = gpl.pcolormesh(widths, n_tasks, plot_arr, ax=ax, equal_bins=True)
+    ax.set_xlabel('group width')
+    ax.set_ylabel('n tasks')
+    f.colorbar(m, ax=ax)
+    ng = np.unique(data[ng_field])[0]
+    n_groups = np.unique(data[n_groups_field])[0]
+    x_ind = np.argmin(np.abs(2**ng - widths))
+    y_ind = np.argmin(np.abs(2**ng - n_tasks))
+    gpl.add_vlines(x_ind, ax)
+    gpl.add_hlines(y_ind, ax)
+
+    ax.plot([0, len(n_tasks)], [1, len(n_tasks) + 2])
+    x_ind2 = np.argmin(np.abs(2**(ng + n_groups - 1) - widths))    
+    gpl.add_vlines(x_ind2, ax)
+    return fax
 
 @gpl.ax_adder
 def plot_param_sweep(mod_mat, x_values, x_label='', y_label='',

@@ -38,8 +38,6 @@ def create_parser():
                         help='epochs to train model for')
     parser.add_argument('--model_batch_size', default=100, type=int,
                         help='batch size for model training')
-    parser.add_argument('--cluster_method', default='threshold',
-                        type=str, help='method for quantifying clustering')
     parser.add_argument('--cumu_weight', default=.5, type=float,
                         help='default cumulative weight')
     parser.add_argument('--n_reps', default=5, type=int,
@@ -65,7 +63,9 @@ def create_parser():
 model_dict = {'xor':ms.XORModularizer,
               'coloring':ms.ColoringModularizer,
               'linear':ms.LinearModularizer}
-clust_methods = {'gm':ma.quantify_activity_clusters}
+metric_methods = {'gm':ma.quantify_activity_clusters,
+                  'l2':ma.quantify_model_l2,
+                  'l1':ma.quantify_model_l1}
 
 if __name__ == '__main__':
     parser = create_parser()
@@ -120,10 +120,10 @@ if __name__ == '__main__':
         epochs=args.model_epochs)
     models, histories = out
 
-    clustering_results = {}
-    for cm, func in clust_methods.items():
+    metric_results = {}
+    for cm, func in metric_methods.items():
         clust = ma.apply_act_clusters_list(models, func)
-        clustering_results[cm] = clust
+        metric_results[cm] = clust
 
     if args.ccgp_fix_features is None:
         fix_feats = group_size - 1
@@ -142,7 +142,7 @@ if __name__ == '__main__':
     history['loss'], history['val_loss'] = out 
 
     all_save = {}
-    all_save.update(clustering_results)
+    all_save.update(metric_results)
     all_save.update(geometry_results)
     all_save.update(history)
     
