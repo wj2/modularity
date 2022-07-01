@@ -209,12 +209,14 @@ class Modularizer:
 
         out = self.make_model(inp_net, self.hidden_dims, self.out_dims,
                               **kwargs)
-        model, rep_model = out
+        model, rep_model, out_model = out
+        self.out_model = out_model
         self.rep_model = rep_model
         self.model = model
         self.groups = groups
         self.rng = np.random.default_rng()
         self.compiled = False
+        self.loss = None
     
     def make_model(self, inp, hidden, out, act_func=tf.nn.relu,
                    layer_type=tfkl.Dense, out_act=tf.nn.sigmoid,
@@ -254,7 +256,8 @@ class Modularizer:
         layer_list.append(tfkl.Dense(out, activation=out_act,
                                      kernel_regularizer=kernel_reg))
         enc = tfk.Sequential(layer_list)
-        return enc, rep
+        rep_out = tfk.Sequential(layer_list[-1:])
+        return enc, rep, rep_out
 
     def get_representation(self, stim, group=None):
         rep = self.rep_model(stim)
@@ -274,6 +277,7 @@ class Modularizer:
         if loss is None:
             loss = tf.losses.BinaryCrossentropy()
         self.model.compile(optimizer, loss)
+        self.loss = loss
         self.compiled = True
 
     def _generate_target_so(self, xs, group_inds):
@@ -307,6 +311,15 @@ class Modularizer:
 
     def sample_stim(self, n_samps):
         return self.rng.uniform(0, 1, size=(n_samps, self.inp_dims)) < .5
+
+    def get_ablated_loss(self, ablation_mask, group_ind=None, n_samps=1000):
+        if not self.compiled:
+            self._compile()
+        x, true, targ = self.get_x_true(n_train=n_samps, group_inds=group_ind)
+        reps = self.get_representation(x)
+        reps = reps*np.logical_not(ablation_mask)
+        out = self.out_model(reps)
+        return self.loss(targ, out)
 
     def get_x_true(self, x=None, true=None, n_train=10**5, group_inds=None):
         if true is None and x is not None:

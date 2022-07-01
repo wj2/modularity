@@ -65,7 +65,11 @@ model_dict = {'xor':ms.XORModularizer,
               'linear':ms.LinearModularizer}
 metric_methods = {'gm':ma.quantify_activity_clusters,
                   'l2':ma.quantify_model_l2,
-                  'l1':ma.quantify_model_l1}
+                  'l1':ma.quantify_model_l1,
+                  'within_act_ablation':ma.within_act_ablation,
+                  'across_act_ablation':ma.across_act_ablation,
+                  'within_graph_ablation':ma.within_graph_ablation,
+                  'across_graph_ablation':ma.across_graph_ablation}
 
 if __name__ == '__main__':
     parser = create_parser()

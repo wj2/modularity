@@ -109,9 +109,10 @@ def plot_context_clusters(m, n_samps=1000, ax=None, fwid=3):
     ax.imshow(a_full[:, sort_inds], aspect='auto', vmax=vmax)
     return ax
 
-def compare_act_weight_clusters(m, n_samps=1000, axs=None, fwid=3):
-    g_cluster = ma.cluster_graph(m)
-    a_cluster = ma.infer_activity_clusters(m, use_mean=True, n_samps=n_samps)
+def compare_act_weight_clusters(m, n_samps=1000, axs=None, fwid=3,
+                                n_clusters=None):
+    g_cluster = ma.cluster_graph(m, n_clusters=n_clusters)
+    a_cluster = ma.act_cluster(m, n_clusters=n_clusters, n_samps=n_samps)
 
     g_sort = np.argsort(g_cluster)
     a_sort = np.argsort(a_cluster)
@@ -130,6 +131,8 @@ def compare_act_weight_clusters(m, n_samps=1000, axs=None, fwid=3):
 
     ax1.set_aspect('auto')
     ax2.set_aspect('auto')
+    ax1.set_ylabel('graph clusters')
+    ax2.set_ylabel('activity clusters')
 
 def plot_model_list_activity(m_list, fwid=3, axs=None, **kwargs):
     n_plots = len(m_list)
