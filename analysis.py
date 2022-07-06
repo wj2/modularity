@@ -278,7 +278,7 @@ def avg_corr(k, n=2):
 
 def cluster_graph(m, n_clusters=None, **kwargs):
     if n_clusters is None:
-        n_clusters = m.n_groups + 1
+        n_clusters = m.n_groups 
     ws = m.model.weights
     w_ih = ws[0]
     w_ho = ws[2]
@@ -559,7 +559,7 @@ def _sort_ablate_inds(losses):
     return sort_inds
 
 def ablate_label_sets(m, unit_labels, n_samps=1000, separate_contexts=True,
-                      n_shuffs=10):
+                      n_shuffs=10, ret_null=False):
     rng = np.random.default_rng()
     clusters = np.unique(unit_labels)
     if separate_contexts:
@@ -575,16 +575,24 @@ def ablate_label_sets(m, unit_labels, n_samps=1000, separate_contexts=True,
             base_loss = m.get_ablated_loss(np.zeros_like(unit_labels, dtype=bool),
                                            n_samps=n_samps, group_ind=cl)
             c_mask = unit_labels == label
-            c_losses[i, j] = m.get_ablated_loss(c_mask, n_samps=n_samps,
-                                                group_ind=cl) - base_loss
+            c_loss =  m.get_ablated_loss(c_mask, n_samps=n_samps,
+                                         group_ind=cl)
             for k in range(n_shuffs):
                 rng.shuffle(c_mask)
-                n_losses[i, j, k] = m.get_ablated_loss(c_mask, n_samps=n_samps,
-                                                       group_ind=cl) - base_loss
+                nl = m.get_ablated_loss(c_mask, n_samps=n_samps,
+                                        group_ind=cl)
+                n_losses[i, j, k] = nl
+            null_loss = np.mean(n_losses[i, j])
+            loss_range = null_loss - base_loss
+            c_losses[i, j] = (c_loss - base_loss)/loss_range
     sort_inds = _sort_ablate_inds(c_losses)
     c_losses = c_losses[sort_inds]
     n_losses = n_losses[sort_inds]
-    return c_losses, n_losses
+    if ret_null:
+        out = c_losses, n_losses
+    else:
+        out = c_losses 
+    return c_losses
 
 def act_cluster(m, n_clusters=None, n_samps=1000, use_init=False):
     activity = sample_all_contexts(m, n_samps=n_samps, use_mean=True)
@@ -610,30 +618,26 @@ def ablation_experiment(m, n_clusters=None, n_samps=1000,
     return out
 
 def across_ablation_experiment(*args, **kwargs):
-    cl, _ = ablation_experiment(*args, n_shuffs=0, **kwargs)
+    cl = ablation_experiment(*args, n_shuffs=20, **kwargs)
 
     cols = cl.shape[1]
     diff = cl.shape[0] - cl.shape[1]
-    mask_on = np.identity(cl.shape[1], dtype=bool)
-    mask_off = ~mask_on
+    mask_off = ~np.identity(cl.shape[1], dtype=bool)
     add_row = np.zeros((diff, cols), dtype=bool)
-    mask_on = np.concatenate((mask_on, add_row),
-                             axis=0)
     mask_off = np.concatenate((mask_off, add_row),
                               axis=0)
-    out = np.mean(cl[mask_on]) - np.mean(cl[mask_off])
+    out = np.mean(cl[mask_off])
     return out   
 
 def within_ablation_experiment(*args, **kwargs):
-    cl, nl = ablation_experiment(*args, **kwargs)    
-    nl = np.mean(nl, axis=2)
+    cl = ablation_experiment(*args, **kwargs)    
     cols = cl.shape[1]
     diff = cl.shape[0] - cl.shape[1]
     mask = np.identity(cl.shape[1], dtype=bool)
     mask = np.concatenate((mask, np.zeros((diff, cols), dtype=bool)),
                           axis=0)
         
-    out = np.mean(cl[mask] - nl[mask])
+    out = np.mean(cl[mask])
     return out
 
 def within_graph_ablation(*args, **kwargs):
