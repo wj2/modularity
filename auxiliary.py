@@ -69,6 +69,7 @@ def _add_model(df, md, full_mat_keys=default_fm_keys,
     for key, v in all_args.items():
         arg_dict['args_' + key] = v
     arr_shape = list(md.values())[0].shape
+    all_rows = []
     for (i, j, k, l, m, n) in u.make_array_ind_iterator(arr_shape):
         row_dict = dict(group_size=group_size[i],
                         tasks_per_group=tasks_per_group[j],
@@ -96,13 +97,15 @@ def _add_model(df, md, full_mat_keys=default_fm_keys,
                 row_dict['overlap'] = _compute_group_overlap(
                     vk_ind)
         df_ijkl = pd.DataFrame(row_dict)
-        df = pd.concat((df, df_ijkl), ignore_index=True)
-    return df        
+        all_rows.append(df_ijkl)
+        # df = pd.concat((df, df_ijkl), ignore_index=True)
+    return all_rows
     
 def load_models(folder, file_template='modularizer_([0-9]+)-([0-9]+)',
                 file_name='model_results.pkl'):
     files = os.listdir(folder)
     df = pd.DataFrame()
+    full_list = []
     for fl in files:
         m = re.match(file_template, fl)
         if m is not None:
@@ -110,7 +113,9 @@ def load_models(folder, file_template='modularizer_([0-9]+)-([0-9]+)',
             job = m.group(2)
             full_path = os.path.join(folder, fl, file_name)
             model_dict = pickle.load(open(full_path, 'rb'))
-            df = _add_model(df, model_dict, arr_id=arr, job_id=job)
+            l = _add_model(df, model_dict, arr_id=arr, job_id=job)
+            full_list.extend(l)
+    df = pd.concat(full_list, ignore_index=True)
     return df
 
 def add_brim(row, weight_ind=2, **kwargs):

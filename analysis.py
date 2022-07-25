@@ -302,6 +302,32 @@ def cluster_graph(m, n_clusters=None, **kwargs):
     h_clusters = clusters[-(n_hidden_neurs + n_out_neurs):-n_out_neurs]
     return h_clusters
 
+def cluster_max_corr(m, n_clusters=None, n_samps=5000, ret_overlap=False,
+                     **kwargs):
+    rep_act, out_act = sample_all_contexts(m, n_samps=n_samps, 
+                                           ret_out=True)
+    masks = []
+    for i, ra_i in enumerate(rep_act):
+        oa_i = out_act[i]
+        task_masks = []
+        for j in range(oa_i.shape[1]):
+            m = sklm.LogisticRegression(penalty='l1', solver='liblinear')
+            m.fit(ra_i.numpy(), oa_i[:, j].numpy() > .5)
+            task_masks.append(np.abs(m.coef_) > 0)
+        c_mask = np.sum(task_masks, axis=0) > 0
+        masks.append(c_mask*(i + 1))
+    out = np.concatenate(masks)
+    multi_mask = np.sum(out > 0, axis=0) > 1
+    out[:, multi_mask] = 0
+    out_clusters = np.sum(out, axis=0)
+    if ret_overlap:
+        overlap = np.mean(multi_mask)
+        out = (out_clusters, overlap)
+    else:
+        out = out_clusters
+    return out
+    
+
 exp_fields = ['group_size', 'tasks_per_group', 'group_method', 'model_type',
               'group_overlap', 'n_groups', 
               'args_kernel_init_std', 'args_group_width', 'args_activity_reg',]
@@ -529,15 +555,23 @@ def quantify_clusters(groups, w_matrix, absolute=True):
     avg_out = np.mean(overlap[np.logical_not(mask)])
     return overlap, avg_in - avg_out
 
-def sample_all_contexts(m, n_samps=1000, use_mean=False):
+def sample_all_contexts(m, n_samps=1000, use_mean=False, ret_out=False):
     n_g = m.n_groups
     activity = []
+    out_act = []
     for i in range(n_g):
-        _, _, reps_i = m.sample_reps(n_samps, context=i)
+        _, samps_i, reps_i = m.sample_reps(n_samps, context=i)
         if use_mean:
             reps_i = np.mean(reps_i, axis=0, keepdims=True)
-        activity.append(reps_i) 
-    return activity
+        out_act_i = m.model(samps_i)
+        
+        activity.append(reps_i)
+        out_act.append(out_act_i)
+    if ret_out:
+        out = (activity, out_act)
+    else:
+        out = activity
+    return out
 
 def _fit_clusters(act, n_components, model=skmx.GaussianMixture, use_init=False,
                   demean=True):
@@ -640,6 +674,14 @@ def within_ablation_experiment(*args, **kwargs):
     out = np.mean(cl[mask])
     return out
 
+def within_max_corr_ablation(*args, **kwargs):
+    return within_ablation_experiment(*args, cluster_method=cluster_max_corr,
+                                      **kwargs)
+
+def across_max_corr_ablation(*args, **kwargs):
+    return across_ablation_experiment(*args, cluster_method=cluster_max_corr,
+                                      **kwargs)
+
 def within_graph_ablation(*args, **kwargs):
     return within_ablation_experiment(*args, cluster_method=cluster_graph,
                                       **kwargs)
@@ -680,6 +722,10 @@ def quantify_activity_clusters(m, n_samps=1000, use_mean=True,
     f_score = m_full.score(a_full.T)
     o_score = m_one.score(a_full.T)
     return max(f_score, fp1_score) - o_score
+
+def quantify_max_corr_clusters(m, n_samps=5000):
+    clusters, overlap = cluster_max_corr(m, n_samps=n_samps, ret_overlap=True)
+    return 1 - np.mean(overlap)
 
 def apply_act_clusters_list(models, func=quantify_activity_clusters, **kwargs):
     clust = np.zeros(models.shape)

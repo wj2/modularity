@@ -110,13 +110,11 @@ def plot_context_clusters(m, n_samps=1000, ax=None, fwid=3):
     return ax
 
 def compare_act_weight_clusters(m, n_samps=1000, axs=None, fwid=3,
-                                n_clusters=None):
-    g_cluster = ma.cluster_graph(m, n_clusters=n_clusters)
-    a_cluster = ma.act_cluster(m, n_clusters=n_clusters, n_samps=n_samps)
-
-    g_sort = np.argsort(g_cluster)
-    a_sort = np.argsort(a_cluster)
-
+                                n_clusters=None,
+                                methods=(ma.cluster_graph,
+                                         ma.act_cluster,
+                                         ma.cluster_max_corr)):
+    
     act = np.concatenate(ma.sample_all_contexts(m, use_mean=False,
                                                 n_samps=n_samps),
                          axis=0)
@@ -124,15 +122,15 @@ def compare_act_weight_clusters(m, n_samps=1000, axs=None, fwid=3,
     vmax = np.mean(act) + np.std(act)
 
     if axs is None:
-        f, axs = plt.subplots(2, 1, figsize=(fwid, fwid*2))
-    (ax1, ax2) = axs
-    ax1.imshow(act[:, g_sort], vmax=vmax)
-    ax2.imshow(act[:, a_sort], vmax=vmax)
+        f, axs = plt.subplots(len(methods), 1, figsize=(fwid, fwid*len(methods)),
+                              squeeze=False)
+    for i, method in enumerate(methods):
+        m_cluster = method(m, n_clusters=n_clusters)
+        m_sort = np.argsort(m_cluster)
+        axs[i, 0].imshow(act[:, m_sort], vmax=vmax)
 
-    ax1.set_aspect('auto')
-    ax2.set_aspect('auto')
-    ax1.set_ylabel('graph clusters')
-    ax2.set_ylabel('activity clusters')
+        axs[i, 0].set_aspect('auto')
+        axs[i, 0].set_ylabel(method.__name__)
 
 def plot_model_list_activity(m_list, fwid=3, axs=None, **kwargs):
     n_plots = len(m_list)
@@ -173,7 +171,7 @@ def plot_2context_activity_diff(fdg, m, n_samps=1000, ax=None,
 def plot_task_heat(data, task_field='tasks_per_group',
                    dim_field='args_group_width', heat_field='gm', fax=None,
                    fwid=3, ng_field='group_size', val_field='val_loss',
-                   n_groups_field='n_groups', val_thr=.1):
+                   n_groups_field='n_groups', val_thr=.1, skip_y=0):
     if fax is None:
         fax = plt.subplots(1, 1, figsize=(fwid, fwid))
     f, ax = fax
@@ -191,14 +189,15 @@ def plot_task_heat(data, task_field='tasks_per_group',
         val_mask = data[val_field][mask] < val_thr
         plot_arr[nt_ind, wi_ind] = np.nanmean(out[val_mask])
 
-    m = gpl.pcolormesh(widths, n_tasks, plot_arr, ax=ax, equal_bins=True)
+    m = gpl.pcolormesh(widths, n_tasks[skip_y:], plot_arr[skip_y:], ax=ax,
+                       equal_bins=True)
     ax.set_xlabel('group width')
     ax.set_ylabel('n tasks')
     f.colorbar(m, ax=ax)
     ng = np.unique(data[ng_field])[0]
     n_groups = np.unique(data[n_groups_field])[0]
     x_ind = np.argmin(np.abs(2**ng - widths))
-    y_ind = np.argmin(np.abs(2**ng - n_tasks))
+    y_ind = np.argmin(np.abs(2**ng - n_tasks[skip_y:]))
     gpl.add_vlines(x_ind, ax)
     gpl.add_hlines(y_ind, ax)
 
