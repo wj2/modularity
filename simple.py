@@ -312,14 +312,20 @@ class Modularizer:
     def sample_stim(self, n_samps):
         return self.rng.uniform(0, 1, size=(n_samps, self.inp_dims)) < .5
 
-    def get_ablated_loss(self, ablation_mask, group_ind=None, n_samps=1000):
+    def get_ablated_loss(self, ablation_mask, group_ind=None, n_samps=1000,
+                         ret_err_rate=True):
         if not self.compiled:
             self._compile()
         x, true, targ = self.get_x_true(n_train=n_samps, group_inds=group_ind)
         reps = self.get_representation(x)
         reps = reps*np.logical_not(ablation_mask)
         out = self.out_model(reps)
-        return self.loss(targ, out)
+        if ret_err_rate:
+            out_binary = out > .5
+            out = 1 - np.mean(out_binary == targ, axis=(0, 1))
+        else:
+            out = self.loss(targ, out)
+        return out
 
     def get_x_true(self, x=None, true=None, n_train=10**5, group_inds=None):
         if true is None and x is not None:

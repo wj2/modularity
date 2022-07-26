@@ -9,6 +9,7 @@ import sklearn.mixture as skmx
 import itertools as it
 import scipy.stats as sts
 import scipy.special as ss
+import scipy.optimize as spo
 import tensorflow as tf
 
 tfk = tf.keras
@@ -587,14 +588,14 @@ def _fit_clusters(act, n_components, model=skmx.GaussianMixture, use_init=False,
     return m, labels
 
 def _sort_ablate_inds(losses):
-    sort_inds = np.argmax(losses, axis=0)
-    miss_ind = set(np.arange(losses.shape[0])).difference(sort_inds)
-    if len(miss_ind) > 0:
-        sort_inds = np.concatenate((sort_inds, np.array(list(miss_ind))))
+    losses_added = np.concatenate((losses, np.zeros((losses.shape[0], 1))),
+                                  axis=1)
+    _, sort_inds = spo.linear_sum_assignment(losses_added.T,
+                                             maximize=True)
     return sort_inds
 
-def ablate_label_sets(m, unit_labels, n_samps=1000, separate_contexts=True,
-                      n_shuffs=10, ret_null=False):
+def ablate_label_sets(m, unit_labels, n_samps=5000, separate_contexts=True,
+                      n_shuffs=10, ret_null=False, eps=.01):
     rng = np.random.default_rng()
     clusters = np.unique(unit_labels)
     if separate_contexts:
@@ -618,8 +619,9 @@ def ablate_label_sets(m, unit_labels, n_samps=1000, separate_contexts=True,
                                         group_ind=cl)
                 n_losses[i, j, k] = nl
             null_loss = np.mean(n_losses[i, j])
-            loss_range = null_loss - base_loss
-            c_losses[i, j] = (c_loss - base_loss)/loss_range
+            null_loss_range = max(null_loss - base_loss, eps)
+            manip_loss_range = max(c_loss - base_loss, eps)
+            c_losses[i, j] = np.log(manip_loss_range/null_loss_range)
     sort_inds = _sort_ablate_inds(c_losses)
     c_losses = c_losses[sort_inds]
     n_losses = n_losses[sort_inds]

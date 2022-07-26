@@ -171,7 +171,8 @@ def plot_2context_activity_diff(fdg, m, n_samps=1000, ax=None,
 def plot_task_heat(data, task_field='tasks_per_group',
                    dim_field='args_group_width', heat_field='gm', fax=None,
                    fwid=3, ng_field='group_size', val_field='val_loss',
-                   n_groups_field='n_groups', val_thr=.1, skip_y=0):
+                   n_groups_field='n_groups', val_thr=.1, skip_y=0,
+                   vmax=None):
     if fax is None:
         fax = plt.subplots(1, 1, figsize=(fwid, fwid))
     f, ax = fax
@@ -190,7 +191,7 @@ def plot_task_heat(data, task_field='tasks_per_group',
         plot_arr[nt_ind, wi_ind] = np.nanmean(out[val_mask])
 
     m = gpl.pcolormesh(widths, n_tasks[skip_y:], plot_arr[skip_y:], ax=ax,
-                       equal_bins=True)
+                       equal_bins=True, vmax=vmax)
     ax.set_xlabel('group width')
     ax.set_ylabel('n tasks')
     f.colorbar(m, ax=ax)
