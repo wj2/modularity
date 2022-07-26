@@ -43,7 +43,9 @@ default_cluster_keys = ('sim_diffs', 'threshold_diffs', 'cosine_sim_diffs',
                         'cosine_sim_absolute_diffs', 'brim_diffs',
                         'gm', 'l2', 'l1', 'within_act_ablation',
                         'across_act_ablation', 'within_graph_ablation',
-                        'across_graph_ablation')
+                        'across_graph_ablation',
+                        'max_corr', 'within_max_corr_ablation',
+                        'across_max_corr_ablation')
 default_geometry_keys = ('shattering', 'within_ccgp', 'across_ccgp')
 default_loss_keys = ('loss', 'val_loss')
 

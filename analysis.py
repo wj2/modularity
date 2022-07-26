@@ -318,10 +318,11 @@ def cluster_max_corr(m, n_clusters=None, n_samps=5000, ret_overlap=False,
         masks.append(c_mask*(i + 1))
     out = np.concatenate(masks)
     multi_mask = np.sum(out > 0, axis=0) > 1
+    any_mask = np.sum(out > 0, axis=0) > 0
     out[:, multi_mask] = 0
     out_clusters = np.sum(out, axis=0)
     if ret_overlap:
-        overlap = np.mean(multi_mask)
+        overlap = np.sum(multi_mask)/np.sum(any_mask)
         out = (out_clusters, overlap)
     else:
         out = out_clusters
@@ -725,7 +726,7 @@ def quantify_activity_clusters(m, n_samps=1000, use_mean=True,
 
 def quantify_max_corr_clusters(m, n_samps=5000):
     clusters, overlap = cluster_max_corr(m, n_samps=n_samps, ret_overlap=True)
-    return 1 - np.mean(overlap)
+    return 1 - overlap
 
 def apply_act_clusters_list(models, func=quantify_activity_clusters, **kwargs):
     clust = np.zeros(models.shape)
