@@ -203,7 +203,7 @@ def plot_task_heat(data, task_field='tasks_per_group',
     gpl.add_hlines(y_ind, ax)
 
     ax.plot([0, len(n_tasks)], [1, len(n_tasks) + 2])
-    x_ind2 = np.argmin(np.abs(2**(ng + n_groups - 1) - widths))    
+    x_ind2 = np.argmin(np.abs(n_groups*2**(ng) - widths))    
     gpl.add_vlines(x_ind2, ax)
     return fax
 

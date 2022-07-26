@@ -588,9 +588,10 @@ def _fit_clusters(act, n_components, model=skmx.GaussianMixture, use_init=False,
     return m, labels
 
 def _sort_ablate_inds(losses):
-    losses_added = np.concatenate((losses, np.zeros((losses.shape[0], 1))),
-                                  axis=1)
-    _, sort_inds = spo.linear_sum_assignment(losses_added.T,
+    if losses.shape[0] > losses.shape[1]:
+        losses = np.concatenate((losses, np.zeros((losses.shape[0], 1))),
+                                axis=1)
+    _, sort_inds = spo.linear_sum_assignment(losses.T,
                                              maximize=True)
     return sort_inds
 
@@ -604,6 +605,9 @@ def ablate_label_sets(m, unit_labels, n_samps=5000, separate_contexts=True,
     else:
         n_contexts = 1
         con_list = (None,)
+    if len(clusters) < n_contexts:
+        diff = len(clusters) - n_contexts
+        clusters = np.concatenate((clusters, np.arange(-diff, 0)))
     c_losses = np.zeros((len(clusters), n_contexts))
     n_losses = np.zeros((len(clusters), n_contexts, n_shuffs))
     for i, label in enumerate(clusters):
