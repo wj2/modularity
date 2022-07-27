@@ -159,9 +159,13 @@ class Modularizer:
             inp_dims_anc = inp_dims
         if n_groups is None:
             n_groups = int(np.floor(inp_dims / group_size))
+        if integrate_context:
+            sub_context = n_groups
+        else:
+            sub_context = 0
         if groups is None:
-            groups = group_maker(inp_dims_anc, group_size, n_groups,
-                                 n_overlap=n_overlap)
+            groups = group_maker(inp_dims_anc - sub_context, group_size,
+                                 n_groups, n_overlap=n_overlap)
         if common_augmented_inputs:
             ai_group = np.arange(inp_dims, inp_dims + augmented_inputs)
             groups = np.concatenate((groups, np.tile(ai_group,
