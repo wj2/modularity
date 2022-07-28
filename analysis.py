@@ -601,12 +601,12 @@ def ablate_label_sets(m, unit_labels, n_samps=5000, separate_contexts=True,
     clusters = np.unique(unit_labels)
     if separate_contexts:
         n_contexts = m.n_groups
-        con_list = range(n_contexts)
+        con_list = np.arange(n_contexts)
     else:
         n_contexts = 1
         con_list = (None,)
     if len(clusters) < n_contexts:
-        diff = len(clusters) - n_contexts
+        diff = n_contexts - len(clusters)
         clusters = np.concatenate((clusters, np.arange(-diff, 0)))
     c_losses = np.zeros((len(clusters), n_contexts))
     n_losses = np.zeros((len(clusters), n_contexts, n_shuffs))
