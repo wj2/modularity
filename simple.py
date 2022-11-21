@@ -10,6 +10,7 @@ import numpy as np
 
 import general.utility as u
 import disentangled.aux as da
+import disentangled.disentanglers as dd
 import disentangled.regularizer as dr
 
 
@@ -26,6 +27,10 @@ def generate_linear_tasks(n_inp, n_tasks=1):
     task = np.random.default_rng().normal(size=(n_tasks, n_inp))
     task = u.make_unit_vector(task)
     return task
+
+def apply_continuous_task(x, task=None):
+    out = np.stack(list(t(x) for t in task), axis=1)
+    return out
 
 def apply_linear_task(x, task=None):
     x_exp = np.expand_dims(x, 1)
@@ -70,13 +75,13 @@ def overlap_groups(inp_dims, group_size, n_groups, *args,
                    n_overlap=1, **kwargs):
     rng = np.random.default_rng()
     g_size = (n_groups, group_size - n_overlap)
-    samp_dims = group_size*n_groups
-    assert samp_dims < inp_dims
+    samp_dims = n_groups*g_size[1]
+    assert g_size[1] < inp_dims
     groups = rng.choice(samp_dims, size=g_size, replace=False)
     g_o = rng.choice(range(samp_dims, inp_dims),
                      size=(1, n_overlap), replace=False)
     groups_over = np.tile(g_o, (n_groups, 1))
-    groups = np.concatenate((groups, groups_over), axis=1)
+    groups = np.concatenate((groups, groups_over), axis=1).astype(int)
     return groups
 
 class Mixer:
@@ -221,9 +226,12 @@ class Modularizer:
         self.rng = np.random.default_rng()
         self.compiled = False
         self.loss = None
+        self.layer_models = None
     
     def make_model(self, inp, hidden, out, act_func=tf.nn.relu,
                    layer_type=tfkl.Dense, out_act=tf.nn.sigmoid,
+                   additional_hidden=(),
+                   additional_same_reg=True,
                    noise=.1, inp_noise=.01,
                    kernel_reg_type=tfk.regularizers.L2,
                    kernel_reg_weight=0,
@@ -247,6 +255,20 @@ class Modularizer:
             act_reg = act_reg_type(act_reg_weight)
         else:
             act_reg = None
+        if additional_same_reg:
+            use_ah = dict(            
+                kernel_regularizer=kernel_reg,
+                activity_regularizer=act_reg,
+                kernel_initializer=k_init,
+            )
+        else:
+            use_ah = dict()
+        use_ah.update(layer_params)
+
+        for ah in additional_hidden:
+            lh_ah = layer_type(ah, activation=act_func,
+                            **use_ah)
+            layer_list.append(lh_ah)
         lh = layer_type(hidden, activation=act_func,
                         kernel_regularizer=kernel_reg,
                         activity_regularizer=act_reg,
@@ -267,9 +289,16 @@ class Modularizer:
         rep = self.rep_model(stim)
         return rep
 
+    def get_layer_representation(self, stim, layer=-1, group=None):
+        if self.layer_models is None:
+            self.layer_models = dd.IntermediateLayers(self.model, use_i=layer)
+        return self.layer_models.get_representation(stim, layer_ind=layer)
+
     def sample_reps(self, n_samps=1000, context=None):
         if context is not None:
             group_inds = np.ones(n_samps, dtype=int)*context
+        else:
+            group_inds = None
         out = self.get_x_true(n_train=n_samps, group_inds=group_inds)
         x, true, targ = out
         rep = self.get_representation(x)
@@ -316,14 +345,31 @@ class Modularizer:
     def sample_stim(self, n_samps):
         return self.rng.uniform(0, 1, size=(n_samps, self.inp_dims)) < .5
 
-    def get_ablated_loss(self, ablation_mask, group_ind=None, n_samps=1000,
-                         ret_err_rate=True):
+    def get_loss(self, **kwargs):
+        return self.get_ablated_loss(ablation_mask=None, **kwargs)
+
+    def get_transformed_out(self, x):
+        reps = self.get_representation(x)
+        ws, bs = self.out_model.weights
+        out = np.dot(reps, ws) + bs
+        return out
+    
+    def get_ablated_loss(self, ablation_mask=None, group_ind=None, n_samps=1000,
+                         ret_err_rate=True, layer=None):
         if not self.compiled:
             self._compile()
         x, true, targ = self.get_x_true(n_train=n_samps, group_inds=group_ind)
-        reps = self.get_representation(x)
-        reps = reps*np.logical_not(ablation_mask)
-        out = self.out_model(reps)
+        if layer is None:
+            reps = self.get_representation(x)
+            if ablation_mask is not None:
+                reps = reps*np.logical_not(ablation_mask)
+            out = self.out_model(reps)
+        else:
+            for i, layer_m in enumerate(self.model.layers):
+                x = layer_m(x)
+                if i == layer and ablation_mask is not None:
+                    x = x*np.logical_not(ablation_mask)
+            out = x
         if ret_err_rate:
             out_binary = out > .5
             out = 1 - np.mean(out_binary == targ, axis=(0, 1))
@@ -406,16 +452,31 @@ class ColoringModularizer(Modularizer):
                                       merger=task_merger))
         self.group_func = tuple(group_func)
 
-class IdentityModularizer:
+class IdentityModularizer(Modularizer):
 
     def __init__(self, inp_dims, group_maker=sequential_groups, hidden_dims=100,
-                 group_size=2, n_groups=None, **kwargs):
+                 group_size=2, provide_groups=None, n_groups=None,
+                 integrate_context=True,  **kwargs):
         self.hidden_dims = hidden_dims
         if n_groups is None:
             n_groups = int(np.floor(inp_dims / group_size))
         if group_size is None:
             group_size = int(np.floor(inp_dims / n_groups))
-        self.groups = group_maker(inp_dims, group_size, n_groups)
+        if provide_groups is None:
+            self.groups = group_maker(inp_dims, group_size, n_groups)
+        else:
+            self.groups = provide_groups
+        self.integrate_context = integrate_context
+        self.n_groups = len(self.groups)
+
+    @classmethod
+    def copy_groups(cls, model):
+        hd = model.inp_net
+        mg = model.groups
+        inp_dims = model.inp_dims
+        ic = model.integrate_context
+        return cls(inp_dims, provide_groups=mg, hidden_dims=hd,
+                   integrate_context=ic)
 
     def get_representation(self, stim, group=None):
         return stim
@@ -433,3 +494,77 @@ class LinearModularizer(Modularizer):
             group_func.append(
                 self._make_linear_task_func(len(g), n_tasks=tasks_per_group))
         self.group_func = tuple(group_func)
+
+class LinearContinuousModularizer(LinearModularizer):
+
+    def _make_linear_task_func(self, n_g, n_tasks=1, offset_var=.4, **kwargs):
+        out = da.generate_partition_functions(n_g, n_funcs=n_tasks,
+                                              offset_var=offset_var,
+                                              **kwargs)
+        return ft.partial(apply_continuous_task, task=out[0])
+
+group_maker_dict = {
+    'overlap':overlap_groups,
+}
+act_func_dict = {
+    'relu':tf.nn.relu,
+}
+model_type_dict = {
+    'linear':LinearModularizer,
+}
+    
+def train_modularizer(fdg, verbose=False, params=None,
+                      group_maker_dict=group_maker_dict,
+                      act_func_dict=act_func_dict,
+                      model_type_dict=model_type_dict,
+                      **kwargs):
+    if params is not None:
+        gs = params.getint('group_size')
+        n_overlap = params.getint('n_overlap')
+        group_maker = group_maker_dict[params.get('group_maker')]
+        tasks_per_group = params.getint('tasks_per_group')
+        n_groups = params.getint('n_groups')
+        sigma = params.getfloat('sigma')
+        inp_noise = params.getfloat('inp_noise')
+        act_reg = params.getfloat('act_reg')
+        group_width = params.getint('group_width')
+        use_mixer = params.getboolean('use_mixer')
+        act_func =act_func_dict[params.get('act_func')]
+        print(params.get('hiddens'))
+        hiddens = params.getlist('hiddens', typefunc=int)
+        print(hiddens)
+        train_epochs = params.getint('train_epochs')
+        single_output = params.getboolean('single_output')
+        integrate_context = params.getboolean('integrate_context')
+        model_type = model_type_dict[params.get('model_type')]
+
+        config_dict = {
+            'group_size':group_size,
+            'n_groups':n_groups,
+            'group_maker':group_maker,
+            'use_dg':fdg,
+            'group_width':group_width,
+            'use_mixer':use_mixer,
+            'tasks_per_group':tasks_per_group,
+            'act_func':act_func,
+            'additional_hiddens':hiddens,
+            'act_reg_weight':act_reg,
+            'noise':sigma,
+            'inp_noise':inp_noise,
+            'n_overlap':n_overlap,
+            'constant_init':const_init,
+            'single_output':single_output,
+            'integrate_context':integrate_context,
+            'train_epochs':train_epochs,
+            'model_type':model_type,
+        }
+    else:
+        config_dict = {'use_fdg':fdg}
+    config_dict.update(kwargs)
+    inp_dim = config_dict['use_fdg'].input_dim
+    train_epochs = config_dict.pop('train_epochs')
+    model_type = config_dict.pop('model_type')
+        
+    m = model_type(inp_dim, **config_dict)
+    h = m.fit(epochs=train_epochs, verbose=verbose)
+    return m, h

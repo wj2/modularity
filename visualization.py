@@ -54,14 +54,27 @@ def plot_clustering_metrics(df, x='tasks_per_group',
         sns.scatterplot(data=df, x=x, y=cn, ax=axs[0, i], **kwargs)
     return axs
 
-def plot_linear_model(coef_dict, targ_fields, axs=None, fwid=3, label=''):
+def plot_linear_model(coef_dict, targ_fields, inter=None, axs=None,
+                      fwid=3, label='', use_num=False):
     n_rows = len(targ_fields)
     n_cols = len(coef_dict)
+    if inter is not None:
+        n_cols = n_cols + 1
     if axs is None:
         f, axs = plt.subplots(n_rows, n_cols, figsize=(fwid*n_cols, fwid*n_rows))
+    else:
+        f = None
     for i, (fn, (x_vals, weights)) in enumerate(coef_dict.items()):
-        x_num = np.arange(len(x_vals))
+        if use_num:
+            x_num = np.arange(len(x_vals))
+        else:
+            x_num = np.array(x_vals, dtype=float)
         for j, w_ij in enumerate(weights):
+            if inter is not None and i == 0:
+                axs[j, -1].plot([0], [inter[j]], 'o')
+                gpl.clean_plot(axs[j, -1], 0)
+                gpl.clean_plot_bottom(axs[j, -1])
+                axs[j, -1].set_xlabel('intercept')
             if i == 0:
                 axs[j, i].set_ylabel(targ_fields[j])
             l = axs[j, i].plot(x_num, w_ij)
@@ -71,8 +84,9 @@ def plot_linear_model(coef_dict, targ_fields, axs=None, fwid=3, label=''):
                 use_label = ''
             axs[j, i].plot(x_num, w_ij, 'o', color=l[0].get_color(),
                            label=use_label)
-            axs[j, i].set_xticks(x_num)
-            axs[j, i].set_xticklabels(x_vals)
+            if use_num:
+                axs[j, i].set_xticks(x_num)
+                axs[j, i].set_xticklabels(x_vals)
             gpl.clean_plot(axs[j, i], i)
             if i > 0:
                 axs[j, i].sharey(axs[j, i - 1])
@@ -82,13 +96,14 @@ def plot_linear_model(coef_dict, targ_fields, axs=None, fwid=3, label=''):
             if i == 0 and j == 0 and len(label) > 0:  
                 axs[j, i].legend(frameon=False)
             gpl.add_hlines(0, axs[j, i])
-    return axs
+    return f, axs
 
-def plot_context_scatter(m, n_samps=1000, ax=None, fwid=3):
+def plot_context_scatter(m, n_samps=1000, ax=None, fwid=3,
+                         from_layer=None):
     if ax is None:
         f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
     labels, act = ma.infer_activity_clusters(m, n_samps=n_samps, use_mean=True,
-                                             ret_act=True)
+                                             ret_act=True, from_layer=from_layer)
     if act.shape[1] > 2:
         p = skd.PCA(2)
         act = p.fit_transform(act)
@@ -97,17 +112,50 @@ def plot_context_scatter(m, n_samps=1000, ax=None, fwid=3):
         ax.plot(act[mask, 0], act[mask, 1], 'o')
     return ax
 
-def plot_context_clusters(m, n_samps=1000, ax=None, fwid=3):
+def plot_context_clusters(m, n_samps=1000, ax=None, fwid=3, from_layer=None):
     if ax is None:
         f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
     labels = ma.infer_activity_clusters(m, n_samps=n_samps,
-                                        use_mean=True)
-    activity = ma.sample_all_contexts(m, n_samps=n_samps, use_mean=False)
+                                        use_mean=True, from_layer=from_layer)
+    activity = ma.sample_all_contexts(m, n_samps=n_samps, use_mean=False,
+                                      from_layer=from_layer)
     sort_inds = np.argsort(labels)
     a_full = np.concatenate(activity, axis=0)
     vmax = np.mean(a_full) + np.std(a_full)
     ax.imshow(a_full[:, sort_inds], aspect='auto', vmax=vmax)
     return ax
+
+def plot_metrics(*metrics, labels=None, axs=None, fwid=1.5,
+                 metric_names=None, flat=True, **kwargs):
+    if labels is None:
+        labels = ('',)*len(metrics[0])
+    if metric_names is None:
+        metric_names = ('',)*len(metrics) 
+
+    if flat:
+        n_rows = 1
+    else:
+        n_rows = metrics[0].shape[1]
+    
+    if axs is None:
+        f, axs = plt.subplots(n_rows, len(metrics),
+                              figsize=(fwid*len(metrics), n_rows*fwid),
+                              squeeze=False, sharex=True, sharey=True)
+    for i, metric in enumerate(metrics):
+        for j in range(metric.shape[1]):
+            if flat:
+                j_ax = 0
+            else:
+                j_ax = j
+            axs[j_ax, i].violinplot(metric[:, j], positions=[0, 1, 2],
+                                    **kwargs)
+            gpl.clean_plot(axs[j_ax, i], i)
+            axs[j_ax, i].set_xticks([0, 1, 2])
+            axs[j_ax, i].set_xticklabels(labels, rotation=90)
+            gpl.add_hlines(.5, axs[j_ax, i])
+            axs[j_ax, i].set_title(metric_names[i])
+            axs[j_ax, 0].set_ylabel('decoding performance')
+    return f, axs
 
 def compare_act_weight_clusters(m, n_samps=1000, axs=None, fwid=3,
                                 n_clusters=None,
@@ -135,12 +183,18 @@ def compare_act_weight_clusters(m, n_samps=1000, axs=None, fwid=3,
 def plot_model_list_activity(m_list, fwid=3, axs=None, **kwargs):
     n_plots = len(m_list)
     if axs is None:
-        f, axs = plt.subplots(2, n_plots, figsize=(n_plots*fwid, 2*fwid))
+        f, axs = plt.subplots(2, n_plots, figsize=(n_plots*fwid, 2*fwid),
+                              sharey='row', sharex='row')
     for i, m in enumerate(m_list):
         plot_context_clusters(m, ax=axs[0, i], **kwargs)
         plot_context_scatter(m, ax=axs[1, i], **kwargs)
         diff = ma.quantify_activity_clusters(m)
+        axs[0, i].set_xlabel('units')
         axs[1, i].set_title('cluster diff = {:.2f}'.format(diff))
+        axs[1, i].set_xlabel('activity in context 1')
+        axs[1, i].set_ylabel('activity in context 2')
+    axs[0, 0].set_ylabel('stimuli')
+    return f, axs
 
 def plot_2context_activity_diff(fdg, m, n_samps=1000, ax=None,
                                 integrate_context=False, n_groups=2,

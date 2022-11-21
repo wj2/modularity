@@ -334,10 +334,10 @@ exp_fields = ['group_size', 'tasks_per_group', 'group_method', 'model_type',
               'group_overlap', 'n_groups', 
               'args_kernel_init_std', 'args_group_width', 'args_activity_reg',]
 target_fields = ['gm', 'shattering', 'within_ccgp', 'across_ccgp']
-def explain_clustering(df, target_field=target_fields,
+def explain_clustering(df, target_fields=target_fields,
                        explainer_fields=exp_fields):
     targ = df[target_fields]
-    targ = targ - np.mean(targ, axis=0)
+    targ = targ # - np.mean(targ, axis=0)
     ohe = skp.OneHotEncoder()
     preds = ohe.fit_transform(df[explainer_fields])
     fnames = ohe.get_feature_names_out(explainer_fields)
@@ -345,13 +345,73 @@ def explain_clustering(df, target_field=target_fields,
     r.fit(preds, targ)
 
     coefs_all = r.coef_
+    inter_all = r.intercept_
     out_coefs = {}
     for fn in explainer_fields:
         mask = np.array(list((fn in el) for el in fnames))
         vals = list(el.split('_')[-1] for i, el in enumerate(fnames)
                     if mask[i])
         out_coefs[fn] = (vals, coefs_all[:, mask])
-    return out_coefs, target_fields
+    return out_coefs, inter_all, target_fields
+
+def _task_dim(m, group_dim=False, noncon_dim=False, use_group=0,
+              n_samps=1000, diff_break=True):
+    if group_dim:
+        _, _, targ = m.get_x_true(group_inds=use_group, n_train=n_samps)
+    elif noncon_dim:
+        gs = m.groups
+        g0 = gs[0][0]
+        _, true, targ = m.get_x_true(n_train=2*n_samps)
+        mask = true[:, g0] == 1
+        targ = targ[mask]
+    else:
+        _, _, targ = m.get_x_true(n_train=n_samps)
+        
+    pr, pv = u.participation_ratio(targ, ret_pv=True)
+    if diff_break:
+        dim = np.argmax(np.abs(np.diff(pv))) + 1
+    else:
+        dim = pr
+    return dim, pv
+
+@u.arg_list_decorator
+def task_dimensionality(
+        group_size,
+        n_overlap,
+        tasks_per_group,
+        n_groups, 
+        group_maker=ms.overlap_groups,
+        n_reps=3,
+        inp_dim=20,
+        models={'linear':ms.LinearModularizer,
+                'coloring':ms.ColoringModularizer},
+):    
+    out_dims_dict = {}
+    out_pv_dict = {}
+    for key, model in models.items():
+        dims_tot = np.zeros((len(group_size), len(n_overlap), len(tasks_per_group),
+                             len(n_groups), n_reps))
+        dims_wi = np.zeros_like(dims_tot)
+        dims_nc = np.zeros_like(dims_tot)
+        pv_tot = np.zeros((len(group_size), len(n_overlap), len(tasks_per_group),
+                         len(n_groups), n_reps, max(tasks_per_group)))
+        pv_wi = np.zeros_like(pv_tot)
+        pv_nc = np.zeros_like(pv_tot)
+    
+        for ind in u.make_array_ind_iterator(dims_tot.shape):
+            (i, j, k, l, m) = ind
+            m_null = model(inp_dim, group_size=group_size[i],
+                           n_groups=n_groups[l],
+                           group_maker=group_maker, 
+                           tasks_per_group=tasks_per_group[k],
+                           n_overlap=n_overlap[j],
+                           single_output=True, integrate_context=True)
+            dims_tot[ind], pv_tot[ind] = _task_dim(m_null)
+            dims_wi[ind], pv_wi[ind] = _task_dim(m_null, group_dim=True)
+            dims_nc[ind], pv_nc[ind] = _task_dim(m_null, noncon_dim=True)
+        out_dims_dict[key] = (dims_tot, dims_wi, dims_nc)
+        out_pv_dict[key] = (pv_tot, pv_wi, pv_nc)
+    return out_dims_dict, out_pv_dict
 
 def contrast_rich_lazy(inp_dim, rep_dim, init_bounds=(.01, 3), n_inits=20,
                         train_epochs=0, **kwargs):
@@ -410,21 +470,21 @@ def train_n_models(group_size, tasks_per_group, group_width=200, fdg=None,
          out_hs.append(h_i)
     return out_ms, out_hs
 
-def task_dimensionality(n_tasks, n_g, contexts, m_type, n_overlap=0,
-                        group_maker=ms.overlap_groups, group_inds=None):
-    inp_dim = n_g*contexts + contexts
-    source_distr = u.MultiBernoulli(.5, inp_dim)
+# def task_dimensionality(n_tasks, n_g, contexts, m_type, n_overlap=0,
+#                         group_maker=ms.overlap_groups, group_inds=None):
+#     inp_dim = n_g*contexts + contexts
+#     source_distr = u.MultiBernoulli(.5, inp_dim)
 
-    fdg = dg.FunctionalDataGenerator(inp_dim, (300,), 400,
-                                     source_distribution=source_distr, 
-                                     use_pr_reg=True)
-    m = m_type(inp_dim, group_size=n_g, n_groups=contexts, use_dg=fdg,
-               group_maker=group_maker,
-               use_mixer=True, tasks_per_group=n_tasks, n_overlap=n_overlap,
-               single_output=True, integrate_context=True)
-    x, true, targ = m.get_x_true(group_inds=group_inds)
+#     fdg = dg.FunctionalDataGenerator(inp_dim, (300,), 400,
+#                                      source_distribution=source_distr, 
+#                                      use_pr_reg=True)
+#     m = m_type(inp_dim, group_size=n_g, n_groups=contexts, use_dg=fdg,
+#                group_maker=group_maker,
+#                use_mixer=True, tasks_per_group=n_tasks, n_overlap=n_overlap,
+#                single_output=True, integrate_context=True)
+#     x, true, targ = m.get_x_true(group_inds=group_inds)
     
-    return true, targ
+#     return true, targ
     
 
 def correlate_clusters(groups, w_matrix):
@@ -557,12 +617,15 @@ def quantify_clusters(groups, w_matrix, absolute=True):
     avg_out = np.mean(overlap[np.logical_not(mask)])
     return overlap, avg_in - avg_out
 
-def sample_all_contexts(m, n_samps=1000, use_mean=False, ret_out=False):
+def sample_all_contexts(m, n_samps=1000, use_mean=False, ret_out=False,
+                        from_layer=None):
     n_g = m.n_groups
     activity = []
     out_act = []
     for i in range(n_g):
         _, samps_i, reps_i = m.sample_reps(n_samps, context=i)
+        if from_layer is not None:
+            reps_i = m.get_layer_representation(samps_i, layer=from_layer)
         if use_mean:
             reps_i = np.mean(reps_i, axis=0, keepdims=True)
         out_act_i = m.model(samps_i)
@@ -596,7 +659,7 @@ def _sort_ablate_inds(losses):
     return sort_inds
 
 def ablate_label_sets(m, unit_labels, n_samps=5000, separate_contexts=True,
-                      n_shuffs=10, ret_null=False, eps=.01):
+                      n_shuffs=10, ret_null=False, eps=.01, layer=None):
     rng = np.random.default_rng()
     clusters = np.unique(unit_labels)
     if separate_contexts:
@@ -613,14 +676,15 @@ def ablate_label_sets(m, unit_labels, n_samps=5000, separate_contexts=True,
     for i, label in enumerate(clusters):
         for j, cl in enumerate(con_list):
             base_loss = m.get_ablated_loss(np.zeros_like(unit_labels, dtype=bool),
-                                           n_samps=n_samps, group_ind=cl)
+                                           n_samps=n_samps, group_ind=cl,
+                                           layer=layer)
             c_mask = unit_labels == label
             c_loss =  m.get_ablated_loss(c_mask, n_samps=n_samps,
-                                         group_ind=cl)
+                                         group_ind=cl, layer=layer)
             for k in range(n_shuffs):
                 rng.shuffle(c_mask)
                 nl = m.get_ablated_loss(c_mask, n_samps=n_samps,
-                                        group_ind=cl)
+                                        group_ind=cl, layer=layer)
                 n_losses[i, j, k] = nl
             null_loss = np.mean(n_losses[i, j])
             null_loss_range = max(null_loss - base_loss, eps)
@@ -635,8 +699,10 @@ def ablate_label_sets(m, unit_labels, n_samps=5000, separate_contexts=True,
         out = c_losses 
     return c_losses
 
-def act_cluster(m, n_clusters=None, n_samps=1000, use_init=False):
-    activity = sample_all_contexts(m, n_samps=n_samps, use_mean=True)
+def act_cluster(m, n_clusters=None, n_samps=1000, use_init=False,
+                layer=None):
+    activity = sample_all_contexts(m, n_samps=n_samps, use_mean=True,
+                                   from_layer=layer)
     a_full = np.concatenate(activity, axis=0)
     if n_clusters is None:
         n_clusters = len(activity) + 1
@@ -652,10 +718,13 @@ def act_ablation(m, **kwargs):
 
 def ablation_experiment(m, n_clusters=None, n_samps=1000,
                         cluster_method=act_cluster,
-                        use_init=False, single_number=True, **kwargs):
-    hidden_clusters = cluster_method(m, n_clusters=n_clusters, n_samps=n_samps)
+                        use_init=False, single_number=True,
+                        layer=None, **kwargs):
+    hidden_clusters = cluster_method(m, n_clusters=n_clusters, n_samps=n_samps,
+                                     layer=layer)
 
-    out = ablate_label_sets(m, hidden_clusters, n_samps=n_samps, **kwargs)
+    out = ablate_label_sets(m, hidden_clusters, n_samps=n_samps, layer=layer,
+                            **kwargs)
     return out
 
 def across_ablation_experiment(*args, **kwargs):
@@ -741,8 +810,9 @@ def apply_act_clusters_list(models, func=quantify_activity_clusters, **kwargs):
     return clust
 
 def infer_activity_clusters(m, n_samps=1000, use_mean=True, ret_act=False,
-                            model=skmx.GaussianMixture):
-    activity = sample_all_contexts(m, n_samps=n_samps, use_mean=use_mean)
+                            model=skmx.GaussianMixture, from_layer=None):
+    activity = sample_all_contexts(m, n_samps=n_samps, use_mean=use_mean,
+                                   from_layer=from_layer)
     act_full = np.concatenate(activity, axis=0)
     _, out = _fit_clusters(act_full, len(activity) + 1)
     if ret_act:
@@ -750,14 +820,17 @@ def infer_activity_clusters(m, n_samps=1000, use_mean=True, ret_act=False,
     return out
 
 def apply_geometry_model_list(ml, fdg, group_ind=0, n_train=4,
-                              fix_features=2, **kwargs):
+                              fix_features=2, noise_cov=.01**2, **kwargs):
     ml = np.array(ml)
-    shattering = np.zeros_like(ml, dtype=object)
+    if not u.check_list(noise_cov):
+        noise_cov = (noise_cov,)
+    shattering = np.zeros(ml.shape + (len(noise_cov),), dtype=object)
     within_ccgp = np.zeros_like(shattering)
     across_ccgp = np.zeros_like(shattering)
-    for ind in u.make_array_ind_iterator(ml.shape):
-        m = ml[ind]
-        m_code = ModularizerCode(m, dg_model=fdg, group_ind=group_ind)
+    for ind in u.make_array_ind_iterator(shattering.shape):
+        m = ml[ind[:-1]]
+        m_code = ModularizerCode(m, dg_model=fdg, group_ind=group_ind,
+                                 noise_cov=noise_cov[ind[-1]])
         shattering[ind] = m_code.compute_shattering(**kwargs)[-1]
         within_ccgp[ind] = m_code.compute_within_group_ccgp(
             n_train=n_train, fix_features=fix_features, **kwargs)
