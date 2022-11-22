@@ -399,7 +399,8 @@ class Modularizer:
         return x, true, targ
     
     def fit(self, train_x=None, train_true=None, eval_x=None, eval_true=None,
-            n_train=2*10**5, epochs=15, batch_size=100, n_val=10**3, **kwargs): 
+            n_train=2*10**5, epochs=15, batch_size=100, n_val=10**3,
+            track_dimensionality=False, **kwargs): 
         if not self.compiled:
             self._compile()
 
@@ -416,12 +417,39 @@ class Modularizer:
             curr_cb = kwargs.get('callbacks', [])
             curr_cb.append(cb)
             kwargs['callbacks'] = curr_cb
+        if track_dimensionality:
+            cb = kwargs.get('callbacks', [])
+            d_callback = DimCallback(self)
+            cb.append(d_callback)
+            kwargs['callbacks'] = cb
 
 
         out = self.model.fit(x=train_x, y=train_targ, epochs=epochs,
                              validation_data=eval_set, batch_size=batch_size,
                              **kwargs)
+        if track_dimensionality:
+            out.history['dimensionality'] = d_callback.dim
+            out.history['corr_rate'] = d_callback.corr
         return out
+
+class DimCorrCallback(tfk.callbacks.Callback):
+
+    def __init__(self, model, *args, **kwargs):
+        self.modu_model = model
+        super().__init__(*args, **kwargs)
+        self.dim = []
+        self.corr = []
+
+    def on_train_begin(self, logs=None):
+        self.dim = []
+        self.corr = []
+        
+    def on_epoch_end(self, epoch, logs=None):
+        _, _, reps = self.modu_model.sample_reps()
+        dim = u.participation_ratio(reps)
+        corr = 1 - self.modu_model.get_ablated_loss()
+        self.dim.append(dim)
+        self.corr.append(corr)
 
 class XORModularizer(Modularizer):
 
@@ -517,9 +545,9 @@ def train_modularizer(fdg, verbose=False, params=None,
                       group_maker_dict=group_maker_dict,
                       act_func_dict=act_func_dict,
                       model_type_dict=model_type_dict,
-                      **kwargs):
+                      track_dimensionality=True, **kwargs):
     if params is not None:
-        gs = params.getint('group_size')
+        group_size = params.getint('group_size')
         n_overlap = params.getint('n_overlap')
         group_maker = group_maker_dict[params.get('group_maker')]
         tasks_per_group = params.getint('tasks_per_group')
@@ -530,9 +558,9 @@ def train_modularizer(fdg, verbose=False, params=None,
         group_width = params.getint('group_width')
         use_mixer = params.getboolean('use_mixer')
         act_func =act_func_dict[params.get('act_func')]
-        print(params.get('hiddens'))
         hiddens = params.getlist('hiddens', typefunc=int)
-        print(hiddens)
+        if hiddens is None:
+            hiddens = ()
         train_epochs = params.getint('train_epochs')
         single_output = params.getboolean('single_output')
         integrate_context = params.getboolean('integrate_context')
@@ -547,24 +575,26 @@ def train_modularizer(fdg, verbose=False, params=None,
             'use_mixer':use_mixer,
             'tasks_per_group':tasks_per_group,
             'act_func':act_func,
-            'additional_hiddens':hiddens,
+            'additional_hidden':hiddens,
             'act_reg_weight':act_reg,
             'noise':sigma,
             'inp_noise':inp_noise,
             'n_overlap':n_overlap,
-            'constant_init':const_init,
             'single_output':single_output,
             'integrate_context':integrate_context,
             'train_epochs':train_epochs,
             'model_type':model_type,
+            'use_dg':fdg,
         }
     else:
-        config_dict = {'use_fdg':fdg}
+        config_dict = {'use_dg':fdg}
     config_dict.update(kwargs)
-    inp_dim = config_dict['use_fdg'].input_dim
+    inp_dim = config_dict['use_dg'].input_dim
     train_epochs = config_dict.pop('train_epochs')
     model_type = config_dict.pop('model_type')
         
     m = model_type(inp_dim, **config_dict)
-    h = m.fit(epochs=train_epochs, verbose=verbose)
+    h = m.fit(epochs=train_epochs, verbose=verbose,
+              track_dimensionality=track_dimensionality)
     return m, h
+

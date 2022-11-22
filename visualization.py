@@ -180,7 +180,7 @@ def compare_act_weight_clusters(m, n_samps=1000, axs=None, fwid=3,
         axs[i, 0].set_aspect('auto')
         axs[i, 0].set_ylabel(method.__name__)
 
-def plot_model_list_activity(m_list, fwid=3, axs=None, **kwargs):
+def plot_model_list_activity(m_list, fwid=3, axs=None, f=None, **kwargs):
     n_plots = len(m_list)
     if axs is None:
         f, axs = plt.subplots(2, n_plots, figsize=(n_plots*fwid, 2*fwid),
