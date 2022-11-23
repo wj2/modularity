@@ -110,6 +110,7 @@ def plot_context_scatter(m, n_samps=1000, ax=None, fwid=3,
     for i, l in enumerate(np.unique(labels)):
         mask = labels == l
         ax.plot(act[mask, 0], act[mask, 1], 'o')
+    gpl.clean_plot(ax, 0)
     return ax
 
 def plot_context_clusters(m, n_samps=1000, ax=None, fwid=3, from_layer=None):
@@ -123,6 +124,7 @@ def plot_context_clusters(m, n_samps=1000, ax=None, fwid=3, from_layer=None):
     a_full = np.concatenate(activity, axis=0)
     vmax = np.mean(a_full) + np.std(a_full)
     ax.imshow(a_full[:, sort_inds], aspect='auto', vmax=vmax)
+    gpl.clean_plot(ax, 0)
     return ax
 
 def plot_metrics(*metrics, labels=None, axs=None, fwid=1.5,

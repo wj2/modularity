@@ -144,9 +144,7 @@ if __name__ == '__main__':
     geometry_results['within_ccgp'] = within
     geometry_results['across_ccgp'] = across
 
-    history = {}
-    out = ma.process_histories(histories, args.model_epochs)
-    history['loss'], history['val_loss'] = out 
+    history = ma.process_histories(histories, args.model_epochs)
 
     all_save = {}
     all_save.update(metric_results)

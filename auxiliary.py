@@ -102,7 +102,56 @@ def _add_model(df, md, full_mat_keys=default_fm_keys,
         all_rows.append(df_ijkl)
         # df = pd.concat((df, df_ijkl), ignore_index=True)
     return all_rows
-    
+
+def _get_n_tasks(run_dict):
+    return run_dict['args'].tasks_per_group
+
+def sort_dict(sd, ordering, squeeze=True, stack_ax=0):
+    ordering = np.squeeze(np.array(ordering))
+    order_inds = np.argsort(ordering)
+    ordering = ordering[order_inds]
+    sorted_dict = {}
+    for k, v in sd.items():
+        v = np.squeeze(np.stack(list(v), axis=stack_ax))
+        v_sort = v[order_inds]
+        m_range = tuple(range(2, 2 + len(v_sort.shape[2:])))
+        sorted_dict[k] = np.mean(v_sort,
+                                 axis=m_range)
+    return sorted_dict, ordering
+
+def load_run(run_ind, folder='modularity/simulation_data/',
+             file_template='modularizer_([0-9]+)-{run_ind}',
+             file_name='model_results.pkl',
+             ordering_func=_get_n_tasks,
+             take_keys=('within_ccgp', 'across_ccgp', 'shattering',
+                        'within_act_ablation', 'across_act_ablation',
+                        'gm', 'within_graph_ablation',
+                        'across_graph_ablation',
+                        'within_max_corr_ablation',
+                        'across_max_corr_ablation',
+                        'max_corr')):
+    files = os.listdir(folder)
+    f_template = file_template.format(run_ind=run_ind)
+    out_dict = {}
+    ordering = []
+    for fl in files:
+        m = re.match(f_template, fl)
+        if m is not None:
+            job = m.group(1)
+            full_path = os.path.join(folder, fl, file_name)
+            model_dict = pickle.load(open(full_path, 'rb'))
+            args = vars(model_dict['args'])
+            ordering.append(ordering_func(model_dict))
+            print(model_dict.keys())
+            for k in take_keys:
+                l = out_dict.get(k, [])
+                md_k = np.squeeze(model_dict[k])
+                md_k = np.stack(list(md_k), axis=0)
+
+                l.append(md_k)
+                out_dict[k] = l
+    return sort_dict(out_dict, ordering) + (args,)
+
 def load_models(folder, file_template='modularizer_([0-9]+)-([0-9]+)',
                 file_name='model_results.pkl'):
     files = os.listdir(folder)

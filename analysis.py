@@ -355,7 +355,7 @@ def explain_clustering(df, target_fields=target_fields,
     return out_coefs, inter_all, target_fields
 
 def _task_dim(m, group_dim=False, noncon_dim=False, use_group=0,
-              n_samps=1000, diff_break=True):
+              n_samps=1000, diff_break=False):
     if group_dim:
         _, _, targ = m.get_x_true(group_inds=use_group, n_train=n_samps)
     elif noncon_dim:
@@ -850,16 +850,20 @@ def apply_clusters_model_list(ml, func=quantify_clusters, **kwargs):
         diffs[ind] = diff
     return mats, diffs
 
-def process_histories(hs, n_epochs):
+def process_histories(hs, n_epochs, keep_keys=('loss', 'val_loss',
+                                               'dimensionality',
+                                               'corr_rate')):
     hs = np.array(hs)
     ind = (0,)*len(hs.shape)
     # n_epochs = hs[ind].params['epochs']
-    loss = np.zeros(hs.shape + (n_epochs,))
-    loss_val = np.zeros_like(loss)
-    loss[:] = np.nan
-    loss_val[:] = np.nan
+    out_dict = {}
+    for key in keep_keys:
+        out_dict[key] = np.zeros(hs.shape + (n_epochs,))
+        out_dict[key][:] = np.nan
     for ind in u.make_array_ind_iterator(hs.shape):
-        ind_epochs = len(hs[ind].history['loss'])
-        loss[ind][:ind_epochs] = hs[ind].history['loss']
-        loss_val[ind][:ind_epochs] = hs[ind].history['val_loss']
-    return loss, loss_val
+        for i, key in enumerate(keep_keys):
+            quant = hs[ind].history[key]
+            if i == 0:
+                ind_epochs = len(quant)
+            out_dict[key][ind][:ind_epochs] = quant
+    return out_dict

@@ -144,6 +144,54 @@ def make_ai_func(inp_dims, ai_dep, ai_func):
     func = ft.partial(ai_func, minigroup=subset)
     return func
 
+class ImageDGWrapper:
+
+    def __init__(self, use_dg, use_lvs, categorical_lv_name, categorical_lv_ind=0):
+        self.use_dg = use_dg
+        self.use_lvs = use_lvs
+        self.cats = np.unique(use_dg.data_table[categorical_lv_name])
+        self.n_cats = len(self.cats)
+        self.input_dim = np.sum(use_lvs) + self.n_cats
+        self.output_dim = use_dg.output_dim
+        self.categorical_lv_ind = categorical_lv_ind
+        
+    def sample_reps(self, n_samps=1000, **kwargs):
+        samps, reps = self.use_dg.sample_reps(n_samps, **kwargs)
+        samp_cats = samps[:, self.categorical_lv_ind]
+        samps = samps[:, self.use_lvs]
+        context = np.stack(list(samp_cats == cat for cat in self.cats), axis=1)
+        samps_use = np.concatenate((samps, context), axis=1)
+        return samps_use, reps
+
+    def get_representation(self, x):
+        context = x[:, -self.n_cats:]
+        samp = x[:, :self.n_cats]
+        o_samps = self.use_dg.source_distribution.rvs(x.shape[0])
+        o_samps[:, self.use_lvs] = samp
+        con_arr = np.array(list(self.cats[c.astype(bool)]
+                                for c in context))
+        o_samps[:, self.categorical_lv_ind] = np.squeeze(con_arr)
+        return self.use_dg.get_representation(o_samps)
+
+class DimCorrCallback(tfk.callbacks.Callback):
+
+    def __init__(self, model, *args, **kwargs):
+        self.modu_model = model
+        super().__init__(*args, **kwargs)
+        self.dim = []
+        self.corr = []
+
+    def on_train_begin(self, logs=None):
+        self.dim = []
+        self.corr = []
+        
+    def on_epoch_end(self, epoch, logs=None):
+        _, _, reps = self.modu_model.sample_reps()
+        dim = u.participation_ratio(reps)
+        corr = 1 - self.modu_model.get_ablated_loss()
+        self.dim.append(dim)
+        self.corr.append(corr)
+    
 class Modularizer:
 
     def __init__(self, inp_dims, groups=None, group_width=2,
@@ -227,6 +275,7 @@ class Modularizer:
         self.compiled = False
         self.loss = None
         self.layer_models = None
+        self.no_output = False
     
     def make_model(self, inp, hidden, out, act_func=tf.nn.relu,
                    layer_type=tfkl.Dense, out_act=tf.nn.sigmoid,
@@ -343,7 +392,13 @@ class Modularizer:
         return ys
 
     def sample_stim(self, n_samps):
-        return self.rng.uniform(0, 1, size=(n_samps, self.inp_dims)) < .5
+        if self.mix is not None:
+            stim, _ = self.mix.sample_reps(n_samps)
+            if self.integrate_context:
+                stim = stim[:, :-self.n_groups]
+        else:
+            stim = self.rng.uniform(0, 1, size=(n_samps, self.inp_dims)) < .5
+        return stim
 
     def get_loss(self, **kwargs):
         return self.get_ablated_loss(ablation_mask=None, **kwargs)
@@ -395,7 +450,10 @@ class Modularizer:
             x = self.mix_func(true)
         if self.single_output and not self.integrate_context:
             x = np.concatenate((x, to_add), axis=1)
-        targ = self.generate_target(true, group_inds=group_inds)
+        if self.no_output:
+            targ = None
+        else:
+            targ = self.generate_target(true, group_inds=group_inds)
         return x, true, targ
     
     def fit(self, train_x=None, train_true=None, eval_x=None, eval_true=None,
@@ -419,7 +477,7 @@ class Modularizer:
             kwargs['callbacks'] = curr_cb
         if track_dimensionality:
             cb = kwargs.get('callbacks', [])
-            d_callback = DimCallback(self)
+            d_callback = DimCorrCallback(self)
             cb.append(d_callback)
             kwargs['callbacks'] = cb
 
@@ -431,25 +489,6 @@ class Modularizer:
             out.history['dimensionality'] = d_callback.dim
             out.history['corr_rate'] = d_callback.corr
         return out
-
-class DimCorrCallback(tfk.callbacks.Callback):
-
-    def __init__(self, model, *args, **kwargs):
-        self.modu_model = model
-        super().__init__(*args, **kwargs)
-        self.dim = []
-        self.corr = []
-
-    def on_train_begin(self, logs=None):
-        self.dim = []
-        self.corr = []
-        
-    def on_epoch_end(self, epoch, logs=None):
-        _, _, reps = self.modu_model.sample_reps()
-        dim = u.participation_ratio(reps)
-        corr = 1 - self.modu_model.get_ablated_loss()
-        self.dim.append(dim)
-        self.corr.append(corr)
 
 class XORModularizer(Modularizer):
 
@@ -484,7 +523,8 @@ class IdentityModularizer(Modularizer):
 
     def __init__(self, inp_dims, group_maker=sequential_groups, hidden_dims=100,
                  group_size=2, provide_groups=None, n_groups=None,
-                 integrate_context=True,  **kwargs):
+                 integrate_context=True, use_mixer=True, use_dg=None,
+                 single_output=True, **kwargs):
         self.hidden_dims = hidden_dims
         if n_groups is None:
             n_groups = int(np.floor(inp_dims / group_size))
@@ -494,8 +534,15 @@ class IdentityModularizer(Modularizer):
             self.groups = group_maker(inp_dims, group_size, n_groups)
         else:
             self.groups = provide_groups
+        if use_dg is not None:
+            self.mix = use_dg
+            self.mix_func = use_dg.get_representation
+            inp_net = self.mix.output_dim
+        self.single_output = True
         self.integrate_context = integrate_context
         self.n_groups = len(self.groups)
+        self.compiled = True
+        self.no_output = True
 
     @classmethod
     def copy_groups(cls, model):
@@ -507,6 +554,9 @@ class IdentityModularizer(Modularizer):
                    integrate_context=ic)
 
     def get_representation(self, stim, group=None):
+        return stim
+
+    def model(self, stim):
         return stim
         
 class LinearModularizer(Modularizer):
@@ -539,6 +589,7 @@ act_func_dict = {
 }
 model_type_dict = {
     'linear':LinearModularizer,
+    'identity':IdentityModularizer,
 }
     
 def train_modularizer(fdg, verbose=False, params=None,
@@ -594,7 +645,10 @@ def train_modularizer(fdg, verbose=False, params=None,
     model_type = config_dict.pop('model_type')
         
     m = model_type(inp_dim, **config_dict)
-    h = m.fit(epochs=train_epochs, verbose=verbose,
-              track_dimensionality=track_dimensionality)
+    if train_epochs > 0:
+        h = m.fit(epochs=train_epochs, verbose=verbose,
+                  track_dimensionality=track_dimensionality)
+    else:
+        h = None
     return m, h
 
