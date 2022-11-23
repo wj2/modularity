@@ -458,7 +458,7 @@ class Modularizer:
     
     def fit(self, train_x=None, train_true=None, eval_x=None, eval_true=None,
             n_train=2*10**5, epochs=15, batch_size=100, n_val=10**3,
-            track_dimensionality=False, **kwargs): 
+            track_dimensionality=True, **kwargs): 
         if not self.compiled:
             self._compile()
 
