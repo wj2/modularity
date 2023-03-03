@@ -9,6 +9,16 @@ import itertools as it
 import general.utility as u
 import modularity.analysis as ma
 
+def get_relevant_dims(samps, m, preserve_order_if_same=True):
+    n_contexts = len(m.groups)
+    if np.all(np.var(m.groups, axis=0) == 0):
+        rel_inds = m.groups[0]
+    else:
+        rel_inds = np.unique(m.groups)
+    rel_stim = samps[:, rel_inds]
+    rel_stim = np.concatenate((rel_stim, samps[:, -n_contexts:]), axis=1)
+    return rel_stim
+
 def save_model_information(models, folder, file_name='model_results.pkl',
                            **kwargs):
     weights = np.zeros_like(models)
@@ -106,7 +116,8 @@ def _add_model(df, md, full_mat_keys=default_fm_keys,
 def _get_n_tasks(run_dict):
     return run_dict['args'].tasks_per_group
 
-def sort_dict(sd, ordering, squeeze=True, stack_ax=0):
+def sort_dict(sd, ordering, squeeze=True, stack_ax=0,
+              no_mean=('dimensionality',)):
     ordering = np.squeeze(np.array(ordering))
     order_inds = np.argsort(ordering)
     ordering = ordering[order_inds]
@@ -114,9 +125,11 @@ def sort_dict(sd, ordering, squeeze=True, stack_ax=0):
     for k, v in sd.items():
         v = np.squeeze(np.stack(list(v), axis=stack_ax))
         v_sort = v[order_inds]
-        m_range = tuple(range(2, 2 + len(v_sort.shape[2:])))
-        sorted_dict[k] = np.mean(v_sort,
-                                 axis=m_range)
+        if k not in no_mean:
+            m_range = tuple(range(2, 2 + len(v_sort.shape[2:])))
+            v_sort = np.mean(v_sort,
+                             axis=m_range)
+        sorted_dict[k] = v_sort
     return sorted_dict, ordering
 
 def load_run(run_ind, folder='modularity/simulation_data/',
@@ -129,7 +142,7 @@ def load_run(run_ind, folder='modularity/simulation_data/',
                         'across_graph_ablation',
                         'within_max_corr_ablation',
                         'across_max_corr_ablation',
-                        'max_corr')):
+                        'max_corr', 'dimensionality', 'corr_rate',)):
     files = os.listdir(folder)
     f_template = file_template.format(run_ind=run_ind)
     out_dict = {}
@@ -142,14 +155,14 @@ def load_run(run_ind, folder='modularity/simulation_data/',
             model_dict = pickle.load(open(full_path, 'rb'))
             args = vars(model_dict['args'])
             ordering.append(ordering_func(model_dict))
-            print(model_dict.keys())
             for k in take_keys:
                 l = out_dict.get(k, [])
-                md_k = np.squeeze(model_dict[k])
-                md_k = np.stack(list(md_k), axis=0)
+                if k in model_dict.keys():
+                    md_k = np.squeeze(model_dict[k])
+                    md_k = np.stack(list(md_k), axis=0)
 
-                l.append(md_k)
-                out_dict[k] = l
+                    l.append(md_k)
+                    out_dict[k] = l
     return sort_dict(out_dict, ordering) + (args,)
 
 def load_models(folder, file_template='modularizer_([0-9]+)-([0-9]+)',

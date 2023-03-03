@@ -5,6 +5,7 @@ import tensorflow_hub as tfhub
 import functools as ft
 import itertools as it
 
+import sklearn.preprocessing as skp
 import scipy.stats as sts
 import numpy as np
 
@@ -12,6 +13,8 @@ import general.utility as u
 import disentangled.aux as da
 import disentangled.disentanglers as dd
 import disentangled.regularizer as dr
+# import modularity.analysis as ma
+# import modularity.auxiliary as maux
 
 
 tfk = tf.keras
@@ -23,19 +26,36 @@ def xor(x):
     parity = (np.sum(x, axis=1) % 2) == 1
     return parity
 
-def generate_linear_tasks(n_inp, n_tasks=1):
-    task = np.random.default_rng().normal(size=(n_tasks, n_inp))
-    task = u.make_unit_vector(task)
-    return task
+def generate_linear_tasks(n_inp, n_tasks=1, intercept_var=0,
+                          axis_tasks=False):
+    rng = np.random.default_rng()
+    if axis_tasks:
+        inds = rng.choice(n_inp, size=(n_tasks,))
+        task = np.zeros((n_tasks, n_inp))
+        for i in range(n_tasks):
+            task[i, inds[i]] = 1
+        task = task*rng.choice((-1, 1), size=(n_tasks, 1))
+    else:
+        task = rng.normal(size=(n_tasks, n_inp))
+        task = u.make_unit_vector(task)
+    if intercept_var > 0:
+        intercepts = rng.normal(0, np.sqrt(intercept_var), size=(n_tasks, 1))
+    else:
+        intercepts = np.zeros((n_tasks, 1))
+    return task, intercepts 
 
 def apply_continuous_task(x, task=None):
     out = np.stack(list(t(x) for t in task), axis=1)
     return out
 
-def apply_linear_task(x, task=None):
+def apply_linear_task(x, task=None, intercept=0, center=.5,
+                      renorm=False):
     x_exp = np.expand_dims(x, 1)
     task_exp = np.expand_dims(task, 0)
-    return np.sum(task_exp*(x_exp - .5), axis=2) > 0
+    bools = np.sum(task_exp*(x_exp - center) + intercept, axis=2) > 0
+    if renorm:
+        bools = 2*(bools - .5)
+    return bools
 
 def generate_coloring(n_g, prob=.5):
     return np.random.default_rng().uniform(size=n_g) <= prob
@@ -173,6 +193,23 @@ class ImageDGWrapper:
         o_samps[:, self.categorical_lv_ind] = np.squeeze(con_arr)
         return self.use_dg.get_representation(o_samps)
 
+class TrackWeights(tfk.callbacks.Callback):
+
+    def __init__(self, model, layer_ind, *args, **kwargs):
+        self.model = model
+        self.layer_ind = layer_ind
+        super().__init__(*args, **kwargs)
+        self.weights = []
+
+    def on_train_begin(self, logs=None):
+        self.weights = []
+        
+    def on_epoch_end(self, epoch, logs=None):
+        weights = self.model.weights
+        self.weights.append(np.array(weights[self.layer_ind]))
+        
+
+    
 class DimCorrCallback(tfk.callbacks.Callback):
 
     def __init__(self, model, *args, **kwargs):
@@ -203,9 +240,11 @@ class Modularizer:
                  n_overlap=0, augmented_inputs=0,
                  common_augmented_inputs=False,
                  augmented_input_dep=2,
-                 augmented_input_func=parity, **kwargs):
+                 augmented_input_func=parity, renorm_stim=False,
+                 **kwargs):
         self.use_early_stopping = use_early_stopping
         self.early_stopping_field = early_stopping_field
+        self.renorm_stim = renorm_stim
         if not common_augmented_inputs:
             inp_dims_anc = inp_dims + augmented_inputs
         else:
@@ -287,19 +326,34 @@ class Modularizer:
                    act_reg_type=tfk.regularizers.l2,
                    act_reg_weight=0,
                    constant_init=None,
+                   kernel_init=None,
+                   out_kernel_init=None,
+                   out_constant_init=None,
+                   use_bias=True,
                    **layer_params):
         layer_list = []
         layer_list.append(tfkl.InputLayer(input_shape=inp))
+        if kernel_init is not None:
+            kernel_init = tfk.initializers.RandomNormal(stddev=kernel_init)
+        elif constant_init is not None:
+            kernel_init = tfk.initializers.Constant(constant_init)
+        else:
+            kernel_init = tfk.initializers.GlorotUniform()
+        if out_kernel_init is not None:
+            out_kernel_init = tfk.initializers.RandomNormal(
+                stddev=out_kernel_init
+            )
+        elif out_constant_init is not None:
+            out_kernel_init = tfk.initializers.Constant(constant_init)
+        else:
+            out_kernel_init = tfk.initializers.GlorotUniform()
+            
         if inp_noise > 0:
             layer_list.append(tfkl.GaussianNoise(inp_noise))
         if kernel_reg_weight > 0:
             kernel_reg = kernel_reg_type(kernel_reg_weight)
         else:
             kernel_reg = None
-        if constant_init is not None:
-            k_init = tfk.initializers.Constant(constant_init)
-        else:
-            k_init = 'glorot_uniform'
         if act_reg_weight > 0:
             act_reg = act_reg_type(act_reg_weight)
         else:
@@ -308,7 +362,8 @@ class Modularizer:
             use_ah = dict(            
                 kernel_regularizer=kernel_reg,
                 activity_regularizer=act_reg,
-                kernel_initializer=k_init,
+                kernel_initializer=kernel_init,
+                use_bias=use_bias,
             )
         else:
             use_ah = dict()
@@ -316,12 +371,14 @@ class Modularizer:
 
         for ah in additional_hidden:
             lh_ah = layer_type(ah, activation=act_func,
-                            **use_ah)
+                               **use_ah)
             layer_list.append(lh_ah)
+        
         lh = layer_type(hidden, activation=act_func,
                         kernel_regularizer=kernel_reg,
                         activity_regularizer=act_reg,
-                        kernel_initializer=k_init,
+                        kernel_initializer=kernel_init,
+                        use_bias=use_bias,
                         **layer_params)
         layer_list.append(lh)
         if noise > 0:
@@ -329,7 +386,9 @@ class Modularizer:
 
         rep = tfk.Sequential(layer_list)
         layer_list.append(tfkl.Dense(out, activation=out_act,
-                                     kernel_regularizer=kernel_reg))
+                                     kernel_regularizer=kernel_reg,
+                                     kernel_initializer=out_kernel_init,
+                                     use_bias=use_bias))
         enc = tfk.Sequential(layer_list)
         rep_out = tfk.Sequential(layer_list[-1:])
         return enc, rep, rep_out
@@ -358,6 +417,7 @@ class Modularizer:
             optimizer = tf.optimizers.Adam(learning_rate=1e-3)
         if loss is None:
             loss = tf.losses.BinaryCrossentropy()
+            loss = tf.losses.MeanSquaredError()
         self.model.compile(optimizer, loss)
         self.loss = loss
         self.compiled = True
@@ -386,6 +446,7 @@ class Modularizer:
                           'True')
         elif self.single_output:
             trl_inds = np.arange(len(xs))
+            
             ys = ys[group_inds, trl_inds]
         else:
             ys = np.concatenate(ys, axis=1)
@@ -398,6 +459,8 @@ class Modularizer:
                 stim = stim[:, :-self.n_groups]
         else:
             stim = self.rng.uniform(0, 1, size=(n_samps, self.inp_dims)) < .5
+        if self.renorm_stim:
+            stim = 2*(stim - .5)
         return stim
 
     def get_loss(self, **kwargs):
@@ -432,7 +495,8 @@ class Modularizer:
             out = self.loss(targ, out)
         return out
 
-    def get_x_true(self, x=None, true=None, n_train=10**5, group_inds=None):
+    def get_x_true(self, x=None, true=None, n_train=10**5, group_inds=None,
+                   special_fdg=None):
         if true is None and x is not None:
             raise IOError('need ground truth x')
         if true is None:
@@ -446,8 +510,10 @@ class Modularizer:
             to_add[trl_inds, group_inds] = 1
         if self.single_output and self.integrate_context:
             true = np.concatenate((true, to_add), axis=1)
-        if x is None:
+        if x is None and special_fdg is None:
             x = self.mix_func(true)
+        elif x is None and special_fdg is not None:
+            x = special_fdg.get_representation(true)
         if self.single_output and not self.integrate_context:
             x = np.concatenate((x, to_add), axis=1)
         if self.no_output:
@@ -458,14 +524,23 @@ class Modularizer:
     
     def fit(self, train_x=None, train_true=None, eval_x=None, eval_true=None,
             n_train=2*10**5, epochs=15, batch_size=100, n_val=10**3,
-            track_dimensionality=True, **kwargs): 
+            track_dimensionality=True, special_fdg=None, return_training=False,
+            **kwargs): 
         if not self.compiled:
             self._compile()
 
-        train_x, train_true, train_targ = self.get_x_true(train_x, train_true,
-                                                          n_train)
-        eval_x, eval_true, eval_targ = self.get_x_true(eval_x, eval_true,
-                                                       n_val)
+        train_x, train_true, train_targ = self.get_x_true(
+            train_x,
+            train_true,
+            n_train,
+            special_fdg=special_fdg,
+        )
+        eval_x, eval_true, eval_targ = self.get_x_true(
+            eval_x,
+            eval_true,
+            n_val,
+            special_fdg=special_fdg,
+        )
 
         eval_set = (eval_x, eval_targ)
 
@@ -488,6 +563,8 @@ class Modularizer:
         if track_dimensionality:
             out.history['dimensionality'] = d_callback.dim
             out.history['corr_rate'] = d_callback.corr
+        if return_training:
+            out = (out, (train_x, train_true, train_targ))
         return out
 
 class XORModularizer(Modularizer):
@@ -521,10 +598,15 @@ class ColoringModularizer(Modularizer):
 
 class IdentityModularizer(Modularizer):
 
-    def __init__(self, inp_dims, group_maker=sequential_groups, hidden_dims=100,
+    def __init__(self, inp_dims, group_maker=sequential_groups, hidden_dims=None,
                  group_size=2, provide_groups=None, n_groups=None,
                  integrate_context=True, use_mixer=True, use_dg=None,
-                 single_output=True, **kwargs):
+                 single_output=True, tasks_per_group=None, **kwargs):
+        if hidden_dims is None:
+            if use_dg is not None:
+                hidden_dims = use_dg.output_dim
+            else:
+                hidden_dims = 100
         self.hidden_dims = hidden_dims
         if n_groups is None:
             n_groups = int(np.floor(inp_dims / group_size))
@@ -543,6 +625,10 @@ class IdentityModularizer(Modularizer):
         self.n_groups = len(self.groups)
         self.compiled = True
         self.no_output = True
+        self.renorm_stim = False
+        self.rng = np.random.default_rng()
+        self.n_tasks_per_group = tasks_per_group
+
 
     @classmethod
     def copy_groups(cls, model):
@@ -558,19 +644,53 @@ class IdentityModularizer(Modularizer):
 
     def model(self, stim):
         return stim
-        
-class LinearModularizer(Modularizer):
+    
+    
+def make_linear_task_func(n_g, n_tasks=1,
+                          i_var=0, center=.5, renorm=False,
+                          **kwargs):
+    task, intercept = generate_linear_tasks(n_g, n_tasks=n_tasks,
+                                            intercept_var=i_var,
+                                            **kwargs)
+    return ft.partial(apply_linear_task, task=task, intercept=intercept,
+                      center=center, renorm=renorm)
 
-    def _make_linear_task_func(self, n_g, n_tasks=1):
-        task = generate_linear_tasks(n_g, n_tasks=n_tasks)
-        return ft.partial(apply_linear_task, task=task)
+class LinearIdentityModularizer(IdentityModularizer):
 
-    def __init__(self, *args, tasks_per_group=1, **kwargs):
+    def _make_linear_task_func(self, n_g, n_tasks=1,
+                               i_var=0, center=0, renorm=False):
+        return make_linear_task_func(n_g, n_tasks=n_tasks, i_var=i_var,
+                                     center=center, renorm=renorm)
+
+    def __init__(self, *args, tasks_per_group=1, intercept_var=0, center=.5,
+                 renorm_tasks=False, **kwargs):
         super().__init__(*args, tasks_per_group=tasks_per_group, **kwargs)
         group_func = []
         for g in self.groups:
             group_func.append(
-                self._make_linear_task_func(len(g), n_tasks=tasks_per_group))
+                self._make_linear_task_func(len(g), n_tasks=tasks_per_group,
+                                            i_var=intercept_var, center=center,
+                                            renorm=renorm_tasks))
+        self.group_func = tuple(group_func)
+        self.no_output = False
+
+
+class LinearModularizer(Modularizer):
+
+    def _make_linear_task_func(self, n_g, n_tasks=1,
+                               i_var=0, center=0, renorm=False):
+        return make_linear_task_func(n_g, n_tasks=n_tasks, i_var=i_var,
+                                     center=center, renorm=renorm)
+
+    def __init__(self, *args, tasks_per_group=1, intercept_var=0, center=.5,
+                 renorm_tasks=False, **kwargs):
+        super().__init__(*args, tasks_per_group=tasks_per_group, **kwargs)
+        group_func = []
+        for g in self.groups:
+            group_func.append(
+                self._make_linear_task_func(len(g), n_tasks=tasks_per_group,
+                                            i_var=intercept_var, center=center,
+                                            renorm=renorm_tasks))
         self.group_func = tuple(group_func)
 
 class LinearContinuousModularizer(LinearModularizer):
@@ -591,7 +711,162 @@ model_type_dict = {
     'linear':LinearModularizer,
     'identity':IdentityModularizer,
 }
+
+def make_linear_network(xs, ys, hiddens=(200,), optimizer=None,
+                        loss=tf.losses.MeanSquaredError(),
+                        n_epochs=200,
+                        init_std=.0001,
+                        act_func=None,
+                        use_relu=False,
+                        use_bias=False,
+                        track_weights=True,
+                        **kwargs):
+    if use_relu:
+        act_func = tf.nn.relu
+    inp = tfk.Input(shape=xs.shape[1])
+    init = tfk.initializers.RandomNormal(stddev=init_std)
+    x = inp
+    for h in hiddens:
+        x = tfkl.Dense(h, kernel_initializer=init,
+                       activation=act_func,
+                       use_bias=use_bias)(x)
+    m_rep = tfk.Model(inp, x)
+    out = tfkl.Dense(ys.shape[1], # activation=act_func,
+                     kernel_initializer=init,
+                     use_bias=use_bias)(x)
+    m = tfk.Model(inp, out)
+    if optimizer is None:
+        optimizer = tf.optimizers.Adam(learning_rate=1e-3)
+    m.compile(optimizer, loss)
+    if track_weights:
+        cb = kwargs.get('callbacks', [])
+        weight_callback = TrackWeights(m, 0)
+        cb.append(weight_callback)
+        bias_callback = TrackWeights(m, 1)
+        cb.append(bias_callback)
+        kwargs['callbacks'] = cb
+
     
+    original_weights = u.make_unit_vector(np.copy(m.weights[0]).T)
+    h = m.fit(xs, ys, epochs=n_epochs, **kwargs)
+    h.history['weights'] = weight_callback.weights
+    h.history['bias'] = bias_callback.weights
+    return m, m_rep, h, original_weights
+
+class GatedLinearModularizerShell:
+
+    def __init__(self, model, weight_generator=None,
+                 n_units_per_superset=200, n_samps=1000):
+        if weight_generator is None:
+            self.weight_init = tf.keras.initializers.GlorotUniform()
+        else:
+            self.weight_init = weight_generator
+        self.model = model
+        # self.chamber_funcs = ma.decompose_model_tasks(model)
+
+        _, stim_sample, _ = self.model.get_x_true(n_train=n_samps)
+        out = self.make_module_set(
+            self.chamber_funcs,
+            stim_sample,
+            n_units=n_units_per_superset,
+        )
+        self.gl_model, self.func_list, self.rep_models = out
+        
+    def apply_gating(self, stim, func):
+        rel_stim = maux.get_relevant_dims(stim, self.model)
+        return func(rel_stim)
+            
+    def make_module_set(self, func_dict, stim, n_units):
+        wi = self.weight_init
+        input_units = self.model.inp_net
+        output_units = self.model.out_dims
+        stim_input = tfk.Input(shape=input_units, name='stim_input')
+        mod_dict = {}
+        outs = []
+        inputs = []
+        ordered_funcs = []
+
+        rep_models = {}
+        for k, funcs in func_dict.items():
+
+            interior_inputs = []
+            interior_outputs = []
+            interior_funcs = []
+            for i, func in enumerate(funcs):
+                gate_k_i_input = tfk.Input(shape=1, name=str(k + (i,)))
+
+                mask = self.apply_gating(stim, func)
+                
+                n_units_mod = (np.mean(mask)*n_units).astype(int)
+                
+                x = tf.multiply(
+                    gate_k_i_input,
+                    tfkl.Dense(n_units_mod)(stim_input)
+                )
+
+                model_k_i = tfk.Model([stim_input, gate_k_i_input], x)
+
+                interior_inputs.append(gate_k_i_input)
+                interior_outputs.append(x)
+                interior_funcs.append(func)
+                
+                outs.append(model_k_i.output)
+                inputs.append(gate_k_i_input)
+                ordered_funcs.append(func)
+            rep_m = tfk.Model(
+                inputs=[stim_input] + interior_inputs,
+                outputs=tfkl.concatenate(interior_outputs),
+            )
+            rep_models[k] = (rep_m, interior_funcs)
+            
+        out = tfkl.Dense(output_units)(tfkl.concatenate(outs))
+        model = tfk.Model(inputs=[stim_input] + inputs,
+                          outputs=out)
+        return model, ordered_funcs, rep_models
+
+    
+    
+    def make_input(self, inp, stim, func_list=None):
+        if func_list is None:
+            func_list = self.func_list
+        gate_inputs = tuple(self.apply_gating(stim, f)
+                           for f in func_list)
+        inputs_all = (inp,) + gate_inputs
+        return inputs_all
+
+    def get_output(self, rep, stim):
+        inputs_all = self.make_input(rep, stim)
+        return self.gl_model(inputs_all)
+
+    def get_representation(self, rep, stim, key=None):
+        if key is not None:
+            keys = (key,)
+        else:
+            keys = self.rep_models.keys()
+        outs = {}
+        for k in keys:
+            rm, funcs = self.rep_models[k]
+            input_rm = self.make_input(rep, stim, func_list=funcs)
+            outs[k] = rm(input_rm)
+        return outs
+
+    def _compile(self, optimizer=None,
+                 loss=tf.losses.MeanSquaredError()):
+        if optimizer is None:
+            optimizer = tf.optimizers.Adam(learning_rate=1e-3)
+        self.gl_model.compile(optimizer, loss)
+        self.compiled = True
+
+    def fit(self, n_trains=10000, norm_targs=True, **kwargs):
+        self._compile()
+        rep, stim, targ = self.model.get_x_true(n_train=n_trains)
+        if norm_targs:
+            targ = skp.StandardScaler().fit_transform(targ)
+        inputs_all = self.make_input(rep, stim)
+
+        self.gl_model.fit(inputs_all, targ, **kwargs)
+        
+
 def train_modularizer(fdg, verbose=False, params=None,
                       group_maker_dict=group_maker_dict,
                       act_func_dict=act_func_dict,
@@ -638,7 +913,9 @@ def train_modularizer(fdg, verbose=False, params=None,
             'use_dg':fdg,
         }
     else:
-        config_dict = {'use_dg':fdg}
+        config_dict = {'use_dg':fdg,
+                       'model_type':model_type_dict['linear'],
+                       'group_maker':group_maker_dict['overlap']}
     config_dict.update(kwargs)
     inp_dim = config_dict['use_dg'].input_dim
     train_epochs = config_dict.pop('train_epochs')

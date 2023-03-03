@@ -63,16 +63,19 @@ def create_parser():
 model_dict = {'xor':ms.XORModularizer,
               'coloring':ms.ColoringModularizer,
               'linear':ms.LinearModularizer}
-metric_methods = {'gm':ma.quantify_activity_clusters,
-                  'l2':ma.quantify_model_l2,
-                  'l1':ma.quantify_model_l1,
-                  'max_corr':ma.quantify_max_corr_clusters,
-                  'within_max_corr_ablation':ma.within_max_corr_ablation,
-                  'across_max_corr_ablation':ma.across_max_corr_ablation,
-                  'within_act_ablation':ma.within_act_ablation,
-                  'across_act_ablation':ma.across_act_ablation,
-                  'within_graph_ablation':ma.within_graph_ablation,
-                  'across_graph_ablation':ma.across_graph_ablation}
+metric_methods = {
+    'gm':ma.quantify_activity_clusters,
+    'l2':ma.quantify_model_l2,
+    'l1':ma.quantify_model_l1,
+    'max_corr':ma.quantify_max_corr_clusters,
+    'within_max_corr_ablation':ma.within_max_corr_ablation,
+    'across_max_corr_ablation':ma.across_max_corr_ablation,
+    'within_act_ablation':ma.within_act_ablation,
+    'across_act_ablation':ma.across_act_ablation,
+    'within_graph_ablation':ma.within_graph_ablation,
+    'across_graph_ablation':ma.across_graph_ablation,
+    
+}
 
 if __name__ == '__main__':
     parser = create_parser()
