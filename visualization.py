@@ -305,6 +305,8 @@ def plot_linear_model(coef_dict, targ_fields, inter=None, axs=None,
             gpl.add_hlines(0, axs[j, i])
     return f, axs
 
+
+
 def plot_context_scatter(m, n_samps=1000, ax=None, fwid=3,
                          from_layer=None):
     if ax is None:

@@ -74,7 +74,8 @@ metric_methods = {
     'across_act_ablation':ma.across_act_ablation,
     'within_graph_ablation':ma.within_graph_ablation,
     'across_graph_ablation':ma.across_graph_ablation,
-    
+    'model_frac':ma.compute_frac_contextual,
+    'fdg_frac':ma.compute_fdg_frac_contextual,
 }
 
 if __name__ == '__main__':

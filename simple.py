@@ -708,6 +708,7 @@ act_func_dict = {
     'relu':tf.nn.relu,
 }
 model_type_dict = {
+    'coloring':ColoringModularizer,
     'linear':LinearModularizer,
     'identity':IdentityModularizer,
 }
@@ -869,6 +870,7 @@ class GatedLinearModularizerShell:
 
 def train_modularizer(fdg, verbose=False, params=None,
                       group_maker_dict=group_maker_dict,
+                      model_type_str=None,
                       act_func_dict=act_func_dict,
                       model_type_dict=model_type_dict,
                       track_dimensionality=True, **kwargs):
@@ -920,7 +922,9 @@ def train_modularizer(fdg, verbose=False, params=None,
     inp_dim = config_dict['use_dg'].input_dim
     train_epochs = config_dict.pop('train_epochs')
     model_type = config_dict.pop('model_type')
-        
+    if model_type_str is not None:
+        model_type = model_type_dict[model_type_str]
+
     m = model_type(inp_dim, **config_dict)
     if train_epochs > 0:
         h = m.fit(epochs=train_epochs, verbose=verbose,

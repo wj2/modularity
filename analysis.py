@@ -1613,6 +1613,38 @@ def compute_model_alignment(model, n_samples=10000, **kwargs):
                             **kwargs)
     return out, u_inds, cluster_labels
 
+def compute_fdg_frac_contextual(mod, **kwargs):
+    return compute_frac_contextual(mod, use_fdg=True, **kwargs)
+
+def compute_frac_contextual(mod, **kwargs):
+    active_units = compute_silences(mod, **kwargs)
+    singles = np.sum(active_units, axis=0) == 1
+    frac = np.mean(singles)
+    return frac
+
+def compute_silences(mod, use_fdg=False, thr=1e-2, rescale=True,
+                     n_samps=1000):
+    n_g = mod.n_groups
+
+    inp_rep, _, mod_rep = mod.sample_reps(n_samps*n_g)
+    if use_fdg:
+        mod_rep = inp_rep
+    if rescale:
+        unit_norms = np.max(mod_rep, axis=0, keepdims=True)
+    else:
+        unit_norms = np.ones((1, mod_rep.shape[1]))
+
+    active_units = np.zeros((n_g, mod_rep.shape[1]))
+    for i in range(n_g):
+        inp_rep, samps, mod_rep = mod.sample_reps(n_samps, context=i)
+        if use_fdg:
+            mod_rep = inp_rep
+        active_units[i] = np.mean(mod_rep/unit_norms, axis=0) > thr
+    return active_units
+            
+            
+        
+
 def compute_alignment(reps, samps, n_contexts=2, n_folds=10):
     weights = np.zeros((n_contexts,
                         samps.shape[1] - n_contexts,
