@@ -212,18 +212,25 @@ class TrackWeights(tfk.callbacks.Callback):
     
 class DimCorrCallback(tfk.callbacks.Callback):
 
-    def __init__(self, model, *args, **kwargs):
+    def __init__(self, model, *args, dim_samps=10**4, **kwargs):
         self.modu_model = model
         super().__init__(*args, **kwargs)
         self.dim = []
         self.corr = []
+        self.dim_samps = dim_samps
 
     def on_train_begin(self, logs=None):
         self.dim = []
         self.corr = []
         
+        _, _, reps = self.modu_model.sample_reps(self.dim_samps)
+        dim = u.participation_ratio(reps)
+        corr = 1 - self.modu_model.get_ablated_loss()
+        self.dim.append(dim)
+        self.corr.append(corr)
+        
     def on_epoch_end(self, epoch, logs=None):
-        _, _, reps = self.modu_model.sample_reps()
+        _, _, reps = self.modu_model.sample_reps(self.dim_samps)
         dim = u.participation_ratio(reps)
         corr = 1 - self.modu_model.get_ablated_loss()
         self.dim.append(dim)
