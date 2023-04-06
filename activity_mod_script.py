@@ -58,11 +58,17 @@ def create_parser():
                         type=int)
     parser.add_argument('--ccgp_n_train', default=2, type=int)                        
     parser.add_argument('--ccgp_fix_features', default=-1, type=int)
+    parser.add_argument('--discrete_mixed_input', default=False,
+                        action='store_true')
+    parser.add_argument('--dm_input_mixing', default=.5, type=float)
     return parser
 
-model_dict = {'xor':ms.XORModularizer,
-              'coloring':ms.ColoringModularizer,
-              'linear':ms.LinearModularizer}
+model_dict = {
+    'xor':ms.XORModularizer,
+    'coloring':ms.ColoringModularizer,
+    'linear':ms.LinearModularizer,
+    'linear_continuous':ms.LinearContinuousModularizer,
+}
 metric_methods = {
     'gm':ma.quantify_activity_clusters,
     'l2':ma.quantify_model_l2,
@@ -97,20 +103,32 @@ if __name__ == '__main__':
     group_width = args.group_width
 
     inp_dim = args.input_dim + n_groups
-    source_distr = u.MultiBernoulli(.5, inp_dim)
+    if args.continuous_input:
+        source_distr = sts.multivariate_normal([0]*inp_dim, 1)
+        model_type = args.model_type + '_continuous'
+    else:
+        source_distr = u.MultiBernoulli(.5, inp_dim)
+        model_type = args.model_type
+        
     if args.kernel_init_std is not None:
         kernel_init =  tfk.initializers.RandomNormal(stddev=args.kernel_init_std)
     else:
         kernel_init = None
 
-    fdg = dg.FunctionalDataGenerator(inp_dim, (300,), args.rep_dim,
-                                     source_distribution=source_distr, 
-                                     use_pr_reg=True, kernel_init=kernel_init)
-    fdg.fit(epochs=args.fdg_epochs, verbose=False,
-            batch_size=args.dg_batch_size)
+    if args.discrete_mixed_input:
+        mix_strength = args.dm_input_mixing
+        fdg = dg.MixedDiscreteDataGenerator(inp_dim, n_units=args.rep_dim,
+                                            mix_strength=mix_strength)
+    else:
+        fdg = dg.FunctionalDataGenerator(inp_dim, (300,), args.rep_dim,
+                                         source_distribution=source_distr, 
+                                         use_pr_reg=True,
+                                         kernel_init=kernel_init)
+        fdg.fit(epochs=args.fdg_epochs, verbose=False,
+                batch_size=args.dg_batch_size)
     print('dg dim', fdg.representation_dimensionality(participation_ratio=True))
 
-    m_constructor = model_dict[args.model_type]
+    m_constructor = model_dict[model_type]
     out = ma.train_variable_models(
         group_size,
         tasks_per_group,

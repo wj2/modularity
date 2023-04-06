@@ -142,7 +142,8 @@ def load_run(run_ind, folder='modularity/simulation_data/',
                         'across_graph_ablation',
                         'within_max_corr_ablation',
                         'across_max_corr_ablation',
-                        'max_corr', 'dimensionality', 'corr_rate',)):
+                        'max_corr', 'dimensionality', 'corr_rate',
+                        'model_frac', 'fdg_frac')):
     files = os.listdir(folder)
     f_template = file_template.format(run_ind=run_ind)
     out_dict = {}

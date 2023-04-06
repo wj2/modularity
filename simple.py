@@ -96,7 +96,7 @@ def overlap_groups(inp_dims, group_size, n_groups, *args,
     rng = np.random.default_rng()
     g_size = (n_groups, group_size - n_overlap)
     samp_dims = n_groups*g_size[1]
-    assert g_size[1] < inp_dims
+    assert g_size[1] <= inp_dims
     groups = rng.choice(samp_dims, size=g_size, replace=False)
     g_o = rng.choice(range(samp_dims, inp_dims),
                      size=(1, n_overlap), replace=False)
@@ -242,6 +242,7 @@ class Modularizer:
                  augmented_input_dep=2,
                  augmented_input_func=parity, renorm_stim=False,
                  **kwargs):
+        self.continuous = False
         self.use_early_stopping = use_early_stopping
         self.early_stopping_field = early_stopping_field
         self.renorm_stim = renorm_stim
@@ -455,7 +456,7 @@ class Modularizer:
     def sample_stim(self, n_samps):
         if self.mix is not None:
             stim, _ = self.mix.sample_reps(n_samps)
-            if self.integrate_context:
+            if self.integrate_context and not self.continuous:
                 stim = stim[:, :-self.n_groups]
         else:
             stim = self.rng.uniform(0, 1, size=(n_samps, self.inp_dims)) < .5
@@ -496,25 +497,40 @@ class Modularizer:
         return out
 
     def get_x_true(self, x=None, true=None, n_train=10**5, group_inds=None,
-                   special_fdg=None):
+                   special_fdg=None, only_groups=None):
+        if only_groups is not None:
+            group_inds = self.rng.choice(only_groups, n_train)
         if true is None and x is not None:
             raise IOError('need ground truth x')
         if true is None:
             true = self.sample_stim(n_train)
         if group_inds is None and self.single_output:
-            group_inds = self.rng.choice(self.n_groups,
-                                         n_train)
+            if self.continuous:
+                group_inds = np.argmax(true[:,-self.n_groups:], axis=1)
+            else:
+                group_inds = self.rng.choice(self.n_groups,
+                                             n_train)
+        elif group_inds is not None and self.continuous:
+            m_inds = np.argmax(true[:, -self.n_groups:], axis=1)
+            for i in range(true.shape[0]):
+                m_i = m_inds[i] - self.n_groups
+                g_i = group_inds[i] - self.n_groups
+                s = true[i, m_i]
+                true[i, m_i] = true[i, g_i]
+                true[i, g_i] = s
+                
         if self.single_output:
             to_add = np.zeros((n_train, self.n_groups))
             trl_inds = np.arange(n_train)
             to_add[trl_inds, group_inds] = 1
-        if self.single_output and self.integrate_context:
+        if self.single_output and self.integrate_context and not self.continuous:
             true = np.concatenate((true, to_add), axis=1)
         if x is None and special_fdg is None:
             x = self.mix_func(true)
         elif x is None and special_fdg is not None:
             x = special_fdg.get_representation(true)
-        if self.single_output and not self.integrate_context:
+        if (self.single_output and not self.integrate_context
+            and not self.continuous):
             x = np.concatenate((x, to_add), axis=1)
         if self.no_output:
             targ = None
@@ -525,6 +541,7 @@ class Modularizer:
     def fit(self, train_x=None, train_true=None, eval_x=None, eval_true=None,
             n_train=2*10**5, epochs=15, batch_size=100, n_val=10**3,
             track_dimensionality=True, special_fdg=None, return_training=False,
+            only_groups=None,
             **kwargs): 
         if not self.compiled:
             self._compile()
@@ -534,12 +551,14 @@ class Modularizer:
             train_true,
             n_train,
             special_fdg=special_fdg,
+            only_groups=only_groups,
         )
         eval_x, eval_true, eval_targ = self.get_x_true(
             eval_x,
             eval_true,
             n_val,
             special_fdg=special_fdg,
+            only_groups=only_groups,
         )
 
         eval_set = (eval_x, eval_targ)
@@ -694,6 +713,10 @@ class LinearModularizer(Modularizer):
         self.group_func = tuple(group_func)
 
 class LinearContinuousModularizer(LinearModularizer):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.continuous = True
 
     def _make_linear_task_func(self, n_g, n_tasks=1, offset_var=.4, **kwargs):
         out = da.generate_partition_functions(n_g, n_funcs=n_tasks,
@@ -873,7 +896,8 @@ def train_modularizer(fdg, verbose=False, params=None,
                       model_type_str=None,
                       act_func_dict=act_func_dict,
                       model_type_dict=model_type_dict,
-                      track_dimensionality=True, **kwargs):
+                      track_dimensionality=True, only_groups=None,
+                      **kwargs):
     if params is not None:
         group_size = params.getint('group_size')
         n_overlap = params.getint('n_overlap')
@@ -893,6 +917,7 @@ def train_modularizer(fdg, verbose=False, params=None,
         single_output = params.getboolean('single_output')
         integrate_context = params.getboolean('integrate_context')
         model_type = model_type_dict[params.get('model_type')]
+        n_train = params.getint('modu_train_egs')
 
         config_dict = {
             'group_size':group_size,
@@ -913,6 +938,7 @@ def train_modularizer(fdg, verbose=False, params=None,
             'train_epochs':train_epochs,
             'model_type':model_type,
             'use_dg':fdg,
+            'n_train':n_train,
         }
     else:
         config_dict = {'use_dg':fdg,
@@ -922,13 +948,16 @@ def train_modularizer(fdg, verbose=False, params=None,
     inp_dim = config_dict['use_dg'].input_dim
     train_epochs = config_dict.pop('train_epochs')
     model_type = config_dict.pop('model_type')
+    n_train = config_dict.pop('n_train')
     if model_type_str is not None:
         model_type = model_type_dict[model_type_str]
 
     m = model_type(inp_dim, **config_dict)
     if train_epochs > 0:
         h = m.fit(epochs=train_epochs, verbose=verbose,
-                  track_dimensionality=track_dimensionality)
+                  track_dimensionality=track_dimensionality,
+                  n_train=n_train,
+                  only_groups=only_groups)
     else:
         h = None
     return m, h

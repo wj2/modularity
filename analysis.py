@@ -958,20 +958,46 @@ def single_class_condition(stim, targs, mask_dims):
     condition = np.all(lens == 1)
     return condition
 
+def _dichotomy_generator(stim, mask, thr=.99):
+    stim = stim[:, mask]
+    dichots = it.product((True, False), repeat=len(stim))
+    for i, dichot in enumerate(dichots):
+        d_mask = np.array(dichot)
+        if np.all(d_mask) or np.all(~d_mask):
+            pass
+        else:
+            m = skm.LinearSVC()
+            m.fit(stim, d_mask)
+            sep = m.score(stim, d_mask)
+            uv = u.make_unit_vector(m.coef_)
+            inter = m.intercept_
+            if sep > thr:
+                yield ((tuple(uv), inter[0]), d_mask)
+
+def _ind_generator(stim, mask, ref=None):
+    stim = stim[:, mask]
+    inds = np.where(mask)[0]
+    if ref is None:
+        ref = np.unique(stim)[0]
+    for i in range(stim.shape[1]):
+        yield (inds[i], stim[:, i] == ref)
+
 def _decompose_task_object_helper(stim, targs, mask_dims,
                                   condition_func=linearly_separable_condition,
-                                  depth=0, max_depth=None, **kwargs):
+                                  depth=0, max_depth=None,
+                                  mask_generator=_ind_generator,
+                                  **kwargs):
     condition = condition_func(stim, targs, mask_dims)
     if condition:
         out = None
     else:
-        dim_inds = np.where(mask_dims)[0]
         out = {}
-        for i in dim_inds:
-            z_mask = stim[:, i] == 0
-            o_mask = stim[:, i] == 1
-            md_i = np.copy(mask_dims)
-            md_i[i] = False
+        gen = mask_generator(stim, mask_dims)
+        for i, z_mask in gen:
+            o_mask = np.logical_not(z_mask)
+
+            md_z = np.var(stim[z_mask], axis=0) > 0
+            md_o = np.var(stim[o_mask], axis=0) > 0
 
             if max_depth is not None and depth > max_depth:
                 out0 = False
@@ -980,7 +1006,7 @@ def _decompose_task_object_helper(stim, targs, mask_dims,
                 out0 = _decompose_task_object_helper(
                     stim[z_mask],
                     targs[z_mask],
-                    md_i,
+                    md_z,
                     depth=depth + 1,
                     max_depth=max_depth,
                     condition_func=condition_func,
@@ -990,7 +1016,7 @@ def _decompose_task_object_helper(stim, targs, mask_dims,
                 out1 = _decompose_task_object_helper(
                     stim[o_mask],
                     targs[o_mask],
-                    md_i,
+                    md_o,
                     depth=depth + 1,
                     max_depth=max_depth,
                     condition_func=condition_func,
@@ -1102,19 +1128,42 @@ def compute_split(n_latents, n_tasks, n_vals=2, n_contexts=2,
         print(task_funcs[0].keywords['task'])
         print(task_funcs[1].keywords['task'])
     return find_top_splits(stim_all, targs_all, **kwargs)
-    
 
-def find_top_splits(stim_all, targs_all, **kwargs):
-    out_tree = decompose_task_object(stim_all, targs_all, **kwargs)
-    
+def _ind_extractor(out_tree, dim):
     splits = []
     if out_tree is None:
         splits.append('all')
     else:
-        out_tree.pop(stim_all.shape[1] - 1)
+        out_tree.pop(dim - 1)
         for k, (v1, v2) in out_tree.items():
             if (v1 is None) and (v2 is None):
                 splits.append(k)
+    return splits
+
+def _dichotomy_extractor(out_tree, dim):
+    splits = []
+    if out_tree is None:
+        splits.append('all')
+    else:
+        for (uv, inter), (v1, v2) in out_tree.items():
+            non_con = np.argmax(uv) != uv[dim - 1]
+            if non_con and (v1 is None) and (v2 is None):
+                splits.append((uv, inter))
+    return splits
+
+def find_top_splits(stim_all, targs_all, use_all_dichotomies=False,
+                    **kwargs):
+    if use_all_dichotomies:
+        mask_generator = _dichotomy_generator
+        extractor = _dichotomy_extractor
+    else:
+        mask_generator = _ind_generator
+        extractor = _ind_extractor
+    out_tree = decompose_task_object(stim_all, targs_all,
+                                     mask_generator=mask_generator,
+                                     **kwargs)
+
+    splits = extractor(out_tree, stim_all.shape[1])
     return splits
     
 

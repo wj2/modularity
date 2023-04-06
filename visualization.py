@@ -38,14 +38,15 @@ def _get_cluster_order(ws, n_groups=None, alg=None):
 
 def visualize_splitting_likelihood(n_tasks, n_latents, ests, probs=None,
                                    ax=None, label_templ='D = {}',
-                                   pred_ls='dashed'):
+                                   pred_ls='dashed', colors=None):
     if ax is None:
         f, ax = plt.subplots()
-
+    if colors is None:
+        colors = (None,)*len(n_latents)
         
     for i, lat in enumerate(n_latents):
         l = gpl.plot_trace_werr(n_tasks, ests[:, i], label=label_templ.format(lat),
-                                ax=ax, log_y=True)
+                                ax=ax, log_y=True, color=colors[i])
         if probs is not None:
             color = l[0].get_color()
             ax.plot(n_tasks, probs[i], color=color, ls=pred_ls)
