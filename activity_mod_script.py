@@ -63,6 +63,7 @@ def create_parser():
     parser.add_argument('--discrete_mixed_input', default=False,
                         action='store_true')
     parser.add_argument('--dm_input_mixing', default=.5, type=float)
+    parser.add_argument('--dm_input_mixing_denom', default=1, type=float)
     return parser
 
 model_dict = {
@@ -118,7 +119,7 @@ if __name__ == '__main__':
         kernel_init = None
 
     if args.discrete_mixed_input:
-        mix_strength = args.dm_input_mixing
+        mix_strength = args.dm_input_mixing/args.dm_input_mixing_denom
         fdg = dg.MixedDiscreteDataGenerator(inp_dim, n_units=args.rep_dim,
                                             mix_strength=mix_strength)
     else:
