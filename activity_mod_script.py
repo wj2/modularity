@@ -58,6 +58,8 @@ def create_parser():
                         type=int)
     parser.add_argument('--ccgp_n_train', default=2, type=int)                        
     parser.add_argument('--ccgp_fix_features', default=-1, type=int)
+    parser.add_argument('--continuous_input', default=False,
+                        action='store_true')
     parser.add_argument('--discrete_mixed_input', default=False,
                         action='store_true')
     parser.add_argument('--dm_input_mixing', default=.5, type=float)
