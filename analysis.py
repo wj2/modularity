@@ -1672,12 +1672,14 @@ def compute_frac_contextual(mod, **kwargs):
     return frac
 
 def compute_silences(mod, use_fdg=False, thr=1e-2, rescale=True,
-                     n_samps=1000):
+                     n_samps=1000, use_abs=True):
     n_g = mod.n_groups
 
-    inp_rep, _, mod_rep = mod.sample_reps(n_samps*n_g)
+    _, inp_rep, mod_rep = mod.sample_reps(n_samps*n_g)
     if use_fdg:
         mod_rep = inp_rep
+    if use_abs:
+        mod_rep = np.abs(mod_rep)
     if rescale:
         unit_norms = np.max(mod_rep, axis=0, keepdims=True)
     else:
@@ -1685,14 +1687,13 @@ def compute_silences(mod, use_fdg=False, thr=1e-2, rescale=True,
 
     active_units = np.zeros((n_g, mod_rep.shape[1]))
     for i in range(n_g):
-        inp_rep, samps, mod_rep = mod.sample_reps(n_samps, context=i)
+        _, inp_rep, mod_rep = mod.sample_reps(n_samps, context=i)
         if use_fdg:
             mod_rep = inp_rep
+        if use_abs:
+            mod_rep = np.abs(mod_rep)
         active_units[i] = np.mean(mod_rep/unit_norms, axis=0) > thr
     return active_units
-            
-            
-        
 
 def compute_alignment(reps, samps, n_contexts=2, n_folds=10):
     weights = np.zeros((n_contexts,
