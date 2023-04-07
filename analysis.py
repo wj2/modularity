@@ -454,7 +454,8 @@ def train_n_models(group_size, tasks_per_group, group_width=200, fdg=None,
                    model_type=ms.ColoringModularizer, epochs=5, verbose=False,
                    act_reg_weight=0, noise=.1, inp_noise=.01, n_overlap=0,
                    constant_init=None, single_output=False,
-                   integrate_context=False, **training_kwargs):
+                   integrate_context=False, remove_last_inp=False,
+                   **training_kwargs):
     if fdg is None:
         use_mixer = False
     else:
@@ -471,7 +472,8 @@ def train_n_models(group_size, tasks_per_group, group_width=200, fdg=None,
                           noise=noise, inp_noise=inp_noise,
                           constant_init=constant_init, n_overlap=n_overlap,
                           single_output=single_output,
-                          integrate_context=integrate_context)
+                          integrate_context=integrate_context,
+                          remove_last_inp=remove_last_inp)
          h_i = m_i.fit(epochs=epochs, verbose=verbose, **training_kwargs)
          out_ms.append(m_i)
          out_hs.append(h_i)
