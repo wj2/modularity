@@ -454,7 +454,8 @@ def train_n_models(group_size, tasks_per_group, group_width=200, fdg=None,
                    model_type=ms.ColoringModularizer, epochs=5, verbose=False,
                    act_reg_weight=0, noise=.1, inp_noise=.01, n_overlap=0,
                    constant_init=None, single_output=False,
-                   integrate_context=False, **training_kwargs):
+                   integrate_context=False, remove_last_inp=False,
+                   **training_kwargs):
     if fdg is None:
         use_mixer = False
     else:
@@ -471,7 +472,8 @@ def train_n_models(group_size, tasks_per_group, group_width=200, fdg=None,
                           noise=noise, inp_noise=inp_noise,
                           constant_init=constant_init, n_overlap=n_overlap,
                           single_output=single_output,
-                          integrate_context=integrate_context)
+                          integrate_context=integrate_context,
+                          remove_last_inp=remove_last_inp)
          h_i = m_i.fit(epochs=epochs, verbose=verbose, **training_kwargs)
          out_ms.append(m_i)
          out_hs.append(h_i)
@@ -1671,12 +1673,14 @@ def compute_frac_contextual(mod, **kwargs):
     return frac
 
 def compute_silences(mod, use_fdg=False, thr=1e-2, rescale=True,
-                     n_samps=1000):
+                     n_samps=1000, use_abs=True):
     n_g = mod.n_groups
 
-    inp_rep, _, mod_rep = mod.sample_reps(n_samps*n_g)
+    _, inp_rep, mod_rep = mod.sample_reps(n_samps*n_g)
     if use_fdg:
         mod_rep = inp_rep
+    if use_abs:
+        mod_rep = np.abs(mod_rep)
     if rescale:
         unit_norms = np.max(mod_rep, axis=0, keepdims=True)
     else:
@@ -1684,14 +1688,13 @@ def compute_silences(mod, use_fdg=False, thr=1e-2, rescale=True,
 
     active_units = np.zeros((n_g, mod_rep.shape[1]))
     for i in range(n_g):
-        inp_rep, samps, mod_rep = mod.sample_reps(n_samps, context=i)
+        _, inp_rep, mod_rep = mod.sample_reps(n_samps, context=i)
         if use_fdg:
             mod_rep = inp_rep
+        if use_abs:
+            mod_rep = np.abs(mod_rep)
         active_units[i] = np.mean(mod_rep/unit_norms, axis=0) > thr
     return active_units
-            
-            
-        
 
 def compute_alignment(reps, samps, n_contexts=2, n_folds=10):
     weights = np.zeros((n_contexts,
