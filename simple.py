@@ -221,19 +221,30 @@ class DimCorrCallback(tfk.callbacks.Callback):
 
     def on_train_begin(self, logs=None):
         self.dim = []
+        self.dim_c0 = []
         self.corr = []
         
         _, _, reps = self.modu_model.sample_reps(self.dim_samps)
         dim = u.participation_ratio(reps)
+        
+        _, _, reps_c0 = self.modu_model.sample_reps(self.dim_samps, context=0)
+        dim_c0 = u.participation_ratio(reps)
         corr = 1 - self.modu_model.get_ablated_loss()
+        
         self.dim.append(dim)
+        self.dim_c0.append(dim_c0)
         self.corr.append(corr)
         
     def on_epoch_end(self, epoch, logs=None):
         _, _, reps = self.modu_model.sample_reps(self.dim_samps)
         dim = u.participation_ratio(reps)
+        
+        _, _, reps_c0 = self.modu_model.sample_reps(self.dim_samps, context=0)
+        dim_c0 = u.participation_ratio(reps_c0)
+        
         corr = 1 - self.modu_model.get_ablated_loss()
         self.dim.append(dim)
+        self.dim_c0.append(dim_c0)
         self.corr.append(corr)
     
 class Modularizer:
@@ -247,12 +258,14 @@ class Modularizer:
                  n_overlap=0, augmented_inputs=0,
                  common_augmented_inputs=False,
                  augmented_input_dep=2,
+                 remove_last_inp=False,
                  augmented_input_func=parity, renorm_stim=False,
                  **kwargs):
         self.continuous = False
         self.use_early_stopping = use_early_stopping
         self.early_stopping_field = early_stopping_field
         self.renorm_stim = renorm_stim
+        self.remove_last_inp = remove_last_inp
         if not common_augmented_inputs:
             inp_dims_anc = inp_dims + augmented_inputs
         else:
@@ -464,7 +477,7 @@ class Modularizer:
         if self.mix is not None:
             stim, _ = self.mix.sample_reps(n_samps)
             if self.integrate_context and not self.continuous:
-                stim = stim[:, :-self.n_groups]
+                stim = stim[:, :-self.n_groups + 1]
         else:
             stim = self.rng.uniform(0, 1, size=(n_samps, self.inp_dims)) < .5
         if self.renorm_stim:
@@ -530,6 +543,8 @@ class Modularizer:
             to_add = np.zeros((n_train, self.n_groups))
             trl_inds = np.arange(n_train)
             to_add[trl_inds, group_inds] = 1
+            if self.remove_last_inp:
+                to_add = to_add[:, :-1]
         if self.single_output and self.integrate_context and not self.continuous:
             true = np.concatenate((true, to_add), axis=1)
         if x is None and special_fdg is None:
@@ -588,6 +603,7 @@ class Modularizer:
                              **kwargs)
         if track_dimensionality:
             out.history['dimensionality'] = d_callback.dim
+            out.history['dimensionality_c0'] = d_callback.dim_c0
             out.history['corr_rate'] = d_callback.corr
         if return_training:
             out = (out, (train_x, train_true, train_targ))
