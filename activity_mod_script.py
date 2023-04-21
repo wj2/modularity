@@ -78,9 +78,9 @@ metric_methods = {
     'gm':ma.quantify_activity_clusters,
     'l2':ma.quantify_model_l2,
     'l1':ma.quantify_model_l1,
-    'max_corr':ma.quantify_max_corr_clusters,
-    'within_max_corr_ablation':ma.within_max_corr_ablation,
-    'across_max_corr_ablation':ma.across_max_corr_ablation,
+    # 'max_corr':ma.quantify_max_corr_clusters,
+    # 'within_max_corr_ablation':ma.within_max_corr_ablation,
+    # 'across_max_corr_ablation':ma.across_max_corr_ablation,
     'within_act_ablation':ma.within_act_ablation,
     'across_act_ablation':ma.across_act_ablation,
     'within_graph_ablation':ma.within_graph_ablation,
@@ -108,6 +108,7 @@ if __name__ == '__main__':
     group_width = args.group_width
 
     inp_dim = args.input_dim + n_groups
+    print('id', inp_dim)
     if args.continuous_input:
         source_distr = sts.multivariate_normal([0]*inp_dim, 1)
         model_type = args.model_type + '_continuous'
@@ -116,10 +117,12 @@ if __name__ == '__main__':
         model_type = args.model_type
         
     if args.kernel_init_std is not None:
-        kernel_init =  tfk.initializers.RandomNormal(stddev=args.kernel_init_std)
+        kernel_init = args.kernel_init_std
     else:
         kernel_init = None
 
+    print(inp_dim)
+    print(args.rep_dim)
     if args.discrete_mixed_input:
         mix_strength = args.dm_input_mixing/args.dm_input_mixing_denom
         fdg = dg.MixedDiscreteDataGenerator(inp_dim, n_units=args.rep_dim,
@@ -128,7 +131,7 @@ if __name__ == '__main__':
         fdg = dg.FunctionalDataGenerator(inp_dim, (300,), args.rep_dim,
                                          source_distribution=source_distr, 
                                          use_pr_reg=True,
-                                         kernel_init=kernel_init)
+                                         kernel_init=args.fdg_weight_init)
         fdg.fit(epochs=args.fdg_epochs, verbose=False,
                 batch_size=args.dg_batch_size)
     print('dg dim', fdg.representation_dimensionality(participation_ratio=True))
@@ -152,7 +155,10 @@ if __name__ == '__main__':
         integrate_context=True,
         batch_size=args.model_batch_size,
         epochs=args.model_epochs,
-        remove_last_inp=args.remove_last_inp)
+        remove_last_inp=args.remove_last_inp,
+        kernel_init=kernel_init,
+        out_kernel_init=kernel_init,
+    )
     models, histories = out
 
     metric_results = {}
