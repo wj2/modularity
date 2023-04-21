@@ -64,6 +64,8 @@ def create_parser():
                         action='store_true')
     parser.add_argument('--dm_input_mixing', default=.5, type=float)
     parser.add_argument('--dm_input_mixing_denom', default=1, type=float)
+    parser.add_argument('--remove_last_inp', default=False,
+                        action='store_true')
     return parser
 
 model_dict = {
@@ -149,7 +151,8 @@ if __name__ == '__main__':
         single_output=True,
         integrate_context=True,
         batch_size=args.model_batch_size,
-        epochs=args.model_epochs)
+        epochs=args.model_epochs,
+        remove_last_inp=args.remove_last_inp)
     models, histories = out
 
     metric_results = {}

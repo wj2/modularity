@@ -930,13 +930,12 @@ def process_histories(hs, n_epochs, keep_keys=('loss', 'val_loss',
     # n_epochs = hs[ind].params['epochs']
     out_dict = {}
     for key in keep_keys:
-        out_dict[key] = np.zeros(hs.shape + (n_epochs,))
+        out_dict[key] = np.zeros(hs.shape + (n_epochs + 1,))
         out_dict[key][:] = np.nan
     for ind in u.make_array_ind_iterator(hs.shape):
         for i, key in enumerate(keep_keys):
             quant = hs[ind].history[key]
-            if i == 0:
-                ind_epochs = len(quant)
+            ind_epochs = len(quant)
             out_dict[key][ind][:ind_epochs] = quant
     return out_dict
 
