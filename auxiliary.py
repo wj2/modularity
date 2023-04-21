@@ -116,6 +116,9 @@ def _add_model(df, md, full_mat_keys=default_fm_keys,
 def _get_n_tasks(run_dict):
     return run_dict['args'].tasks_per_group
 
+def get_nl_strength(run_dict):
+    return run_dict['args'].dm_input_mixing
+
 def sort_dict(sd, ordering, squeeze=True, stack_ax=0,
               no_mean=('dimensionality',)):
     ordering = np.squeeze(np.array(ordering))

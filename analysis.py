@@ -1,8 +1,6 @@
 
 import functools as ft
 import numpy as np
-import matplotlib.pyplot as plt
-import sklearn.decomposition as skd
 import sklearn.preprocessing as skp
 import sklearn.linear_model as sklm
 import sklearn.cluster as skcl
@@ -15,8 +13,6 @@ import scipy.special as ss
 import scipy.optimize as spo
 import tensorflow as tf
 
-tfk = tf.keras
-
 import general.utility as u
 import general.stan_utility as su
 import general.neural_analysis as na
@@ -24,6 +20,9 @@ import modularity.simple as ms
 import modularity.auxiliary as maux
 import disentangled.data_generation as dg
 import composite_tangling.code_creation as cc
+
+tfk = tf.keras
+
 
 class ModularizerCode(cc.Code):
 
@@ -61,7 +60,7 @@ class ModularizerCode(cc.Code):
         pwr = np.mean(np.sum(self.model.get_representation(reps)**2, axis=1),
                       axis=0)
         return pwr
-    
+   
     def _get_all_stim(self):
         stim = list(it.product(range(self.n_values), repeat=self.n_feats))
         return stim
@@ -82,8 +81,7 @@ class ModularizerCode(cc.Code):
                 mask = np.logical_not(np.isin(np.arange(n_feats), non_nan))
             s[:self.n_feats_all][mask] = np.nan
         return s
-            
-        
+      
     def get_full_stim(self, stim):
         f_stim, _ = self.sample_dg_reps(stim.shape[0])
         f_stim[:, self.group] = stim
@@ -96,7 +94,7 @@ class ModularizerCode(cc.Code):
             stim[:, self.n_feats_all + self.group_ind] = 1
             reps = self.dg_model.get_representation(stim)
         return stim, reps
-    
+   
     def get_nan_stim(self, stim, ref_stim=None):
         if ref_stim is None:
             n_stim, _ = self.sample_dg_reps(stim.shape[0])
@@ -105,7 +103,7 @@ class ModularizerCode(cc.Code):
         mask = np.logical_not(np.isnan(stim))
         n_stim[mask] = stim[mask]
         return n_stim
-    
+   
     def get_representation(self, stim, noise=False, ret_stim=False,
                            ref_stim=None):
         stim = np.array(stim)
@@ -135,8 +133,9 @@ class ModularizerCode(cc.Code):
                                       ret_stim=ret_stim,
                                       ref_stim=ref_stim)
         return out
-    
-    def compute_shattering(self, n_reps=5, thresh=.6, max_parts=100, **dec_args):
+
+    def compute_shattering(self, n_reps=5, thresh=.6, max_parts=100,
+                           **dec_args):
         partitions = self._get_partitions(random_thr=max_parts)
         n_parts = len(partitions)
         pcorrs = np.zeros((n_parts, n_reps))
@@ -165,7 +164,8 @@ class ModularizerCode(cc.Code):
             n_possible_combos = max_combos
         out = np.zeros((n_possible_combos, n_reps))
         for i, combo in enumerate(combos):
-            td = np.random.choice(list(set(self.group).difference(combo)), 1)[0]
+            options = list(set(self.group).difference(combo))
+            td = np.random.choice(options, 1)[0]
             gd = combo
             out[i] = self.compute_specific_ccgp(td, gd, n_reps=n_reps,
                                                 **kwargs)
@@ -177,7 +177,7 @@ class ModularizerCode(cc.Code):
             fix_features = len(self.group) + fix_features
         all_inds = np.arange(self.n_feats_all, dtype=int)
         non_group_inds = set(all_inds).difference(self.group)
-        
+
         ngi_iter = it.combinations(non_group_inds, fix_features)
         combos = it.product(self.group, ngi_iter)
         n_possible_combos = len(self.group)*len(non_group_inds)
@@ -191,7 +191,7 @@ class ModularizerCode(cc.Code):
             out[i] = self.compute_specific_ccgp(td, gd, n_reps=n_reps,
                                                 **kwargs)
         return out
-    
+
     def compute_specific_ccgp(self, train_dim, gen_dim, train_dist=1,
                               gen_dist=1, n_reps=10, ref_stim=None,
                               train_noise=False, n_train=10,
