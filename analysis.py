@@ -60,7 +60,7 @@ class ModularizerCode(cc.Code):
         pwr = np.mean(np.sum(self.model.get_representation(reps)**2, axis=1),
                       axis=0)
         return pwr
-   
+
     def _get_all_stim(self):
         stim = list(it.product(range(self.n_values), repeat=self.n_feats))
         return stim
@@ -68,7 +68,7 @@ class ModularizerCode(cc.Code):
     def get_random_full_stim(self, **kwargs):
         return self._get_random_stim(self.n_feats_all, **kwargs)
 
-    def get_random_stim(self):
+    def get_random_stim(self, **kwargs):
         return self._get_random_stim(self.n_feats, **kwargs)
 
     def _get_random_stim(self, n_feats, non_nan=None):
@@ -81,7 +81,7 @@ class ModularizerCode(cc.Code):
                 mask = np.logical_not(np.isin(np.arange(n_feats), non_nan))
             s[:self.n_feats_all][mask] = np.nan
         return s
-      
+
     def get_full_stim(self, stim):
         f_stim, _ = self.sample_dg_reps(stim.shape[0])
         f_stim[:, self.group] = stim
@@ -783,6 +783,7 @@ def ablation_experiment(m, n_clusters=None, n_samps=1000,
                             cluster_funcs=cluster_funcs, **kwargs)
     return out
 
+
 def across_ablation_experiment(*args, **kwargs):
     cl = ablation_experiment(*args, n_shuffs=20, **kwargs)
 
@@ -795,6 +796,7 @@ def across_ablation_experiment(*args, **kwargs):
     out = np.mean(cl[mask_off])
     return out
 
+
 def within_ablation_experiment(*args, **kwargs):
     cl = ablation_experiment(*args, **kwargs)    
     cols = cl.shape[1]
@@ -806,10 +808,20 @@ def within_ablation_experiment(*args, **kwargs):
     out = np.mean(cl[mask])
     return out
 
+
 def diff_ablation_experiment(*args, **kwargs):
-    within = within_ablation_experiment(*args, **kwargs)
-    across = across_ablation_experiment(*args, **kwargs)
-    return within - across
+    cl = ablation_experiment(*args, **kwargs)    
+    cols = cl.shape[1]
+    diff = cl.shape[0] - cl.shape[1]
+    mask_on = np.identity(cl.shape[1], dtype=bool)
+    mask_off = ~mask_on
+    mask_on = np.concatenate((mask_on, np.zeros((diff, cols), dtype=bool)),
+                             axis=0)
+    mask_off = np.concatenate((mask_off, np.zeros((diff, cols), dtype=bool)),
+                              axis=0)
+
+    out = np.mean(cl[mask_on]) - np.mean(cl[mask_off])
+    return out
 
 def within_max_corr_ablation(*args, **kwargs):
     return within_ablation_experiment(*args, cluster_method=cluster_max_corr,
