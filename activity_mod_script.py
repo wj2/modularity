@@ -75,18 +75,20 @@ model_dict = {
     'linear_continuous':ms.LinearContinuousModularizer,
 }
 metric_methods = {
-    'gm':ma.quantify_activity_clusters,
-    'l2':ma.quantify_model_l2,
-    'l1':ma.quantify_model_l1,
+    'gm': ma.quantify_activity_clusters,
+    'l2': ma.quantify_model_l2,
+    'l1': ma.quantify_model_l1,
     # 'max_corr':ma.quantify_max_corr_clusters,
     # 'within_max_corr_ablation':ma.within_max_corr_ablation,
     # 'across_max_corr_ablation':ma.across_max_corr_ablation,
-    'within_act_ablation':ma.within_act_ablation,
-    'across_act_ablation':ma.across_act_ablation,
-    'within_graph_ablation':ma.within_graph_ablation,
-    'across_graph_ablation':ma.across_graph_ablation,
-    'model_frac':ma.compute_frac_contextual,
-    'fdg_frac':ma.compute_fdg_frac_contextual,
+    'within_act_ablation': ma.within_act_ablation,
+    'across_act_ablation': ma.across_act_ablation,
+    'within_graph_ablation': ma.within_graph_ablation,
+    'across_graph_ablation': ma.across_graph_ablation,
+    'diff_graph_ablation': ma.diff_graph_ablation,
+    'diff_act_ablation': ma.diff_act_ablation,
+    'model_frac': ma.compute_frac_contextual,
+    'fdg_frac': ma.compute_fdg_frac_contextual,
 }
 
 if __name__ == '__main__':
