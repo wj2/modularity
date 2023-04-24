@@ -806,6 +806,11 @@ def within_ablation_experiment(*args, **kwargs):
     out = np.mean(cl[mask])
     return out
 
+def diff_ablation_experiment(*args, **kwargs):
+    within = within_ablation_experiment(*args, **kwargs)
+    across = across_ablation_experiment(*args, **kwargs)
+    return within - across
+
 def within_max_corr_ablation(*args, **kwargs):
     return within_ablation_experiment(*args, cluster_method=cluster_max_corr,
                                       **kwargs)
@@ -813,6 +818,10 @@ def within_max_corr_ablation(*args, **kwargs):
 def across_max_corr_ablation(*args, **kwargs):
     return across_ablation_experiment(*args, cluster_method=cluster_max_corr,
                                       **kwargs)
+
+def diff_max_corr_ablation(*args, **kwargs):
+    return diff_ablation_experiment(*args, cluster_method=cluster_max_corr,
+                                    **kwargs)
 
 def within_graph_ablation(*args, **kwargs):
     return within_ablation_experiment(*args, cluster_method=cluster_graph,
@@ -822,9 +831,17 @@ def within_act_ablation(*args, **kwargs):
     return within_ablation_experiment(*args, cluster_method=act_cluster,
                                       **kwargs)
 
+def diff_act_ablation(*args, **kwargs):
+    return diff_ablation_experiment(*args, cluster_method=act_cluster,
+                                    **kwargs)
+
 def across_graph_ablation(*args, **kwargs):
     return across_ablation_experiment(*args, cluster_method=cluster_graph,
                                       **kwargs)
+
+def diff_graph_ablation(*args, **kwargs):
+    return diff_ablation_experiment(*args, cluster_method=cluster_graph,
+                                    **kwargs)
 
 def across_act_ablation(*args, **kwargs):
     return across_ablation_experiment(*args, cluster_method=act_cluster,
