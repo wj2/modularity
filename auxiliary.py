@@ -135,6 +135,23 @@ def sort_dict(sd, ordering, squeeze=True, stack_ax=0,
         sorted_dict[k] = v_sort
     return sorted_dict, ordering
 
+
+def _diff_ablation(d, add_key, sub_key):
+    return np.array(d[add_key]) - np.array(d[sub_key])
+
+
+def _diff_act_ablation(d):
+    return _diff_ablation(d, 'within_act_ablation', 'across_act_ablation')
+
+
+def _diff_graph_ablation(d):
+    return _diff_ablation(d, 'within_graph_ablation', 'across_graph_ablation')
+
+
+def _diff_max_corr_ablation(d):
+    return _diff_ablation(d, 'within_max_corr_ablation', 'across_max_corr_ablation')
+
+
 def load_run(run_ind, folder='modularity/simulation_data/',
              file_template='modularizer_([0-9]+)-{run_ind}',
              file_name='model_results.pkl',
@@ -146,7 +163,14 @@ def load_run(run_ind, folder='modularity/simulation_data/',
                         'within_max_corr_ablation',
                         'across_max_corr_ablation',
                         'max_corr', 'dimensionality', 'corr_rate',
-                        'model_frac', 'fdg_frac')):
+                        'model_frac', 'fdg_frac'),
+             add_keys=None):
+    if add_keys is None:
+        add_keys = {
+            'diff_act_ablation': _diff_act_ablation,
+            'diff_graph_ablation': _diff_graph_ablation,
+            # 'diff_max_corr_ablation': _diff_max_corr_ablation,
+        }
     files = os.listdir(folder)
     f_template = file_template.format(run_ind=run_ind)
     out_dict = {}
@@ -167,6 +191,8 @@ def load_run(run_ind, folder='modularity/simulation_data/',
 
                     l.append(md_k)
                     out_dict[k] = l
+    for k, func in add_keys.items():
+        out_dict[k] = func(out_dict)
     return sort_dict(out_dict, ordering) + (args,)
 
 def load_models(folder, file_template='modularizer_([0-9]+)-([0-9]+)',

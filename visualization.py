@@ -406,11 +406,13 @@ def accumulate_run_quants(
     quant_key="model_frac",
     templ="modularizer_nls([0-9]+)-{run_ind}",
     legend_keys=("date",),
+    **kwargs,
 ):
     dms = []
     quants = {}
     for ri in ri_list:
-        run = maux.load_run(ri, file_template=templ, ordering_func=maux.get_nl_strength)
+        run = maux.load_run(ri, file_template=templ,
+                            **kwargs)
         dm = run[1]
         dms.append(dm)
         key = tuple(_remove_singleton(run[2][k]) for k in legend_keys)

@@ -700,6 +700,7 @@ def _sort_ablate_inds(losses):
     if losses.shape[0] > losses.shape[1]:
         losses = np.concatenate((losses, np.zeros((losses.shape[0], 1))),
                                 axis=1)
+    losses[np.isnan(losses)] = 0
     _, sort_inds = spo.linear_sum_assignment(losses.T,
                                              maximize=True)
     return sort_inds
@@ -789,7 +790,7 @@ def across_ablation_experiment(*args, **kwargs):
     mask_off = np.concatenate((mask_off, add_row),
                               axis=0)
     out = np.mean(cl[mask_off])
-    return out   
+    return out
 
 def within_ablation_experiment(*args, **kwargs):
     cl = ablation_experiment(*args, **kwargs)    
@@ -798,7 +799,7 @@ def within_ablation_experiment(*args, **kwargs):
     mask = np.identity(cl.shape[1], dtype=bool)
     mask = np.concatenate((mask, np.zeros((diff, cols), dtype=bool)),
                           axis=0)
-        
+
     out = np.mean(cl[mask])
     return out
 

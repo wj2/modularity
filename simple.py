@@ -4,20 +4,34 @@ import functools as ft
 import itertools as it
 
 import sklearn.preprocessing as skp
+import sklearn.decomposition as skd
 import numpy as np
 
 import general.utility as u
 import disentangled.aux as da
 import disentangled.disentanglers as dd
 
-# import modularity.analysis as ma
-# import modularity.auxiliary as maux
-
-
 tfk = tf.keras
 tfkl = tf.keras.layers
 tfpl = tfp.layers
 tfd = tfp.distributions
+
+
+def mse_nanloss(label, prediction):
+    nan_mask = tf.math.logical_not(tf.math.is_nan(label))
+    label = tf.boolean_mask(label, nan_mask)
+    prediction = tf.boolean_mask(prediction, nan_mask)
+    mult = tf.square(prediction - label)
+    mse_nanloss = tf.reduce_mean(mult)
+    return mse_nanloss
+
+
+def binary_crossentropy_nan(label, prediction):
+    nan_mask = tf.math.logical_not(tf.math.is_nan(label))
+    label = tf.boolean_mask(label, nan_mask)
+    prediction = tf.boolean_mask(prediction, nan_mask)
+    bcel = tf.keras.losses.binary_crossentropy(label, prediction)
+    return bcel
 
 
 def xor(x):
@@ -478,12 +492,15 @@ class Modularizer:
         rep = self.get_representation(x)
         return true, x, rep
 
-    def _compile(self, optimizer=None, loss=None):
+    def _compile(self, optimizer=None, loss=None, ignore_nan=True,
+                 lr=1e-3):
         if optimizer is None:
-            optimizer = tf.optimizers.Adam(learning_rate=1e-3)
+            optimizer = tf.optimizers.Adam(learning_rate=lr)
         if loss is None:
-            loss = tf.losses.BinaryCrossentropy()
-            loss = tf.losses.MeanSquaredError()
+            if ignore_nan:
+                loss = mse_nanloss
+            else:
+                loss = tf.losses.MeanSquaredError()
         self.model.compile(optimizer, loss)
         self.loss = loss
         self.compiled = True
@@ -508,7 +525,7 @@ class Modularizer:
                 out = np.expand_dims(out, axis=1)
             ys[i] = out
         if self.single_output and group_inds is None:
-            raise IOError("need to provide group_inds if single_output is " "True")
+            raise IOError("need to provide group_inds if single_output is True")
         elif self.single_output:
             trl_inds = np.arange(len(xs))
 
@@ -574,6 +591,7 @@ class Modularizer:
         group_inds=None,
         special_fdg=None,
         only_groups=None,
+        only_tasks=None,
     ):
         if only_groups is not None:
             group_inds = self.rng.choice(only_groups, n_train)
@@ -613,6 +631,11 @@ class Modularizer:
             targ = None
         else:
             targ = self.generate_target(true, group_inds=group_inds)
+        if only_tasks is not None:
+            nan_inds = np.array(list(
+                set(np.arange(targ.shape[1])).difference(only_tasks)
+            ))
+            targ[:, nan_inds] = np.nan
         return x, true, targ
 
     def fit(
@@ -629,8 +652,15 @@ class Modularizer:
         special_fdg=None,
         return_training=False,
         only_groups=None,
+        only_tasks=None,
+        val_only_groups=None,
+        val_only_tasks=None,
         **kwargs
     ):
+        if val_only_groups is None:
+            val_only_groups = only_groups
+        if val_only_tasks is None:
+            val_only_tasks = only_tasks
         if not self.compiled:
             self._compile()
 
@@ -640,13 +670,15 @@ class Modularizer:
             n_train,
             special_fdg=special_fdg,
             only_groups=only_groups,
+            only_tasks=only_tasks,
         )
         eval_x, eval_true, eval_targ = self.get_x_true(
             eval_x,
             eval_true,
             n_val,
             special_fdg=special_fdg,
-            only_groups=only_groups,
+            only_groups=val_only_groups,
+            only_tasks=val_only_tasks,
         )
 
         eval_set = (eval_x, eval_targ)
@@ -1033,6 +1065,7 @@ def train_modularizer(
     model_type_dict=model_type_dict,
     track_dimensionality=True,
     only_groups=None,
+    only_tasks=None,
     **kwargs
 ):
     if params is not None:
@@ -1099,6 +1132,7 @@ def train_modularizer(
             track_dimensionality=track_dimensionality,
             n_train=n_train,
             only_groups=only_groups,
+            only_tasks=only_tasks,
         )
     else:
         h = None
