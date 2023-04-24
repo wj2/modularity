@@ -455,6 +455,7 @@ def train_n_models(group_size, tasks_per_group, group_width=200, fdg=None,
                    act_reg_weight=0, noise=.1, inp_noise=.01, n_overlap=0,
                    constant_init=None, single_output=False,
                    integrate_context=False, remove_last_inp=False,
+                   kernel_init=None, out_kernel_init=None,
                    **training_kwargs):
     if fdg is None:
         use_mixer = False
@@ -473,7 +474,9 @@ def train_n_models(group_size, tasks_per_group, group_width=200, fdg=None,
                           constant_init=constant_init, n_overlap=n_overlap,
                           single_output=single_output,
                           integrate_context=integrate_context,
-                          remove_last_inp=remove_last_inp)
+                          remove_last_inp=remove_last_inp,
+                          kernel_init=kernel_init,
+                          out_kernel_init=out_kernel_init)
          h_i = m_i.fit(epochs=epochs, verbose=verbose, **training_kwargs)
          out_ms.append(m_i)
          out_hs.append(h_i)
