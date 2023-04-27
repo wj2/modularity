@@ -395,7 +395,7 @@ class FigureDiscreteModularity(ModularizerFigure):
 
 class FigureGeometryConsequences(ModularizerFigure):
     def __init__(self, fig_key="geometry_consequences", colors=colors, **kwargs):
-        fsize = (7, 5)
+        fsize = (7, 6)
         cf = u.ConfigParserColor()
         cf.read(config_path)
 
@@ -412,14 +412,15 @@ class FigureGeometryConsequences(ModularizerFigure):
     def make_gss(self):
         gss = {}
 
+        side = 20
         nt_grid = pu.make_mxn_gridspec(self.gs, 1, 2,
-                                       70, 100,
-                                       0, 100,
+                                       75, 100,
+                                       side, 100 - side,
                                        10, 10)
         nt_axs = self.get_axs(nt_grid,)
         gss['panel_new_task'] = nt_axs[0, 0]
         gss['panel_new_context'] = nt_axs[0, 1]
-        
+
         geom_grid = pu.make_mxn_gridspec(self.gs, 3, 2, 0, 60, 30, 70, 10, 10)
         vis_grid = pu.make_mxn_gridspec(self.gs, 3, 1, 0, 60, 0, 20, 10, 10)
         geom_axs = self.get_axs(geom_grid, sharey="all", sharex="row")
@@ -495,8 +496,9 @@ class FigureGeometryConsequences(ModularizerFigure):
         colors = (
             self.params.getcolor("l3_color"),
             self.params.getcolor("l5_color"),
+            self.params.getcolor("l8_color"),
         )
-        labels = ("D = 3", "D = 5")
+        labels = ("D = 3", "D = 5", "D = 8")
         for i, ri in enumerate(ri_list):
             run_data, order, _ = self.load_run(ri)
 
@@ -618,9 +620,10 @@ class FigureGeometryConsequences(ModularizerFigure):
         xs = np.arange(train_epochs)
 
         key = 'val_loss'
-        gpl.plot_trace_werr(xs, pretrain_history.history[key], ax=ax, log_y=True,
+        log_y = False
+        gpl.plot_trace_werr(xs, pretrain_history.history[key], ax=ax, log_y=log_y,
                             label='pretrained network')
-        gpl.plot_trace_werr(xs, naive_history.history[key], ax=ax, log_y=True,
+        gpl.plot_trace_werr(xs, naive_history.history[key], ax=ax, log_y=log_y,
                             label='naive network')
 
     def panel_new_task(self):
@@ -656,9 +659,10 @@ class FigureGeometryConsequences(ModularizerFigure):
         xs = np.arange(train_epochs)
 
         key = 'val_loss'
-        gpl.plot_trace_werr(xs, pretrain_history.history[key], ax=ax, log_y=True,
+        log_y = False
+        gpl.plot_trace_werr(xs, pretrain_history.history[key], ax=ax, log_y=log_y,
                             label='pretrained network')
-        gpl.plot_trace_werr(xs, naive_history.history[key], ax=ax, log_y=True,
+        gpl.plot_trace_werr(xs, naive_history.history[key], ax=ax, log_y=log_y,
                             label='naive network')
 
 
