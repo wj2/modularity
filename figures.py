@@ -103,7 +103,26 @@ class ModularizerFigure(pu.Figure):
         out = maux.load_run(run_ind, folder=folder)
         return out
 
-    
+    def _quantification_panel(self, quant_keys, ri_list, axs, label_dict=None,
+                              nulls=None, legend_keys=('group_size',)):
+        model_templ = self.params.get('model_template')
+        if nulls is None:
+            nulls = (.5,)*len(quant_keys)
+        if label_dict is None:
+            label_dict = {}
+        for i, qk in enumerate(quant_keys):
+            qk_ri = mv.accumulate_run_quants(
+                ri_list,
+                templ=model_templ,
+                quant_key=qk,
+                legend_keys=legend_keys,
+            )
+            for k, (xs, qs) in qk_ri.items():
+                gpl.plot_trace_werr(xs, qs.T, ax=axs[i],
+                                    label=label_dict[k], log_x=True)
+            gpl.add_hlines(nulls[i], axs[i])
+
+
 class FigureInput(ModularizerFigure):
     def __init__(self, fig_key="input_figure", colors=colors, **kwargs):
         fsize = (1.4, 4)
@@ -330,21 +349,11 @@ class FigureDiscreteModularity(ModularizerFigure):
         quant_keys = ('model_frac', 'diff_act_ablation',
                       'within_ccgp', 'shattering')
         ri_list = self.params.getlist('ri_list')
-        model_templ = self.params.get('model_template')
+
         label_dict = {(3,): 'D = 3', (5,): 'D = 5', (8,): 'D = 8'}
         nulls = (0, 0, .5, .5)
-
-        for i, qk in enumerate(quant_keys):
-            qk_ri = mv.accumulate_run_quants(
-                ri_list,
-                templ=model_templ,
-                quant_key=qk,
-                legend_keys=('group_size',),
-            )
-            for k, (xs, qs) in qk_ri.items():
-                gpl.plot_trace_werr(xs, qs.T, ax=axs_all[i],
-                                    label=label_dict[k], log_x=True)
-            gpl.add_hlines(nulls[i], axs_all[i])
+        self._quantification_panel(quant_keys, ri_list, axs_all,
+                                   label_dict=label_dict, nulls=nulls)
 
     def panel_task_compare(self, refit_models=False, recompute_ablation=False):
         key = 'panel_task_compare'
@@ -848,9 +857,9 @@ def _get_last_dim(dims):
     return out
 
 
-class FigureExplanation(ModularizerFigure):
-    def __init__(self, fig_key="explanation_figure", colors=colors, **kwargs):
-        fsize = (7, 6)
+class FigureOtherCases(ModularizerFigure):
+    def __init__(self, fig_key="other_param_figure", colors=colors, **kwargs):
+        fsize = (7, 5)
         cf = u.ConfigParserColor()
         cf.read(config_path)
 
@@ -858,7 +867,6 @@ class FigureExplanation(ModularizerFigure):
         self.fig_key = fig_key
         self.panel_keys = (
             "panel_nonlinear_single",
-            "panel_hidden_layers",
             "panel_overlap_clusters",
         )
         super().__init__(fsize, params, colors=colors, **kwargs)
@@ -866,31 +874,22 @@ class FigureExplanation(ModularizerFigure):
     def make_gss(self):
         gss = {}
 
-        lb = 50
+        lb = 40
 
-        task_schem = self.gs[:20, 0:50]
+        task_schem = self.gs[:lb, 0:100]
         self.get_axs((task_schem,))
 
-        # nl_single_grid = pu.make_mxn_gridspec(self.gs, 2, 1,
-        #                                       15, lb, 0, 30,
-        #                                       10, 10)
-        # nl_single_abl_grid = pu.make_mxn_gridspec(self.gs, 2, 1,
-        #                                           15, lb, 35, 55,
-        #                                           10, 10)
-        # gss[self.panel_keys[0]] = (self.get_axs(nl_single_grid),
-        #                            self.get_axs(nl_single_abl_grid))
-
-        task_comp_grid = pu.make_mxn_gridspec(self.gs, 2, 3, 15, lb, 0, 55, 5, 8)
-
+        task_comp_grid = pu.make_mxn_gridspec(self.gs, 2, 3,
+                                              lb, 100,
+                                              0, 60, 8, 8)
         gss[self.panel_keys[0]] = self.get_axs(task_comp_grid, sharey="vertical")
 
-        hidden_grid = pu.make_mxn_gridspec(self.gs, 2, 3, 15, lb, 60, 100, 5, 10)
-
-        gss[self.panel_keys[1]] = self.get_axs(hidden_grid)
-
-        cs_grid = pu.make_mxn_gridspec(self.gs, 2, 4, lb + 10, 100, 0, 100, 5, 10)
-        gss[self.panel_keys[2]] = self.get_axs(cs_grid).T
-
+        cs_grid = pu.make_mxn_gridspec(self.gs, 2, 2,
+                                       lb, 100,
+                                       70, 100, 5, 8)
+        gss[self.panel_keys[1]] = self.get_axs(cs_grid, sharex="all", sharey="all",
+                                               aspect="equal")
+        
         self.gss = gss
 
     def make_nl_modularizers(self, retrain=False):
@@ -1039,28 +1038,11 @@ class FigureExplanation(ModularizerFigure):
             axs_quant[0, 1].set_ylabel("ablation effect")
             axs_quant[0, 0].set_ylabel("excess dimensionality")
 
-    def make_hidden_modularizers(self, retrain=False):
-        if self.data.get("trained_hidden_models") is None or retrain:
-            hiddens = self.params.getlist("test_hiddens", typefunc=int)
-
-            m_hid, h_hid = self.train_modularizer(additional_hidden=hiddens)
-            labels = ("hidden layers",)
-            self.data["trained_hidden_models"] = ((m_hid,), (h_hid,), labels)
-        return self.data["trained_hidden_models"]
-
-    def panel_hidden_layers(self):
-        key = self.panel_keys[1]
-        axs_hid = self.gss[key]
-
-        inds = self.params.getlist("hidden_layer_inds", typefunc=int)
-
-        nets, _, labels = self.make_hidden_modularizers()
-        for i, ind in enumerate(inds):
-            mv.plot_model_list_activity(nets, axs=axs_hid[:, i : i + 1], from_layer=ind)
 
     def panel_overlap_clusters(self):
-        key = self.panel_keys[2]
-        axs_clusters = self.gss[key]
+        key = self.panel_keys[1]
+        axs_scatters = self.gss[key]
+        axs_scatters = axs_scatters.flatten()
 
         model_types = ("linear", "linear", "coloring", "coloring")
         overlaps = (3, 0, 3, 0)
@@ -1077,9 +1059,78 @@ class FigureExplanation(ModularizerFigure):
 
         mod_dict = self.data[key]
         for i, ((mt, ov), (mod, hist)) in enumerate(mod_dict.items()):
-            ax_cluster, ax_scatter = axs_clusters[i]
+            ax_s = axs_scatters[i]
 
-            mv.plot_context_clusters(mod, ax=ax_cluster)
-            mv.plot_context_scatter(mod, ax=ax_scatter)
-            ax_scatter.set_xlabel("C1 activity")
-            ax_scatter.set_ylabel("C2 activity")
+            mv.plot_context_scatter(mod, ax=ax_s)
+            ax_s.set_xlabel("C1 activity")
+            ax_s.set_ylabel("C2 activity")
+
+
+class FigureHiddenLayers(ModularizerFigure):
+    def __init__(self, fig_key="hidden_layers_figure", colors=colors, **kwargs):
+        fsize = (7, 5)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        lb = 40
+
+        task_schem = self.gs[:lb, 0:100]
+        self.get_axs((task_schem,))
+
+        n_layers = len(self.params.getlist("hidden_layer_inds"))
+        layer_eg_grid = pu.make_mxn_gridspec(self.gs, 2, n_layers,
+                                             lb, 100,
+                                             0, 60, 8, 8)
+        gss["panel_eg"] = self.get_axs(layer_eg_grid, sharey="horizontal",
+                                       sharex="horizontal")
+
+        quant_grid = pu.make_mxn_gridspec(self.gs, 3, 1,
+                                          20, 100,
+                                          70, 100,
+                                          8, 8)
+
+        gss["panel_quant"] = self.get_axs(quant_grid,
+                                          sharex="all")
+
+        self.gss = gss
+
+    def make_hidden_modularizers(self, retrain=False):
+        if self.data.get("trained_hidden_models") is None or retrain:
+            hiddens = self.params.getlist("test_hiddens", typefunc=int)
+
+            m_hid, h_hid = self.train_modularizer(additional_hidden=hiddens)
+            labels = ("hidden layers",)
+            self.data["trained_hidden_models"] = ((m_hid,), (h_hid,), labels)
+        return self.data["trained_hidden_models"]
+
+    def panel_eg(self):
+        key = "panel_eg"
+        axs_hid = self.gss[key]
+
+        inds = self.params.getlist("hidden_layer_inds", typefunc=int)
+
+        nets, _, labels = self.make_hidden_modularizers()
+        for i, ind in enumerate(inds):
+            mv.plot_model_list_activity(nets, axs=axs_hid[:, i : i + 1], from_layer=ind)
+
+    def panel_quant(self):
+        key = "panel_quant"
+        axs_all = self.gss[key]
+
+        ri_list = self.params.getlist("ri_list")
+        quant_keys = ('model_frac', 'diff_act_ablation',
+                      'within_ccgp', 'shattering')
+        ri_list = self.params.getlist('ri_list')
+
+        label_dict = {(3,): 'D = 3', (5,): 'D = 5', (8,): 'D = 8'}
+        nulls = (0, 0, .5, .5)
+        self._quantification_panel(quant_keys, ri_list, axs_all,
+                                   label_dict=label_dict, nulls=nulls)
+

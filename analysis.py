@@ -27,7 +27,8 @@ tfk = tf.keras
 class ModularizerCode(cc.Code):
 
     def __init__(self, model, group_ind=None, dg_model=None, source_distr=None,
-                 n_values=2, noise_cov=.1**2):
+                 n_values=2, noise_cov=.1**2, use_layer=None):
+        self.use_layer = use_layer
         context_signal = model.integrate_context
         if dg_model is not None and source_distr is None:
             n_feats_all = dg_model.input_dim
@@ -46,7 +47,11 @@ class ModularizerCode(cc.Code):
         self.context_signal = context_signal
         self.n_feats = len(self.group)
         self.n_values = n_values
-        self.n_neurs = model.hidden_dims        
+        if use_layer is not None:
+            n_units = model.model.layers[use_layer].output.shape[1]
+        else:
+            n_units = model.hidden_dims
+        self.n_neurs = n_units
         self.n_stimuli = self.n_values**self.n_feats
         self.noise_distr = sts.multivariate_normal(np.zeros(self.n_neurs),
                                                    noise_cov)
@@ -56,9 +61,9 @@ class ModularizerCode(cc.Code):
         self.stim = self._get_all_stim()
 
     def _get_avg_power(self, n_avg=10000):
-        samps, reps = self.sample_dg_reps(n_avg)
-        pwr = np.mean(np.sum(self.model.get_representation(reps)**2, axis=1),
-                      axis=0)
+        samps, inp_reps = self.sample_dg_reps(n_avg)
+        reps = self.model.get_representation(inp_reps, layer=self.use_layer)
+        pwr = np.mean(np.sum(reps**2, axis=1), axis=0)
         return pwr
 
     def _get_all_stim(self):
@@ -114,7 +119,7 @@ class ModularizerCode(cc.Code):
         if stim.shape[1] == len(self.group):
             stim = self.get_full_stim(stim)
         stim_rep = self.dg_model.get_representation(stim)
-        reps = self.model.get_representation(stim_rep)
+        reps = self.model.get_representation(stim_rep, layer=self.use_layer)
         if noise:
             reps = self._add_noise(reps)
         if ret_stim:
@@ -253,12 +258,14 @@ class ModularizerCode(cc.Code):
 
                 train_sets.append((c1_eg_stim, c2_eg_stim))
                 test_sets.append((c1_test_stim, c2_test_stim))
-        return train_sets, test_sets                
+        return train_sets, test_sets
+
 
 def expected_pn(modules, tasks, inp_dim, acc=.95, sigma=.1, n_values=2):
     s = sts.norm(0, 1).ppf(acc)
     return modules*(s**2)*(sigma**2)*(n_values**inp_dim)
-    
+
+
 @u.arg_list_decorator
 def train_variable_models(group_size, tasks_per_group, group_maker, model_type,
                           n_reps=2, n_overlap=(0,), **kwargs):
@@ -274,6 +281,7 @@ def train_variable_models(group_size, tasks_per_group, group_maker, model_type,
         out_ms[i, j, k, l, m], out_hs[i, j, k, l, m] = out
     return out_ms, out_hs
 
+
 def avg_corr(k, n=2):
     n_s = .5*ss.binom(n**k, n**(k - 1))
     f = np.arange(1, n**(k - 2) + 1)
@@ -282,23 +290,27 @@ def avg_corr(k, n=2):
     corr = (1/n_s)*(k + np.sum(n_f*r))
     return corr
 
-def cluster_graph(m, n_clusters=None, **kwargs):
+def cluster_graph(m, n_clusters=None, layer=None, **kwargs):
     if n_clusters is None:
-        n_clusters = m.n_groups 
+        n_clusters = m.n_groups
+    if layer is None:
+        layer = -1
     ws = m.model.weights
+    # ws_mats = ws[::2]
+
     w_ih = ws[0]
     w_ho = ws[2]
     n_hidden_neurs = w_ih.shape[1]
     n_out_neurs = w_ho.shape[1]
-    
+
     w_ih_abs = np.abs(w_ih)
     w_ho_abs = np.abs(w_ho)
     z_i = np.zeros((w_ih.shape[0], w_ih.shape[0]))
     z_io = np.zeros((w_ih.shape[0], w_ho.shape[1]))
-    
+
     z_h = np.zeros((w_ih.shape[1], w_ih.shape[1]))
     z_o = np.zeros((w_ho.shape[1], w_ho.shape[1]))
-    
+
     wm_full = np.block([[z_i, w_ih_abs, z_io],
                         [w_ih_abs.T, z_h, w_ho_abs],
                         [z_io.T, w_ho_abs.T, z_o]])
@@ -456,6 +468,7 @@ def train_n_models(group_size, tasks_per_group, group_width=200, fdg=None,
                    constant_init=None, single_output=False,
                    integrate_context=False, remove_last_inp=False,
                    kernel_init=None, out_kernel_init=None,
+                   additional_hidden=(),
                    **training_kwargs):
     if fdg is None:
         use_mixer = False
@@ -476,7 +489,8 @@ def train_n_models(group_size, tasks_per_group, group_width=200, fdg=None,
                           integrate_context=integrate_context,
                           remove_last_inp=remove_last_inp,
                           kernel_init=kernel_init,
-                          out_kernel_init=out_kernel_init)
+                          out_kernel_init=out_kernel_init,
+                          additional_hidden=additional_hidden)
          h_i = m_i.fit(epochs=epochs, verbose=verbose, **training_kwargs)
          out_ms.append(m_i)
          out_hs.append(h_i)
@@ -630,7 +644,9 @@ def quantify_clusters(groups, w_matrix, absolute=True):
     return overlap, avg_in - avg_out
 
 def sample_all_contexts(m, n_samps=1000, use_mean=False, ret_out=False,
-                        from_layer=None, cluster_funcs=None):
+                        from_layer=None, cluster_funcs=None, layer=None):
+    if from_layer is None and layer is not None:
+        from_layer = layer
     if cluster_funcs is None:
         n_g = m.n_groups
     else:
@@ -639,15 +655,15 @@ def sample_all_contexts(m, n_samps=1000, use_mean=False, ret_out=False,
     out_act = []
     for i in range(n_g):
         if cluster_funcs is None:
-            _, samps_i, reps_i = m.sample_reps(n_samps, context=i)
+            _, samps_i, reps_i = m.sample_reps(n_samps, context=i,
+                                               layer=from_layer)
         else:
-            true_i, samps_i, reps_i = m.sample_reps(n_samps*n_g)
+            true_i, samps_i, reps_i = m.sample_reps(n_samps*n_g,
+                                                    layer=from_layer)
             rel_dim = maux.get_relevant_dims(true_i, m)
             mask = cluster_funcs[i](rel_dim)
             reps_i = reps_i[mask]
             samps_i = samps_i[mask]
-        if from_layer is not None:
-            reps_i = m.get_layer_representation(samps_i, layer=from_layer)
         if use_mean:
             reps_i = np.mean(reps_i, axis=0, keepdims=True)
         out_act_i = m.model(samps_i)
@@ -730,8 +746,8 @@ def ablate_label_sets(m, unit_labels, n_samps=5000, separate_contexts=True,
                                            n_samps=n_samps, group_ind=cl,
                                            layer=layer)
             c_mask = unit_labels == label
-            c_loss =  m.get_ablated_loss(c_mask, n_samps=n_samps,
-                                         group_ind=cl, layer=layer)
+            c_loss = m.get_ablated_loss(c_mask, n_samps=n_samps,
+                                        group_ind=cl, layer=layer)
             for k in range(n_shuffs):
                 rng.shuffle(c_mask)
                 nl = m.get_ablated_loss(c_mask, n_samps=n_samps,
@@ -860,7 +876,7 @@ def across_act_ablation(*args, **kwargs):
                                       **kwargs)
 
 def _quantify_model_ln(m, n, n_samps=1000, **kwargs):
-    activity = sample_all_contexts(m, n_samps=n_samps)
+    activity = sample_all_contexts(m, n_samps=n_samps, **kwargs)
     act_all = np.concatenate(activity, axis=0)
     norm = np.mean(np.sum(np.abs(act_all)**n, axis=1))
     return norm
@@ -871,9 +887,10 @@ def quantify_model_l1(m, **kwargs):
 def quantify_model_l2(m, **kwargs):
     return _quantify_model_ln(m, 2, **kwargs)
 
-def quantify_activity_clusters(m, n_samps=1000, use_mean=True,
+def quantify_activity_clusters(m, n_samps=1000, use_mean=True, layer=None,
                                model=skmx.GaussianMixture):
-    activity = sample_all_contexts(m, n_samps=n_samps, use_mean=use_mean)
+    activity = sample_all_contexts(m, n_samps=n_samps, use_mean=use_mean,
+                                   layer=layer)
     a_full = np.concatenate(activity, axis=0)
     
     m_full_p1, _ = _fit_clusters(a_full, len(activity) + 1, model=model)
@@ -908,10 +925,21 @@ def quantify_max_corr_clusters(m, n_samps=5000):
     clusters, overlap = cluster_max_corr(m, n_samps=n_samps, ret_overlap=True)
     return 1 - overlap
 
-def apply_act_clusters_list(models, func=quantify_activity_clusters, **kwargs):
-    clust = np.zeros(models.shape)
-    for ind in u.make_array_ind_iterator(models.shape):
-        clust[ind] = func(models[ind], **kwargs)
+def apply_act_clusters_list(models, func=quantify_activity_clusters, eval_layers=False,
+                            **kwargs):
+    if eval_layers:
+        n_layers = (len(models.flatten()[0].model.layers),)
+    else:
+        n_layers = ()
+    clust = np.zeros(models.shape + n_layers)
+    for ind in u.make_array_ind_iterator(clust.shape):
+        if eval_layers:
+            layer = ind[-1]
+            model_ind = ind[:-1]
+        else:
+            model_ind = ind
+            layer = None
+        clust[ind] = func(models[model_ind], layer=layer, **kwargs)
     return clust
 
 def infer_activity_clusters(m, n_samps=1000, use_mean=True, ret_act=False,
@@ -925,17 +953,31 @@ def infer_activity_clusters(m, n_samps=1000, use_mean=True, ret_act=False,
     return out
 
 def apply_geometry_model_list(ml, fdg, group_ind=0, n_train=4,
-                              fix_features=2, noise_cov=.01**2, **kwargs):
+                              fix_features=2, noise_cov=.01**2,
+                              eval_layers=False, **kwargs):
     ml = np.array(ml)
     if not u.check_list(noise_cov):
         noise_cov = (noise_cov,)
-    shattering = np.zeros(ml.shape + (len(noise_cov),), dtype=object)
+    if eval_layers:
+        n_layers = (len(ml.flatten()[0].model.layers),)
+    else:
+        n_layers = ()
+    shattering = np.zeros(ml.shape + (len(noise_cov),) + n_layers, dtype=object)
     within_ccgp = np.zeros_like(shattering)
     across_ccgp = np.zeros_like(shattering)
     for ind in u.make_array_ind_iterator(shattering.shape):
-        m = ml[ind[:-1]]
+        if eval_layers:
+            model_ind = ind[:-2]
+            layer = ind[-1]
+            noise_ind = ind[-2]
+        else:
+            model_ind = ind[:-1]
+            noise_ind = ind[-1]
+            layer = None
+        m = ml[model_ind]
         m_code = ModularizerCode(m, dg_model=fdg, group_ind=group_ind,
-                                 noise_cov=noise_cov[ind[-1]])
+                                 noise_cov=noise_cov[noise_ind],
+                                 use_layer=layer)
         shattering[ind] = m_code.compute_shattering(**kwargs)[-1]
         within_ccgp[ind] = m_code.compute_within_group_ccgp(
             n_train=n_train, fix_features=fix_features, **kwargs)
@@ -1706,10 +1748,10 @@ def compute_frac_contextual(mod, **kwargs):
     return frac
 
 def compute_silences(mod, use_fdg=False, thr=1e-2, rescale=True,
-                     n_samps=1000, use_abs=True):
+                     n_samps=1000, use_abs=True, layer=None):
     n_g = mod.n_groups
 
-    _, inp_rep, mod_rep = mod.sample_reps(n_samps*n_g)
+    _, inp_rep, mod_rep = mod.sample_reps(n_samps*n_g, layer=layer)
     if use_fdg:
         mod_rep = inp_rep
     if use_abs:
@@ -1721,7 +1763,7 @@ def compute_silences(mod, use_fdg=False, thr=1e-2, rescale=True,
 
     active_units = np.zeros((n_g, mod_rep.shape[1]))
     for i in range(n_g):
-        _, inp_rep, mod_rep = mod.sample_reps(n_samps, context=i)
+        _, inp_rep, mod_rep = mod.sample_reps(n_samps, context=i, layer=layer)
         if use_fdg:
             mod_rep = inp_rep
         if use_abs:

@@ -8,6 +8,7 @@ from datetime import datetime
 
 import general.utility as u
 import disentangled.data_generation as dg
+import disentangled.characterization as dc
 
 import modularity.simple as ms
 import modularity.analysis as ma
@@ -50,11 +51,13 @@ def create_parser():
     parser.add_argument('--weight_init_const', default=None, type=float)
     parser.add_argument('--input_noise', default=.01, type=float)
     parser.add_argument('--train_noise', default=.1, type=float)
-    
+
     parser.add_argument('--dg_batch_size', default=100, type=int)
     parser.add_argument('--brim_threshold', default=1.5, type=float)
     parser.add_argument('--fdg_weight_init', default=None, type=float)
     parser.add_argument('--fdg_layers', nargs='+', default=(300,),
+                        type=int)
+    parser.add_argument('--model_layers', nargs='+', default=(),
                         type=int)
     parser.add_argument('--ccgp_n_train', default=2, type=int)                        
     parser.add_argument('--ccgp_fix_features', default=-1, type=int)
@@ -66,13 +69,15 @@ def create_parser():
     parser.add_argument('--dm_input_mixing_denom', default=1, type=float)
     parser.add_argument('--remove_last_inp', default=False,
                         action='store_true')
+    parser.add_argument('--eval_intermediate', default=False, action='store_true')
     return parser
 
+
 model_dict = {
-    'xor':ms.XORModularizer,
-    'coloring':ms.ColoringModularizer,
-    'linear':ms.LinearModularizer,
-    'linear_continuous':ms.LinearContinuousModularizer,
+    'xor': ms.XORModularizer,
+    'coloring': ms.ColoringModularizer,
+    'linear': ms.LinearModularizer,
+    'linear_continuous': ms.LinearContinuousModularizer,
 }
 metric_methods = {
     'gm': ma.quantify_activity_clusters,
@@ -131,7 +136,7 @@ if __name__ == '__main__':
                                             mix_strength=mix_strength)
     else:
         fdg = dg.FunctionalDataGenerator(inp_dim, (300,), args.rep_dim,
-                                         source_distribution=source_distr, 
+                                         source_distribution=source_distr,
                                          use_pr_reg=True,
                                          kernel_init=args.fdg_weight_init)
         fdg.fit(epochs=args.fdg_epochs, verbose=False,
@@ -160,20 +165,40 @@ if __name__ == '__main__':
         remove_last_inp=args.remove_last_inp,
         kernel_init=kernel_init,
         out_kernel_init=kernel_init,
+        additional_hidden=args.model_layers,
     )
     models, histories = out
 
+    # these default metrics are not implemented for intermediate layers
+    non_intermediate_metrics = (
+        "within_graph_ablation",
+        "across_graph_ablation",
+        "diff_graph_ablation",
+    )
+    if args.eval_intermediate:
+        for metric in non_intermediate_metrics:
+            metric_methods.pop(metric)
+
     metric_results = {}
     for cm, func in metric_methods.items():
-        clust = ma.apply_act_clusters_list(models, func)
+        clust = ma.apply_act_clusters_list(
+            models,
+            func,
+            eval_layers=args.eval_intermediate,
+        )
         metric_results[cm] = clust
 
     if args.ccgp_fix_features is None:
         fix_feats = group_size - 1
     else:
         fix_feats = args.ccgp_fix_features
-    out = ma.apply_geometry_model_list(models, fdg, n_train=args.ccgp_n_train,
-                                       fix_features=fix_feats)
+    out = ma.apply_geometry_model_list(
+        models,
+        fdg,
+        n_train=args.ccgp_n_train,
+        fix_features=fix_feats,
+        eval_layers=args.eval_intermediate,
+    )
     shattering, within, across = out
     geometry_results = {}
     geometry_results['shattering'] = shattering

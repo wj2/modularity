@@ -17,6 +17,13 @@ tfpl = tfp.layers
 tfd = tfp.distributions
 
 
+class ModularizerIntermediateLayers(dd.GenericIntermediateLayers):
+    def __init__(self, *args, hidden_dims=None, **kwargs):
+        self.hidden_dims = hidden_dims
+
+        super().__init__(*args, **kwargs)
+
+
 def mse_nanloss(label, prediction):
     nan_mask = tf.math.logical_not(tf.math.is_nan(label))
     label = tf.boolean_mask(label, nan_mask)
@@ -473,23 +480,28 @@ class Modularizer:
         rep_out = tfk.Sequential(layer_list[-1:])
         return enc, rep, rep_out
 
-    def get_representation(self, stim, group=None):
-        rep = self.rep_model(stim)
+    def get_representation(self, stim, group=None, layer=None):
+        if layer is None:
+            rep = self.rep_model(stim)
+        else:
+            rep = self.get_layer_representation(stim, layer=layer, group=group)
         return rep
 
     def get_layer_representation(self, stim, layer=-1, group=None):
-        if self.layer_models is None:
-            self.layer_models = dd.IntermediateLayers(self.model, use_i=layer)
-        return self.layer_models.get_representation(stim, layer_ind=layer)
+        use_layers = self.model.layers[:layer] + [self.model.layers[layer]]
+        x = stim
+        for i, layer_m in enumerate(use_layers):
+            x = layer_m(x)
+        return x
 
-    def sample_reps(self, n_samps=1000, context=None):
+    def sample_reps(self, n_samps=1000, context=None, layer=None):
         if context is not None:
             group_inds = np.ones(n_samps, dtype=int) * context
         else:
             group_inds = None
         out = self.get_x_true(n_train=n_samps, group_inds=group_inds)
         x, true, targ = out
-        rep = self.get_representation(x)
+        rep = self.get_representation(x, layer=layer)
         return true, x, rep
 
     def _compile(self, optimizer=None, loss=None, ignore_nan=True,
