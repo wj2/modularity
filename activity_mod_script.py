@@ -63,6 +63,12 @@ def create_parser():
     parser.add_argument('--ccgp_fix_features', default=-1, type=int)
     parser.add_argument('--continuous_input', default=False,
                         action='store_true')
+    parser.add_argument('--twod_shape_input', default=False,
+                        action='store_true')
+    img_net_address = ('https://tfhub.dev/google/imagenet/'
+                       'mobilenet_v3_small_100_224/feature_vector/5')
+    parser.add_argument('--image_pre_net', default=img_net_address,
+                        type=str)
     parser.add_argument('--discrete_mixed_input', default=False,
                         action='store_true')
     parser.add_argument('--dm_input_mixing', default=.5, type=float)
@@ -134,6 +140,19 @@ if __name__ == '__main__':
         mix_strength = args.dm_input_mixing/args.dm_input_mixing_denom
         fdg = dg.MixedDiscreteDataGenerator(inp_dim, n_units=args.rep_dim,
                                             mix_strength=mix_strength)
+    elif args.twod_shape_input:
+        twod_file = ('disentangled/datasets/'
+                     'dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
+        img_resize = (224, 224)
+        img_pre_net = args.img_pre_net
+        dg_use = dg.TwoDShapeGenerator(twod_file, img_size=img_resize,
+                                       max_load=100, convert_color=True,
+                                       pre_model=img_pre_net)
+        true_inp_dim = dg_use.input_dim
+        no_learn_lvs = np.array([True, False, True, False, False])
+        compute_train_lvs = True
+
+        fdg = ms.ImageDGWrapper(dg_use, ~no_learn_lvs, 'shape', 0)
     else:
         fdg = dg.FunctionalDataGenerator(inp_dim, (300,), args.rep_dim,
                                          source_distribution=source_distr,
