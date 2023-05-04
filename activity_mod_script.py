@@ -134,7 +134,6 @@ if __name__ == '__main__':
     else:
         kernel_init = None
 
-    print(inp_dim)
     print(args.rep_dim)
     if args.discrete_mixed_input:
         mix_strength = args.dm_input_mixing/args.dm_input_mixing_denom
@@ -146,9 +145,8 @@ if __name__ == '__main__':
         img_resize = (224, 224)
         img_pre_net = args.image_pre_net
         dg_use = dg.TwoDShapeGenerator(twod_file, img_size=img_resize,
-                                       max_load=100, convert_color=True,
+                                       max_load=np.inf, convert_color=True,
                                        pre_model=img_pre_net)
-        true_inp_dim = dg_use.input_dim
         no_learn_lvs = np.array([True, False, True, False, False])
         compute_train_lvs = True
 
