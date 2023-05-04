@@ -144,7 +144,7 @@ if __name__ == '__main__':
         twod_file = ('disentangled/datasets/'
                      'dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
         img_resize = (224, 224)
-        img_pre_net = args.img_pre_net
+        img_pre_net = args.image_pre_net
         dg_use = dg.TwoDShapeGenerator(twod_file, img_size=img_resize,
                                        max_load=100, convert_color=True,
                                        pre_model=img_pre_net)
