@@ -10,6 +10,7 @@ import numpy as np
 import general.utility as u
 import disentangled.aux as da
 import disentangled.disentanglers as dd
+import disentangled.data_generation as dg
 
 tfk = tf.keras
 tfkl = tf.keras.layers
@@ -205,7 +206,7 @@ def make_ai_func(inp_dims, ai_dep, ai_func):
     return func
 
 
-class ImageDGWrapper:
+class ImageDGWrapper(dg.DataGenerator):
     def __init__(self, use_dg, use_lvs, categorical_lv_name, categorical_lv_ind=0):
         self.use_dg = use_dg
         self.use_lvs = use_lvs
