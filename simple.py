@@ -619,6 +619,8 @@ class Modularizer:
                 group_inds = self.rng.choice(self.n_groups, n_train)
         elif group_inds is not None and self.continuous:
             m_inds = np.argmax(true[:, -self.n_groups:], axis=1)
+            if not u.check_list(group_inds):
+                group_inds = np.ones(true.shape[0], dtype=int)*group_inds
             for i in range(true.shape[0]):
                 m_i = m_inds[i] - self.n_groups
                 g_i = group_inds[i] - self.n_groups
