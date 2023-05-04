@@ -201,7 +201,7 @@ def parity(inps, minigroup=None):
 
 def make_ai_func(inp_dims, ai_dep, ai_func):
     rng = np.random.default_rng()
-    subset = rng.choice(inp_dims, size=ai_rep, replace=False)
+    subset = rng.choice(inp_dims, size=ai_dep, replace=False)
     func = ft.partial(ai_func, minigroup=subset)
     return func
 

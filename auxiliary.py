@@ -6,7 +6,6 @@ import pandas as pd
 import itertools as it
 
 import general.utility as u
-import modularity.analysis as ma
 
 
 def get_relevant_dims(samps, m, preserve_order_if_same=True):
@@ -256,9 +255,9 @@ def load_models(
     return df
 
 
-def add_brim(row, weight_ind=2, **kwargs):
-    out = ma.simple_brim(row["group_members"], row["weights"][weight_ind], **kwargs)
-    return out
+# def add_brim(row, weight_ind=2, **kwargs):
+#     out = ma.simple_brim(row["group_members"], row["weights"][weight_ind], **kwargs)
+#     return out
 
 
 def add_field(df, field_name, field_func, **kwargs):
