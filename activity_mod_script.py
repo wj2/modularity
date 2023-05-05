@@ -16,6 +16,7 @@ import modularity.auxiliary as maux
 
 tfk = tf.keras
 
+
 def create_parser():
     parser = argparse.ArgumentParser(description='fit several modularizers')
     parser.add_argument('-o', '--output_folder', default='results-n', type=str,
@@ -26,7 +27,7 @@ def create_parser():
                         help='dimensionality of representation layer')
     parser.add_argument('--fdg_epochs', default=5, type=int,
                         help='epochs to train DG for')
-    
+
     parser.add_argument('--group_size', default=(5,), type=int,
                         help='size of groups', nargs='+')
     parser.add_argument('--tasks_per_group', default=(10,), type=int,
@@ -43,6 +44,7 @@ def create_parser():
                         help='default cumulative weight')
     parser.add_argument('--n_reps', default=5, type=int,
                         help='number of repeats')
+    parser.add_argument('--n_model_train', default=2*10**5, type=int)
 
     parser.add_argument('--kernel_init_std', default=None, type=float)
     parser.add_argument('--group_overlap', default=(0,), type=int, nargs='+')
@@ -192,6 +194,7 @@ if __name__ == '__main__':
         kernel_init=kernel_init,
         out_kernel_init=kernel_init,
         additional_hidden=args.model_layers,
+        n_train=args.n_model_train,
     )
     models, histories = out
 
