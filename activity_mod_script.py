@@ -76,6 +76,8 @@ def create_parser():
     parser.add_argument('--remove_last_inp', default=False,
                         action='store_true')
     parser.add_argument('--eval_intermediate', default=False, action='store_true')
+    parser.add_argument('--reload_image_dataset', default=False, action='store_true')
+    parser.add_argument('--no_geometry_analysis', default=False, action='store_true')
     return parser
 
 
@@ -142,11 +144,18 @@ if __name__ == '__main__':
     elif args.twod_shape_input:
         twod_file = ('disentangled/datasets/'
                      'dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
+        if args.reload_image_dataset:
+            cached_data = None
+        else:
+            cached_data = pickle.load(
+                open('disentangled/datasets/shape_dataset.pkl', 'rb')
+            )
         img_resize = (224, 224)
         img_pre_net = args.image_pre_net
         dg_use = dg.TwoDShapeGenerator(twod_file, img_size=img_resize,
                                        max_load=np.inf, convert_color=True,
-                                       pre_model=img_pre_net)
+                                       pre_model=img_pre_net,
+                                       cached_data_table=cached_data)
         no_learn_lvs = np.array([True, False, True, False, False])
         compute_train_lvs = True
 
@@ -209,13 +218,16 @@ if __name__ == '__main__':
         fix_feats = group_size - 1
     else:
         fix_feats = args.ccgp_fix_features
-    out = ma.apply_geometry_model_list(
-        models,
-        fdg,
-        n_train=args.ccgp_n_train,
-        fix_features=fix_feats,
-        eval_layers=args.eval_intermediate,
-    )
+    if not args.no_geometry_analysis:
+        out = ma.apply_geometry_model_list(
+            models,
+            fdg,
+            n_train=args.ccgp_n_train,
+            fix_features=fix_feats,
+            eval_layers=args.eval_intermediate,
+        )
+    else:
+        out = (None, None, None)
     shattering, within, across = out
     geometry_results = {}
     geometry_results['shattering'] = shattering
