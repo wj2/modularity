@@ -20,13 +20,16 @@ def get_relevant_dims(samps, m, preserve_order_if_same=True):
 
 
 def save_model_information(models, folder, file_name="model_results.pkl", **kwargs):
-    weights = np.zeros_like(models)
-    group_members = np.zeros_like(models)
-    groups = np.zeros_like(models)
-    for ind in u.make_array_ind_iterator(models.shape):
-        weights[ind] = list(np.array(mw) for mw in models[ind].model.weights)
-        group_members[ind] = models[ind].out_group_labels
-        groups[ind] = models[ind].groups
+    if models is not None:
+        weights = np.zeros_like(models)
+        group_members = np.zeros_like(models)
+        groups = np.zeros_like(models)
+        for ind in u.make_array_ind_iterator(models.shape):
+            weights[ind] = list(np.array(mw) for mw in models[ind].model.weights)
+            group_members[ind] = models[ind].out_group_labels
+            groups[ind] = models[ind].groups
+    else:
+        weights, group_members, groups = None, None, None    
     save_dict = dict(weights=weights, group_members=group_members, groups=groups)
     save_dict.update(kwargs)
     file_path = os.path.join(folder, file_name)
@@ -225,7 +228,7 @@ def load_run(
             ordering.append(ordering_func(model_dict))
             for k in take_keys:
                 l = out_dict.get(k, [])
-                if k in model_dict.keys():
+                if k in model_dict.keys() and model_dict[k] is not None:
                     md_k = np.squeeze(model_dict[k])
                     md_k = np.stack(list(md_k), axis=0)
 

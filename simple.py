@@ -2,6 +2,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import functools as ft
 import itertools as it
+import pickle
 
 import sklearn.preprocessing as skp
 import sklearn.decomposition as skd
@@ -234,6 +235,34 @@ class ImageDGWrapper(dg.DataGenerator):
         return self.use_dg.get_representation(o_samps)
 
 
+twod_file = ('disentangled/datasets/'
+             'dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
+twod_cache_file = 'disentangled/datasets/shape_dataset.pkl'
+default_pre_net = ('https://tfhub.dev/google/imagenet/'
+                   'mobilenet_v3_small_100_224/feature_vector/5')
+
+
+def load_twod_dg(use_cache=True, cache_file=twod_cache_file, **kwargs):
+    no_learn_lvs = np.array([True, False, True, False, False])
+    cache = pickle.load(open(cache_file, 'rb'))
+    return load_image_dg(twod_file, no_learn_lvs, cache=cache, **kwargs)
+
+
+def load_chair_dg(**kwargs):
+    raise IOError('not implemented yet')
+
+
+def load_image_dg(full_data_file, no_learn_lvs, img_resize=(224, 224),
+                  img_pre_net=default_pre_net, cache=None):
+    dg_use = dg.TwoDShapeGenerator(twod_file, img_size=img_resize,
+                                   max_load=np.inf, convert_color=True,
+                                   pre_model=img_pre_net,
+                                   cached_data_table=cache)
+
+    dg_wrap = ImageDGWrapper(dg_use, ~no_learn_lvs, 'shape', 0)
+    return dg_wrap
+
+
 class TrackWeights(tfk.callbacks.Callback):
     def __init__(self, model, layer_ind, *args, **kwargs):
         self.model = model
@@ -311,8 +340,11 @@ class Modularizer:
         remove_last_inp=False,
         augmented_input_func=parity,
         renorm_stim=False,
+        n_common_tasks=0,
+        n_common_dims=2,
         **kwargs
     ):
+        self.rng = np.random.default_rng()
         self.continuous = False
         self.use_early_stopping = use_early_stopping
         self.early_stopping_field = early_stopping_field
@@ -332,6 +364,13 @@ class Modularizer:
             groups = group_maker(
                 inp_dims_anc - sub_context, group_size, n_groups, n_overlap=n_overlap
             )
+        if n_common_tasks > 0:
+            all_dims = set(list(range(inp_dims_anc - sub_context)))
+            potential_dims = all_dims.difference(np.unique(groups))
+            self.ct_group = self.rng.choice(potential_dims, size=n_common_dims,
+                                            replace=False)
+        else:
+            self.ct_group = None
         if common_augmented_inputs:
             ai_group = np.arange(inp_dims, inp_dims + augmented_inputs)
             groups = np.concatenate(
@@ -385,7 +424,6 @@ class Modularizer:
         self.rep_model = rep_model
         self.model = model
         self.groups = groups
-        self.rng = np.random.default_rng()
         self.compiled = False
         self.loss = None
         self.layer_models = None
@@ -518,16 +556,16 @@ class Modularizer:
         self.loss = loss
         self.compiled = True
 
-    def _generate_target_so(self, xs, group_inds):
-        ys = np.zeros((self.n_groups, len(xs), self.out_dims))
-        for i, g in enumerate(self.groups):
-            g_inp = xs[:, g]
-            out = self.group_func[i](g_inp)
-            if len(out.shape) == 1:
-                out = np.expand_dims(out, axis=1)
-            ys[i] = out
-        ys = ys[group_inds]
-        return ys
+    # def _generate_target_so(self, xs, group_inds):
+    #     ys = np.zeros((self.n_groups, len(xs), self.out_dims))
+    #     for i, g in enumerate(self.groups):
+    #         g_inp = xs[:, g]
+    #         out = self.group_func[i](g_inp)
+    #         if len(out.shape) == 1:
+    #             out = np.expand_dims(out, axis=1)
+    #         ys[i] = out
+    #     ys = ys[group_inds]
+    #     return ys
 
     def generate_target(self, xs, group_inds=None):
         ys = np.zeros((self.n_groups, len(xs), self.n_tasks_per_group))
@@ -745,7 +783,8 @@ class ColoringModularizer(Modularizer):
         return lambda x: np.concatenate(list(f(x) for f in funcs), axis=1)
 
     def __init__(
-        self, *args, n_colorings=None, tasks_per_group=1, task_merger=np.sum, **kwargs
+        self, *args, n_colorings=None, tasks_per_group=1, task_merger=np.sum,
+        share_pairs=None, **kwargs,
     ):
         super().__init__(*args, tasks_per_group=tasks_per_group, **kwargs)
         if n_colorings is None:
@@ -760,6 +799,10 @@ class ColoringModularizer(Modularizer):
                     merger=task_merger,
                 )
             )
+        if share_pairs is not None:
+            for (i, j) in share_pairs:
+                group_func[i] = group_func[j]
+                self.groups[i] = self.groups[j]
         self.group_func = tuple(group_func)
 
 
@@ -877,8 +920,12 @@ class LinearModularizer(Modularizer):
         intercept_var=0,
         center=0.5,
         renorm_tasks=False,
+        n_common_dims=2,
+        n_common_tasks=0,
+        share_pairs=None,
         **kwargs
     ):
+        # COMMON TASKS FOR EACH GROUP
         super().__init__(*args, tasks_per_group=tasks_per_group, **kwargs)
         group_func = []
         for g in self.groups:
@@ -891,7 +938,20 @@ class LinearModularizer(Modularizer):
                     renorm=renorm_tasks,
                 )
             )
+        if share_pairs is not None:
+            for (i, j) in share_pairs:
+                group_func[i] = group_func[j]
+                self.groups[i] = self.groups[j]
         self.group_func = tuple(group_func)
+
+        common_group_func = self._make_linear_task_func(
+            n_common_dims,
+            n_tasks=n_common_tasks,
+            i_var=intercept_var,
+            center=center,
+            renorm=renorm_tasks,
+        )
+        self.common_group_func = common_group_func
 
 
 class LinearContinuousModularizer(LinearModularizer):
@@ -916,6 +976,7 @@ model_type_dict = {
     "coloring": ColoringModularizer,
     "linear": LinearModularizer,
     "identity": IdentityModularizer,
+    "continuous": LinearContinuousModularizer,
 }
 
 
@@ -1081,6 +1142,9 @@ def train_modularizer(
     track_dimensionality=True,
     only_groups=None,
     only_tasks=None,
+    val_only_groups=None,
+    val_only_tasks=None,
+    batch_size=100,
     **kwargs
 ):
     if params is not None:
@@ -1099,6 +1163,7 @@ def train_modularizer(
         if hiddens is None:
             hiddens = ()
         train_epochs = params.getint("train_epochs")
+        batch_size = params.getint('batch_size', batch_size)
         single_output = params.getboolean("single_output")
         integrate_context = params.getboolean("integrate_context")
         model_type = model_type_dict[params.get("model_type")]
@@ -1124,18 +1189,21 @@ def train_modularizer(
             "model_type": model_type,
             "use_dg": fdg,
             "n_train": n_train,
+            "batch_size": batch_size,
         }
     else:
         config_dict = {
             "use_dg": fdg,
             "model_type": model_type_dict["linear"],
             "group_maker": group_maker_dict["overlap"],
+            "batch_size": batch_size,
         }
     config_dict.update(kwargs)
     inp_dim = config_dict["use_dg"].input_dim
     train_epochs = config_dict.pop("train_epochs")
     model_type = config_dict.pop("model_type")
     n_train = config_dict.pop("n_train")
+    batch_size = config_dict.pop("batch_size")
     if model_type_str is not None:
         model_type = model_type_dict[model_type_str]
 
@@ -1143,11 +1211,14 @@ def train_modularizer(
     if train_epochs > 0:
         h = m.fit(
             epochs=train_epochs,
+            batch_size=batch_size,
             verbose=verbose,
             track_dimensionality=track_dimensionality,
             n_train=n_train,
             only_groups=only_groups,
             only_tasks=only_tasks,
+            val_only_tasks=val_only_tasks,
+            val_only_groups=val_only_groups,
         )
     else:
         h = None

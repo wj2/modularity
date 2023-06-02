@@ -1112,6 +1112,118 @@ def apply_act_clusters_list(
     return clust
 
 
+def new_task_training(
+    fdg,
+    params=None,
+    verbose=False,
+    n_tasks=10,
+    novel_tasks=1,
+    train_epochs=10,
+    train_samps=5000,
+    **kwargs,
+):
+    all_tasks = set(range(n_tasks))
+    nov_task = set(range(novel_tasks))
+    pretrain_tasks = all_tasks.difference(nov_task)
+    out_two = ms.train_modularizer(
+        fdg, params=params, verbose=verbose,
+        train_epochs=len(pretrain_tasks)*train_epochs,
+        n_train=len(pretrain_tasks)*train_samps,
+        tasks_per_group=n_tasks,
+        only_tasks=pretrain_tasks,
+        **kwargs
+    )
+    h_next = out_two[0].fit(track_dimensionality=True,
+                            epochs=train_epochs,
+                            n_train=train_samps,
+                            verbose=False,
+                            val_only_tasks=nov_task)
+
+    out_one = ms.train_modularizer(
+        fdg, params=params, verbose=verbose,
+        train_epochs=train_epochs,
+        n_train=train_samps,
+        tasks_per_group=n_tasks,
+        only_tasks=nov_task,
+        **kwargs
+    )
+    return (out_two[0], h_next), out_one
+
+
+def new_related_context_training(
+    *args,
+    total_groups=3,
+    novel_groups=1,
+    **kwargs,
+):
+    ng = range(total_groups - novel_groups, total_groups)
+    tg = range(total_groups - novel_groups)
+    share_pairs = list(zip(ng, tg))
+    return new_context_training(
+        *args, total_groups=total_groups, novel_groups=novel_groups,
+        share_pairs=share_pairs, **kwargs
+    )
+
+
+def new_context_training(
+    fdg,
+    params=None,
+    verbose=False,
+    total_groups=3,
+    novel_groups=1,
+    n_tasks=10,
+    train_epochs=10,
+    train_samps=5000,
+    untrained_tasks=0,
+    **kwargs,
+):
+    all_tasks = set(range(n_tasks))
+    untrained_task = set(range(untrained_tasks))
+    train_tasks = all_tasks.difference(untrained_task)
+
+    all_groups = list(range(total_groups))
+    out_two = ms.train_modularizer(
+        fdg,
+        verbose=verbose,
+        params=params,
+        n_groups=total_groups,
+        only_groups=all_groups[:-novel_groups],
+        train_epochs=(total_groups - novel_groups)*train_epochs,
+        n_train=(total_groups - novel_groups)*train_samps,
+        tasks_per_group=n_tasks,
+        **kwargs
+    )
+    if untrained_tasks > 0:
+        only_tasks = train_tasks
+        val_only_tasks = untrained_task
+    else:
+        only_tasks = None
+        val_only_tasks = None
+    h_next = out_two[0].fit(track_dimensionality=True,
+                            epochs=train_epochs,
+                            n_train=train_samps,
+                            verbose=False,
+                            only_groups=all_groups[-novel_groups:],
+                            val_only_groups=all_groups[-novel_groups:],
+                            only_tasks=only_tasks,
+                            val_only_tasks=val_only_tasks)
+
+    out_one = ms.train_modularizer(
+        fdg,
+        verbose=verbose,
+        params=params,
+        n_groups=total_groups,
+        only_groups=all_groups[:novel_groups],
+        train_epochs=train_epochs,
+        n_train=train_samps,
+        tasks_per_group=n_tasks,
+        only_tasks=only_tasks,
+        val_only_tasks=val_only_tasks,
+        **kwargs,
+    )
+    return (out_two[0], h_next), out_one
+
+
 def infer_activity_clusters(
     m,
     n_samps=1000,

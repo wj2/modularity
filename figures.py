@@ -1,5 +1,6 @@
 import itertools as it
 import numpy as np
+import scipy.stats as sts
 import matplotlib.pyplot as plt
 
 import modularity.simple as ms
@@ -52,7 +53,11 @@ class ModularizerFigure(pu.Figure):
             dg_pr_reg = self.params.getboolean("dg_pr_reg")
             dg_bs = self.params.getint("dg_batch_size")
 
-            source_distr = u.MultiBernoulli(0.5, inp_dim)
+            continuous = self.params.getboolean("continuous", False)
+            if continuous:
+                source_distr = sts.multivariate_normal([0]*inp_dim, 1)
+            else:
+                source_distr = u.MultiBernoulli(0.5, inp_dim)
             fdg = dg.FunctionalDataGenerator(
                 inp_dim,
                 dg_layers,
@@ -307,7 +312,7 @@ class FigureEmergence(ModularizerFigure):
             mv.visualize_gate_angle(stims, targs, gates, ws=ws, ax=axs_dirs[i])
 
 
-class FigureDiscreteModularity(ModularizerFigure):
+class FigureModularity(ModularizerFigure):
     def __init__(self, fig_key='modularity_discrete', colors=colors, **kwargs):
         fsize = (7, 5)
         cf = u.ConfigParserColor()
@@ -324,8 +329,8 @@ class FigureDiscreteModularity(ModularizerFigure):
     def make_gss(self):
         gss = {}
 
-        ri_grid = pu.make_mxn_gridspec(self.gs, 4, 1,
-                                       20, 100,
+        ri_grid = pu.make_mxn_gridspec(self.gs, 2, 1,
+                                       60, 100,
                                        80, 100,
                                        10, 10)
         ri_axs = self.get_axs(ri_grid, sharex="all", squeeze=True)
@@ -346,8 +351,7 @@ class FigureDiscreteModularity(ModularizerFigure):
     def panel_ri(self):
         key = 'panel_ri'
         axs_all = self.gss[key]
-        quant_keys = ('model_frac', 'diff_act_ablation',
-                      'within_ccgp', 'shattering')
+        quant_keys = ('model_frac', 'diff_act_ablation')
         ri_list = self.params.getlist('ri_list')
 
         label_dict = {(3,): 'D = 3', (5,): 'D = 5', (8,): 'D = 8'}
@@ -607,25 +611,16 @@ class FigureGeometryConsequences(ModularizerFigure):
         train_epochs = self.params.getint('context_train_epochs')
         train_samps = self.params.getint('context_train_samples')
         n_tasks = self.params.getint('n_tasks')
+        fdg = self.make_fdg()
         if self.data.get(key) is None:
-            out_two = self.train_modularizer(n_groups=3,
-                                             only_groups=(0, 1),
-                                             train_epochs=2*train_epochs,
-                                             n_train=2*train_samps,
-                                             tasks_per_group=n_tasks)
-            h_next = out_two[0].fit(track_dimensionality=True,
-                                    epochs=train_epochs,
-                                    n_train=train_samps,
-                                    verbose=False,
-                                    val_only_groups=(2,))
-
-            out_one = self.train_modularizer(n_groups=3,
-                                             only_groups=(0,),
-                                             train_epochs=train_epochs,
-                                             n_train=train_samps,
-                                             tasks_per_group=n_tasks)
-            self.data[key] = (h_next, out_one[1])
-        pretrain_history, naive_history = self.data[key]
+            self.data[key] = ma.new_context_training(
+                fdg,
+                total_groups=3,
+                n_tasks=n_tasks,
+                train_samps=train_samps,
+                train_epochs=train_epochs,
+            )
+        (_, pretrain_history), (_, naive_history) = self.data[key]
         xs = np.arange(train_epochs)
 
         key = 'val_loss'
@@ -1134,3 +1129,100 @@ class FigureHiddenLayers(ModularizerFigure):
         self._quantification_panel(quant_keys, ri_list, axs_all,
                                    label_dict=label_dict, nulls=nulls)
 
+
+class FigureImageModularity(ModularizerFigure):
+    def __init__(self, fig_key='images', colors=colors, **kwargs):
+        fsize = (7, 5)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        ri_grid = pu.make_mxn_gridspec(self.gs, 2, 1,
+                                       60, 100,
+                                       80, 100,
+                                       10, 10)
+        ri_axs = self.get_axs(ri_grid, sharex="all", squeeze=True)
+        gss['panel_ri'] = ri_axs
+
+        n_plots = len(self.params.getlist('n_eg_tasks'))
+        tc_grid = pu.make_mxn_gridspec(self.gs, 3, n_plots,
+                                       50, 100,
+                                       20, 70,
+                                       5, 5)
+        tc_axs = self.get_axs(tc_grid,
+                              sharey="horizontal",
+                              sharex="horizontal")
+        gss['panel_task_compare'] = tc_axs
+
+        self.gss = gss
+
+    def panel_ri(self):
+        key = 'panel_ri'
+        axs_all = self.gss[key]
+        quant_keys = ('model_frac', 'diff_act_ablation')
+        ri_list = self.params.getlist('ri_list')
+
+        label_dict = {(3,): '2D shapes', (5,): 'D = 5', (8,): 'D = 8'}
+        nulls = (0, 0, .5, .5)
+        self._quantification_panel(quant_keys, ri_list, axs_all,
+                                   label_dict=label_dict, nulls=nulls)
+
+    def make_fdg(self, use_cache=True):
+        fdg = self.data.get("trained_fdg")
+        if fdg is None:
+            fdg = ms.load_twod_dg(use_cache=use_cache)
+        return fdg
+
+    def panel_task_compare(self, refit_models=False, recompute_ablation=False):
+        key = 'panel_task_compare'
+        axs_all = self.gss[key]
+
+        # maybe also add high-dim visualization?
+        n_tasks = self.params.getlist('n_eg_tasks', typefunc=int)
+        act_cmap = self.params.get('activity_cmap')
+        ablation_cmap = self.params.get('ablation_cmap')
+
+        if self.data.get(key) is None or refit_models:
+            models = []
+            hists = []
+            abls = []
+            fdg = self.make_fdg()
+            n_groups = fdg.n_cats
+            for i, nt in enumerate(n_tasks):
+                m_i, h_i = self.train_modularizer(tasks_per_group=nt,
+                                                  n_groups=n_groups)
+                tc_i = ma.act_ablation(
+                    m_i,
+                    single_number=False,
+                )
+
+                models.append(m_i)
+                hists.append(h_i)
+                abls.append(tc_i)
+            self.data[key] = (fdg, models, hists, abls)
+
+        fdg, models, hists, abls = self.data[key]
+        for i, nt in enumerate(n_tasks):
+            m_i = models[i]
+            tc_i = abls[i]
+            if recompute_ablation:
+                tc_i = ma.act_ablation(
+                    m_i, single_number=False,
+                )
+
+            axs_i = axs_all[:, i]
+            mv.plot_context_clusters(m_i, ax=axs_i[0], cmap=act_cmap)
+            mv.plot_context_scatter(m_i, ax=axs_i[1])
+
+            tc_i[tc_i < 0] = 0
+            m = axs_i[2].imshow(tc_i, cmap=ablation_cmap)
+            self.f.colorbar(m, ax=axs_i[2], label="normalized\nperformance change")
+            axs_i[2].set_xlabel("context")
+            axs_i[2].set_ylabel("inferred cluster")
+            axs_i[2].set_yticks([0, 1, 2])
