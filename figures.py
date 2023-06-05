@@ -425,14 +425,15 @@ class FigureGeometryConsequences(ModularizerFigure):
     def make_gss(self):
         gss = {}
 
-        side = 20
-        nt_grid = pu.make_mxn_gridspec(self.gs, 1, 2,
+        side = 10
+        nt_grid = pu.make_mxn_gridspec(self.gs, 1, 3,
                                        75, 100,
                                        side, 100 - side,
                                        10, 10)
-        nt_axs = self.get_axs(nt_grid,)
-        gss['panel_new_task'] = nt_axs[0, 0]
-        gss['panel_new_context'] = nt_axs[0, 1]
+        nt_axs = self.get_axs(nt_grid, squeeze=True)
+        # gss['panel_new_task'] = nt_axs[0, 0]
+        # gss['panel_new_context'] = nt_axs[0, 1]
+        gss["panel_learning_consequences"] = nt_axs
 
         geom_grid = pu.make_mxn_gridspec(self.gs, 3, 2, 0, 60, 30, 70, 10, 10)
         vis_grid = pu.make_mxn_gridspec(self.gs, 3, 1, 0, 60, 0, 20, 10, 10)
@@ -494,6 +495,8 @@ class FigureGeometryConsequences(ModularizerFigure):
         gpl.violinplot(
             [shatter[0, 0].flatten()], [0], ax=axs[1, 2], color=[shattering_color]
         )
+        axs[1, 1].set_ylabel('classifier\ngeneralization')
+        axs[1, 2].set_ylabel('shattering\ndimensionality')
         gpl.clean_plot(axs[1, 1], 0)
         gpl.clean_plot(axs[1, 2], 0)
         gpl.clean_plot_bottom(axs[1, 1])
@@ -524,8 +527,8 @@ class FigureGeometryConsequences(ModularizerFigure):
                 color=colors[i],
                 label=labels[i],
             )
-            axs[2, 1].set_ylabel("CCGP")
-            axs[2, 1].set_xlabel("N tasks")
+            axs[2, 1].set_ylabel("classifier\ngeneralization")
+            axs[2, 1].set_xlabel("tasks")
             gpl.add_hlines(0.5, axs[2, 1])
 
             shatter = run_data["shattering"].T
@@ -533,8 +536,30 @@ class FigureGeometryConsequences(ModularizerFigure):
                 order, shatter, ax=axs[2, 2], log_x=True, color=colors[i]
             )
             axs[2, 2].set_ylabel("shattering\ndimensionality")
-            axs[2, 2].set_xlabel("N tasks")
+            axs[2, 2].set_xlabel("tasks")
             gpl.add_hlines(0.5, axs[2, 2])
+
+    def panel_learning_consequences(self):
+        key = "panel_learning_consequences"
+        axs = self.gss[key]
+
+        run_ind = self.params.get("consequences_run_ind")
+        n_tasks = self.params.getint("consequences_n_tasks")
+        out_dict = maux.load_consequence_runs(run_ind)
+        plot_dict = out_dict[n_tasks]
+
+        plot_keys = (
+            "new task",
+            "new context",
+            "related context",
+        )
+        for i, key in enumerate(plot_keys):
+            loss_pre, loss_null = plot_dict[key]
+            ax = axs[i]
+            xs = np.arange(1, loss_pre.shape[1] + 1)
+            gpl.plot_trace_werr(xs, loss_pre, ax=ax, log_y=True)
+            gpl.plot_trace_werr(xs, loss_null, ax=ax, log_y=True)
+            ax.set_ylabel('{} loss'.format(key))
 
     def panel_specialization(self, recompute=False):
         key = "panel_specialization"
@@ -791,7 +816,7 @@ class FigureIntro(ModularizerFigure):
                 order, fdg_frac, ax=ax_clustering, log_x=True, color=(0.9, 0.9, 0.9)
             )
             ax_clustering.set_ylabel("cluster fraction")
-            ax_clustering.set_xlabel("N tasks")
+            ax_clustering.set_xlabel("tasks")
 
             waa = run_data["within_act_ablation"].T
             aaa = run_data["across_act_ablation"].T
@@ -817,7 +842,7 @@ class FigureIntro(ModularizerFigure):
                 label="within",
                 ls=linestyles[i],
             )
-            ax_ccgp.set_ylabel("CCGP")
+            ax_ccgp.set_ylabel("classifier\ngeneralization")
 
             # a_ccgp = run_data['across_ccgp'].T
             # gpl.plot_trace_werr(order, a_ccgp, ax=ax_ccgp, log_x=True,
@@ -836,9 +861,9 @@ class FigureIntro(ModularizerFigure):
                 ls=linestyles[i],
             )
             ax_shatter.set_ylabel("shattering\ndimensionality")
-            ax_shatter.set_xlabel("N tasks")
+            ax_shatter.set_xlabel("tasks")
             gpl.add_hlines(0.5, ax_shatter)
-            ax_ccgp.set_xlabel("N tasks")
+            ax_ccgp.set_xlabel("tasks")
 
 
 def _get_last_dim(dims):

@@ -37,6 +37,27 @@ def save_model_information(models, folder, file_name="model_results.pkl", **kwar
     pickle.dump(save_dict, open(file_path, "wb"))
 
 
+def load_consequence_runs(
+    run_ind,
+    folder='modularity/mod_cons/',
+    template='mod-cons_[0-9]+-{run_ind}',
+    file_name='model_results.pkl',
+    ref_key='tasks_per_group'
+):
+    fls = os.listdir(folder)
+    use_templ = template.format(run_ind=run_ind)
+    data_dict = {}
+    for fl in fls:
+        m = re.match(use_templ, fl)
+        if m is not None:
+            fp = os.path.join(folder, fl, file_name)
+            data_fl = pickle.load(open(fp, 'rb'))
+            data_fl['args'] = vars(data_fl['args'])
+            ki = data_fl['args'][ref_key]
+            data_dict[ki] = data_fl
+    return data_dict
+
+
 @u.arg_list_decorator
 def _make_lists(*args):
     return args

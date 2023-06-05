@@ -114,7 +114,10 @@ class ModularizerCode(cc.Code):
         n_stim[mask] = stim[mask]
         return n_stim
 
-    def get_representation(self, stim, noise=False, ret_stim=False, ref_stim=None):
+    def get_representation(self, stim, noise=False, ret_stim=False, ref_stim=None,
+                           layer=None):
+        if layer is not None:
+            print('the layer parameter is ignored')
         stim = np.array(stim)
         if len(stim.shape) == 1:
             stim = np.expand_dims(stim, 0)
@@ -1175,11 +1178,16 @@ def new_context_training(
     train_epochs=10,
     train_samps=5000,
     untrained_tasks=0,
+    separate_untrained=False,
     **kwargs,
 ):
     all_tasks = set(range(n_tasks))
     untrained_task = set(range(untrained_tasks))
     train_tasks = all_tasks.difference(untrained_task)
+    if separate_untrained:
+        separate_tasks = untrained_task
+    else:
+        separate_tasks = None
 
     all_groups = list(range(total_groups))
     out_two = ms.train_modularizer(
@@ -1191,6 +1199,7 @@ def new_context_training(
         train_epochs=(total_groups - novel_groups)*train_epochs,
         n_train=(total_groups - novel_groups)*train_samps,
         tasks_per_group=n_tasks,
+        separate_tasks=separate_tasks,
         **kwargs
     )
     if untrained_tasks > 0:
