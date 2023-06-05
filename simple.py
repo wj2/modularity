@@ -48,7 +48,8 @@ def xor(x):
     return parity
 
 
-def generate_linear_tasks(n_inp, n_tasks=1, intercept_var=0, axis_tasks=False):
+def generate_linear_tasks(n_inp, n_tasks=1, intercept_var=0, axis_tasks=False,
+                          separate_tasks=None, split_inp=.5):
     rng = np.random.default_rng()
     if axis_tasks:
         inds = rng.choice(n_inp, size=(n_tasks,))
@@ -58,6 +59,17 @@ def generate_linear_tasks(n_inp, n_tasks=1, intercept_var=0, axis_tasks=False):
         task = task * rng.choice((-1, 1), size=(n_tasks, 1))
     else:
         task = rng.normal(size=(n_tasks, n_inp))
+        task = u.make_unit_vector(task)
+    if separate_tasks is not None:
+        if not u.check_list(separate_tasks):
+            separate_tasks = np.arange(separate_tasks, dtype=int)
+        else:
+            separate_tasks = np.array(list(separate_tasks))
+        other_tasks = set(np.arange(n_tasks, dtype=int)).difference(separate_tasks)
+        other_tasks = np.array(list(other_tasks))
+        dim_split = int(np.ceil(split_inp*n_inp))
+        task[other_tasks, dim_split:] = 0
+        task[separate_tasks, :dim_split] = 0
         task = u.make_unit_vector(task)
     if intercept_var > 0:
         intercepts = rng.normal(0, np.sqrt(intercept_var), size=(n_tasks, 1))
@@ -860,7 +872,7 @@ class IdentityModularizer(Modularizer):
         ic = model.integrate_context
         return cls(inp_dims, provide_groups=mg, hidden_dims=hd, integrate_context=ic)
 
-    def get_representation(self, stim, group=None):
+    def get_representation(self, stim, group=None, layer=None):
         return stim
 
     def model(self, stim):
@@ -908,9 +920,18 @@ class LinearIdentityModularizer(IdentityModularizer):
 
 
 class LinearModularizer(Modularizer):
-    def _make_linear_task_func(self, n_g, n_tasks=1, i_var=0, center=0, renorm=False):
+    def _make_linear_task_func(
+        self,
+        n_g,
+        n_tasks=1,
+        i_var=0,
+        center=0,
+        renorm=False,
+        separate_tasks=None,
+    ):
         return make_linear_task_func(
-            n_g, n_tasks=n_tasks, i_var=i_var, center=center, renorm=renorm
+            n_g, n_tasks=n_tasks, i_var=i_var, center=center, renorm=renorm,
+            separate_tasks=separate_tasks,
         )
 
     def __init__(
@@ -923,6 +944,7 @@ class LinearModularizer(Modularizer):
         n_common_dims=2,
         n_common_tasks=0,
         share_pairs=None,
+        separate_tasks=None,
         **kwargs
     ):
         # COMMON TASKS FOR EACH GROUP
@@ -936,6 +958,7 @@ class LinearModularizer(Modularizer):
                     i_var=intercept_var,
                     center=center,
                     renorm=renorm_tasks,
+                    separate_tasks=separate_tasks,
                 )
             )
         if share_pairs is not None:

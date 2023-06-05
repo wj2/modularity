@@ -82,6 +82,7 @@ def create_parser():
     parser.add_argument('--reload_image_dataset', default=False, action='store_true')
     parser.add_argument('--no_geometry_analysis', default=False, action='store_true')
     parser.add_argument('--untrained_tasks', default=.5, type=float)
+    parser.add_argument('--separate_untrained', default=False, action="store_true")
     parser.add_argument('--novel_tasks', default=1, type=int)
     return parser
 
@@ -218,6 +219,7 @@ if __name__ == '__main__':
             fdg,
             model_type_str=model_type,
             untrained_tasks=untrained_tasks,
+            separate_untrained=args.separate_untrained,
             **model_kwargs,
             **train_kwargs,
         )
