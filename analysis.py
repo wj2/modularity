@@ -1123,6 +1123,7 @@ def new_task_training(
     novel_tasks=1,
     train_epochs=10,
     train_samps=5000,
+    ret_other_hist=False,
     **kwargs,
 ):
     all_tasks = set(range(n_tasks))
@@ -1136,21 +1137,30 @@ def new_task_training(
         only_tasks=pretrain_tasks,
         **kwargs
     )
+    print('second phase')
     h_next = out_two[0].fit(track_dimensionality=True,
                             epochs=train_epochs,
                             n_train=train_samps,
                             verbose=False,
-                            val_only_tasks=nov_task)
+                            val_only_tasks=nov_task,
+                            track_mean_tasks=False,
+                            )
 
+    print('single task model')
     out_one = ms.train_modularizer(
         fdg, params=params, verbose=verbose,
         train_epochs=train_epochs,
         n_train=train_samps,
         tasks_per_group=n_tasks,
         only_tasks=nov_task,
+        track_mean_tasks=False,
         **kwargs
     )
-    return (out_two[0], h_next), out_one
+    if ret_other_hist:
+        out = (out_two[0], out_two[1], h_next), out_one
+    else:
+        out = (out_two[0], h_next), out_one
+    return out
 
 
 def new_related_context_training(
@@ -1200,6 +1210,7 @@ def new_context_training(
         n_train=(total_groups - novel_groups)*train_samps,
         tasks_per_group=n_tasks,
         separate_tasks=separate_tasks,
+        track_mean_tasks=False,
         **kwargs
     )
     if untrained_tasks > 0:

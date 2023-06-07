@@ -565,15 +565,25 @@ class FigureGeometryConsequences(ModularizerFigure):
         naive_name = "naive network"
 
         plot_keys = (
-            "new task",
-            "new context",
-            "related context",
+            "new task tasks",
+            "new context tasks",
+            "related context tasks",
         )
+        # plot_keys = (
+        #     "new task",
+        #     "new context",
+        #     "related context",
+        # )
         log_y = False
         for i, key in enumerate(plot_keys):
             loss_pre, loss_null = plot_dict[key]
+            if len(loss_pre.shape) > 2:
+                loss_pre = np.mean(loss_pre, axis=2)
+                loss_null = np.mean(loss_null, axis=2)
             ax = axs[i]
             xs = np.arange(1, loss_pre.shape[1] + 1)
+            print(loss_pre.shape)
+            print(xs.shape)
             if i == len(plot_keys) - 1:
                 l_mod = mod_name
                 l_naive = naive_name
@@ -586,8 +596,10 @@ class FigureGeometryConsequences(ModularizerFigure):
             gpl.plot_trace_werr(
                 xs, loss_pre, ax=ax, color=mod_color, log_y=log_y, label=l_mod,
             )
-            if key == "related context":
+            if key == plot_keys[-1]:
                 loss_pre_rand, _ = plot_dict_rand[key]
+                if len(loss_pre_rand.shape) > 2:
+                    loss_pre_rand = np.mean(loss_pre_rand, axis=2)
                 gpl.plot_trace_werr(
                     xs, loss_pre_rand, ax=ax, color=mod_color, log_y=log_y,
                     label="orthogonal tasks",

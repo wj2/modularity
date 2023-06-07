@@ -291,13 +291,15 @@ class TrackWeights(tfk.callbacks.Callback):
 
 
 class DimCorrCallback(tfk.callbacks.Callback):
-    def __init__(self, model, *args, dim_samps=10**4, mean_tasks=True, **kwargs):
+    def __init__(self, model, *args, dim_samps=10**4, mean_tasks=True,
+                 only_groups=None, **kwargs):
         self.modu_model = model
         super().__init__(*args, **kwargs)
         self.dim = []
         self.corr = []
         self.dim_samps = dim_samps
         self.mean_tasks = mean_tasks
+        self.only_groups = only_groups
 
     def on_train_begin(self, logs=None):
         self.dim = []
@@ -309,7 +311,8 @@ class DimCorrCallback(tfk.callbacks.Callback):
 
         _, _, reps_c0 = self.modu_model.sample_reps(self.dim_samps, context=0)
         dim_c0 = u.participation_ratio(reps)
-        corr = 1 - self.modu_model.get_ablated_loss(mean_tasks=self.mean_tasks)
+        corr = 1 - self.modu_model.get_ablated_loss(mean_tasks=self.mean_tasks,
+                                                    only_groups=self.only_groups)
 
         self.dim.append(dim)
         self.dim_c0.append(dim_c0)
@@ -322,10 +325,16 @@ class DimCorrCallback(tfk.callbacks.Callback):
         _, _, reps_c0 = self.modu_model.sample_reps(self.dim_samps, context=0)
         dim_c0 = u.participation_ratio(reps_c0)
 
-        corr = 1 - self.modu_model.get_ablated_loss(mean_tasks=self.mean_tasks)
+        corr = 1 - self.modu_model.get_ablated_loss(mean_tasks=self.mean_tasks,
+                                                    only_groups=self.only_groups)
         self.dim.append(dim)
         self.dim_c0.append(dim_c0)
         self.corr.append(corr)
+
+    def on_train_end(self, logs=None):
+        self.dim = np.array(self.dim)
+        self.dim_c0 = np.array(self.dim_c0)
+        self.corr = np.array(self.corr)
 
 
 class Modularizer:
@@ -626,10 +635,12 @@ class Modularizer:
         ret_err_rate=True,
         layer=None,
         mean_tasks=True,
+        only_groups=None,
     ):
         if not self.compiled:
             self._compile()
-        x, true, targ = self.get_x_true(n_train=n_samps, group_inds=group_ind)
+        x, true, targ = self.get_x_true(n_train=n_samps, group_inds=group_ind,
+                                        only_groups=only_groups)
         if layer is None:
             reps = self.get_representation(x)
             if ablation_mask is not None:
@@ -736,6 +747,7 @@ class Modularizer:
         if not self.compiled:
             self._compile()
 
+        print('train data')
         train_x, train_true, train_targ = self.get_x_true(
             train_x,
             train_true,
@@ -744,6 +756,8 @@ class Modularizer:
             only_groups=only_groups,
             only_tasks=only_tasks,
         )
+        print(train_targ)
+        print('val data')
         eval_x, eval_true, eval_targ = self.get_x_true(
             eval_x,
             eval_true,
@@ -752,6 +766,7 @@ class Modularizer:
             only_groups=val_only_groups,
             only_tasks=val_only_tasks,
         )
+        print(eval_targ)
 
         eval_set = (eval_x, eval_targ)
 
@@ -764,7 +779,8 @@ class Modularizer:
             kwargs["callbacks"] = curr_cb
         if track_dimensionality:
             cb = kwargs.get("callbacks", [])
-            d_callback = DimCorrCallback(self, mean_tasks=track_mean_tasks)
+            d_callback = DimCorrCallback(self, mean_tasks=track_mean_tasks,
+                                         only_groups=val_only_groups)
             cb.append(d_callback)
             kwargs["callbacks"] = cb
 
