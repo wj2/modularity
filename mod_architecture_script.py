@@ -45,7 +45,7 @@ def create_parser():
                         help='default cumulative weight')
     parser.add_argument('--n_reps', default=5, type=int,
                         help='number of repeats')
-    parser.add_argument('--n_model_train', default=2*10**5, type=int)
+    parser.add_argument('--n_model_train', default=1000, type=int)
 
     parser.add_argument('--kernel_init_std', default=None, type=float)
     parser.add_argument('--group_overlap', default=0, type=int)
