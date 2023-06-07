@@ -207,13 +207,20 @@ if __name__ == '__main__':
     )
 
     related_context_null = np.zeros((args.n_reps, args.model_epochs))
+    rc_null_tasks = np.zeros((args.n_reps, args.model_epochs, untrained_tasks))
     related_context = np.zeros_like(related_context_null)
+    rc_tasks = np.zeros_like(rc_null_tasks)
 
     new_context_null = np.zeros_like(related_context_null)
     new_context = np.zeros_like(related_context_null)
+    nc_null_tasks = np.zeros_like(related_context_null)
+    nc_tasks = np.zeros_like(related_context_null)
 
     new_task_null = np.zeros_like(related_context_null)
+    nt_null_tasks = np.zeros((args.n_reps, args.model_epochs, args.novel_tasks))
     new_task = np.zeros_like(related_context_null)
+    nt_tasks = np.zeros_like(nt_null_tasks)
+
     for i in range(args.n_reps):
         (_, hist), (_, hist_null) = ma.new_related_context_training(
             fdg,
@@ -224,8 +231,9 @@ if __name__ == '__main__':
             **train_kwargs,
         )
         related_context[i] = hist.history['val_loss']
+        rc_tasks[i] = np.array(hist.history['corr_rate'])[:, :untrained_tasks]
         related_context_null[i] = hist_null.history['val_loss']
-        print('related context')
+        rc_null_tasks[i] = np.array(hist_null.history['corr_rate'])[:, :untrained_tasks]
 
         (_, hist), (_, hist_null) = ma.new_context_training(
             fdg,
@@ -234,8 +242,9 @@ if __name__ == '__main__':
             **train_kwargs,
         )
         new_context[i] = hist.history['val_loss']
+        nc_tasks[i] = np.mean(hist.history['corr_rate'], axis=1)
         new_context_null[i] = hist_null.history['val_loss']
-        print('new context')
+        nc_null_tasks[i] = np.mean(hist_null.history['corr_rate'], axis=1)
 
         (_, hist), (_, hist_null) = ma.new_task_training(
             fdg,
@@ -246,12 +255,18 @@ if __name__ == '__main__':
         )
         new_task[i] = hist.history['val_loss']
         new_task_null[i] = hist_null.history['val_loss']
-        print('new task')
+        cr_null = np.array(hist_null.history["corr_rate"])
+        nt_null_tasks[i] = cr_null[:, :args.untrained_tasks]
+        cr = np.array(hist.history["corr_rate"])
+        nt_tasks[i] = cr[:, :args.untrained_tasks]
 
     all_save = {
         'related context': (related_context, related_context_null),
+        'related context tasks': (rc_tasks, rc_null_tasks),
         'new context': (new_context, new_context_null),
+        'new context tasks': (nc_tasks, nc_null_tasks),
         'new task': (new_task, new_task_null),
+        'new task tasks': (nt_tasks, nt_null_tasks),
     }
 
     maux.save_model_information(None, args.output_folder, args=args,

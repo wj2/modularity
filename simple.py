@@ -291,12 +291,13 @@ class TrackWeights(tfk.callbacks.Callback):
 
 
 class DimCorrCallback(tfk.callbacks.Callback):
-    def __init__(self, model, *args, dim_samps=10**4, **kwargs):
+    def __init__(self, model, *args, dim_samps=10**4, mean_tasks=True, **kwargs):
         self.modu_model = model
         super().__init__(*args, **kwargs)
         self.dim = []
         self.corr = []
         self.dim_samps = dim_samps
+        self.mean_tasks = mean_tasks
 
     def on_train_begin(self, logs=None):
         self.dim = []
@@ -308,7 +309,7 @@ class DimCorrCallback(tfk.callbacks.Callback):
 
         _, _, reps_c0 = self.modu_model.sample_reps(self.dim_samps, context=0)
         dim_c0 = u.participation_ratio(reps)
-        corr = 1 - self.modu_model.get_ablated_loss()
+        corr = 1 - self.modu_model.get_ablated_loss(mean_tasks=self.mean_tasks)
 
         self.dim.append(dim)
         self.dim_c0.append(dim_c0)
@@ -321,7 +322,7 @@ class DimCorrCallback(tfk.callbacks.Callback):
         _, _, reps_c0 = self.modu_model.sample_reps(self.dim_samps, context=0)
         dim_c0 = u.participation_ratio(reps_c0)
 
-        corr = 1 - self.modu_model.get_ablated_loss()
+        corr = 1 - self.modu_model.get_ablated_loss(mean_tasks=self.mean_tasks)
         self.dim.append(dim)
         self.dim_c0.append(dim_c0)
         self.corr.append(corr)
@@ -624,6 +625,7 @@ class Modularizer:
         n_samps=1000,
         ret_err_rate=True,
         layer=None,
+        mean_tasks=True,
     ):
         if not self.compiled:
             self._compile()
@@ -641,7 +643,11 @@ class Modularizer:
             out = x
         if ret_err_rate:
             out_binary = out > 0.5
-            out = 1 - np.mean(out_binary == targ, axis=(0, 1))
+            corr = out_binary == targ
+            
+            out = 1 - np.mean(corr, axis=0)
+            if mean_tasks:
+                out = np.mean(out)
         else:
             out = self.loss(targ, out)
         return out
@@ -720,6 +726,7 @@ class Modularizer:
         only_tasks=None,
         val_only_groups=None,
         val_only_tasks=None,
+        track_mean_tasks=True,
         **kwargs
     ):
         if val_only_groups is None:
@@ -757,7 +764,7 @@ class Modularizer:
             kwargs["callbacks"] = curr_cb
         if track_dimensionality:
             cb = kwargs.get("callbacks", [])
-            d_callback = DimCorrCallback(self)
+            d_callback = DimCorrCallback(self, mean_tasks=track_mean_tasks)
             cb.append(d_callback)
             kwargs["callbacks"] = cb
 
@@ -1168,6 +1175,7 @@ def train_modularizer(
     val_only_groups=None,
     val_only_tasks=None,
     batch_size=100,
+    track_mean_tasks=True,
     **kwargs
 ):
     if params is not None:
@@ -1242,6 +1250,7 @@ def train_modularizer(
             only_tasks=only_tasks,
             val_only_tasks=val_only_tasks,
             val_only_groups=val_only_groups,
+            track_mean_tasks=track_mean_tasks,
         )
     else:
         h = None

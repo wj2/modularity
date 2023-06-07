@@ -109,7 +109,10 @@ class ModularizerFigure(pu.Figure):
         return out
 
     def _quantification_panel(self, quant_keys, ri_list, axs, label_dict=None,
-                              nulls=None, legend_keys=('group_size',)):
+                              nulls=None, legend_keys=('group_size',),
+                              plot_ylabels=None):
+        if plot_ylabels is None:
+            plot_ylabels = quant_keys
         model_templ = self.params.get('model_template')
         if nulls is None:
             nulls = (.5,)*len(quant_keys)
@@ -125,6 +128,7 @@ class ModularizerFigure(pu.Figure):
             for k, (xs, qs) in qk_ri.items():
                 gpl.plot_trace_werr(xs, qs.T, ax=axs[i],
                                     label=label_dict[k], log_x=True)
+            axs[i].set_ylabel(plot_ylabels[i])
             gpl.add_hlines(nulls[i], axs[i])
 
 
@@ -352,12 +356,15 @@ class FigureModularity(ModularizerFigure):
         key = 'panel_ri'
         axs_all = self.gss[key]
         quant_keys = ('model_frac', 'diff_act_ablation')
+        y_labels = ('cluster fraction', 'ablation effect')
         ri_list = self.params.getlist('ri_list')
 
         label_dict = {(3,): 'D = 3', (5,): 'D = 5', (8,): 'D = 8'}
         nulls = (0, 0, .5, .5)
         self._quantification_panel(quant_keys, ri_list, axs_all,
-                                   label_dict=label_dict, nulls=nulls)
+                                   label_dict=label_dict, nulls=nulls,
+                                   plot_ylabels=y_labels)
+        axs_all[-1].set_xlabel('tasks')
 
     def panel_task_compare(self, refit_models=False, recompute_ablation=False):
         key = 'panel_task_compare'
@@ -544,21 +551,48 @@ class FigureGeometryConsequences(ModularizerFigure):
         axs = self.gss[key]
 
         run_ind = self.params.get("consequences_run_ind")
+        run_ind_rand = self.params.get("consequences_run_ind_random")
         n_tasks = self.params.getint("consequences_n_tasks")
         out_dict = maux.load_consequence_runs(run_ind)
+        out_dict_rand = maux.load_consequence_runs(run_ind_rand)
         plot_dict = out_dict[n_tasks]
+        plot_dict_rand = out_dict_rand[n_tasks]
+
+        mod_color = self.params.getcolor("partition_color")
+        naive_color = self.params.getcolor("naive_color")
+
+        mod_name = "modular network"
+        naive_name = "naive network"
 
         plot_keys = (
             "new task",
             "new context",
             "related context",
         )
+        log_y = False
         for i, key in enumerate(plot_keys):
             loss_pre, loss_null = plot_dict[key]
             ax = axs[i]
             xs = np.arange(1, loss_pre.shape[1] + 1)
-            gpl.plot_trace_werr(xs, loss_pre, ax=ax, log_y=True)
-            gpl.plot_trace_werr(xs, loss_null, ax=ax, log_y=True)
+            if i == len(plot_keys) - 1:
+                l_mod = mod_name
+                l_naive = naive_name
+            else:
+                l_mod = ""
+                l_naive = ""
+            gpl.plot_trace_werr(
+                xs, loss_null, ax=ax, color=naive_color, log_y=log_y, label=l_naive,
+            )
+            gpl.plot_trace_werr(
+                xs, loss_pre, ax=ax, color=mod_color, log_y=log_y, label=l_mod,
+            )
+            if key == "related context":
+                loss_pre_rand, _ = plot_dict_rand[key]
+                gpl.plot_trace_werr(
+                    xs, loss_pre_rand, ax=ax, color=mod_color, log_y=log_y,
+                    label="orthogonal tasks",
+                    linestyle="dashed",
+                )
             ax.set_ylabel('{} loss'.format(key))
 
     def panel_specialization(self, recompute=False):

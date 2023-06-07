@@ -385,12 +385,16 @@ def plot_context_scatter(m, n_samps=1000, ax=None, fwid=3, from_layer=None):
     labels, act = ma.infer_activity_clusters(
         m, n_samps=n_samps, use_mean=True, ret_act=True, from_layer=from_layer
     )
+    xy_labels = ('context 1  activity', 'context 2 activity')
     if act.shape[1] > 2:
         p = skd.PCA(2)
         act = p.fit_transform(act)
+        xy_labels = ('PC 1', 'PC 2')
     for i, l in enumerate(np.unique(labels)):
         mask = labels == l
         ax.plot(act[mask, 0], act[mask, 1], "o")
+    ax.set_xlabel(xy_labels[0])
+    ax.set_ylabel(xy_labels[1])
     gpl.clean_plot(ax, 0)
     return ax
 
@@ -459,6 +463,7 @@ def plot_context_clusters(
     vmax = np.mean(a_full) + np.std(a_full)
     ax.imshow(a_full[:, sort_inds], aspect="auto", vmax=vmax, cmap=cmap)
     gpl.clean_plot(ax, 0)
+    ax.set_xlabel('hidden units')
     return ax
 
 

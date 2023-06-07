@@ -1215,6 +1215,7 @@ def new_context_training(
                             only_groups=all_groups[-novel_groups:],
                             val_only_groups=all_groups[-novel_groups:],
                             only_tasks=only_tasks,
+                            track_mean_tasks=False,
                             val_only_tasks=val_only_tasks)
 
     out_one = ms.train_modularizer(
@@ -1228,6 +1229,7 @@ def new_context_training(
         tasks_per_group=n_tasks,
         only_tasks=only_tasks,
         val_only_tasks=val_only_tasks,
+        track_mean_tasks=False,
         **kwargs,
     )
     return (out_two[0], h_next), out_one
