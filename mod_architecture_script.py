@@ -35,7 +35,7 @@ def create_parser():
                         help='number of tasks for each group')
     parser.add_argument('--n_groups', default=3, type=int,
                         help='number of groups')
-    parser.add_argument('--model_type', default='coloring', type=str,
+    parser.add_argument('--model_type', default='linear', type=str,
                         help='kind of model')
     parser.add_argument('--model_epochs', default=40, type=int,
                         help='epochs to train model for')
@@ -207,20 +207,21 @@ if __name__ == '__main__':
     )
 
     related_context_null = np.zeros((args.n_reps, args.model_epochs))
-    rc_null_tasks = np.zeros((args.n_reps, args.model_epochs, untrained_tasks))
+    rc_null_tasks = np.zeros((args.n_reps, args.model_epochs + 1, untrained_tasks))
     related_context = np.zeros_like(related_context_null)
     rc_tasks = np.zeros_like(rc_null_tasks)
 
     new_context_null = np.zeros_like(related_context_null)
     new_context = np.zeros_like(related_context_null)
-    nc_null_tasks = np.zeros_like(related_context_null)
-    nc_tasks = np.zeros_like(related_context_null)
+    nc_null_tasks = np.zeros((args.n_reps, args.model_epochs + 1))
+    nc_tasks = np.zeros_like(nc_null_tasks)
 
     new_task_null = np.zeros_like(related_context_null)
-    nt_null_tasks = np.zeros((args.n_reps, args.model_epochs, args.novel_tasks))
+    nt_null_tasks = np.zeros((args.n_reps, args.model_epochs + 1, args.novel_tasks))
     new_task = np.zeros_like(related_context_null)
     nt_tasks = np.zeros_like(nt_null_tasks)
 
+    print(model_type)
     for i in range(args.n_reps):
         (_, hist), (_, hist_null) = ma.new_related_context_training(
             fdg,
@@ -256,9 +257,13 @@ if __name__ == '__main__':
         new_task[i] = hist.history['val_loss']
         new_task_null[i] = hist_null.history['val_loss']
         cr_null = np.array(hist_null.history["corr_rate"])
-        nt_null_tasks[i] = cr_null[:, :args.untrained_tasks]
+        if len(cr_null.shape) == 1:
+            cr_null = np.expand_dims(cr_null, 1)
+        nt_null_tasks[i] = cr_null[:, :args.novel_tasks]
         cr = np.array(hist.history["corr_rate"])
-        nt_tasks[i] = cr[:, :args.untrained_tasks]
+        if len(cr.shape) == 1:
+            cr = np.expand_dims(cr, 1)
+        nt_tasks[i] = cr[:, :args.novel_tasks]
 
     all_save = {
         'related context': (related_context, related_context_null),
