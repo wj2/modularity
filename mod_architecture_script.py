@@ -211,6 +211,13 @@ if __name__ == '__main__':
     related_context = np.zeros_like(related_context_null)
     rc_tasks = np.zeros_like(rc_null_tasks)
 
+    related_context_all_null = np.zeros((args.n_reps, args.model_epochs))
+    rc_all_null_tasks = np.zeros(
+        (args.n_reps, args.model_epochs + 1, args.tasks_per_group_tasks)
+    )
+    related_context_all = np.zeros_like(related_context_all_null)
+    rc_all_tasks = np.zeros_like(rc_all_null_tasks)
+
     new_context_null = np.zeros_like(related_context_null)
     new_context = np.zeros_like(related_context_null)
     nc_null_tasks = np.zeros((args.n_reps, args.model_epochs + 1))
@@ -235,6 +242,17 @@ if __name__ == '__main__':
         rc_tasks[i] = np.array(hist.history['corr_rate'])[:, :untrained_tasks]
         related_context_null[i] = hist_null.history['val_loss']
         rc_null_tasks[i] = np.array(hist_null.history['corr_rate'])[:, :untrained_tasks]
+
+        (_, hist), (_, hist_null) = ma.new_related_context_training(
+            fdg,
+            model_type_str=model_type,
+            **model_kwargs,
+            **train_kwargs,
+        )
+        related_context_all[i] = hist.history['val_loss']
+        rc_all_tasks[i] = np.array(hist.history['corr_rate'])
+        related_context_all_null[i] = hist_null.history['val_loss']
+        rc_all_null_tasks[i] = np.array(hist_null.history['corr_rate'])
 
         (_, hist), (_, hist_null) = ma.new_context_training(
             fdg,
@@ -266,8 +284,10 @@ if __name__ == '__main__':
         nt_tasks[i] = cr[:, :args.novel_tasks]
 
     all_save = {
-        'related context': (related_context, related_context_null),
-        'related context tasks': (rc_tasks, rc_null_tasks),
+        'related context': (related_context_all, related_context_all_null),
+        'related context tasks': (rc_all_tasks, rc_all_null_tasks),        
+        'related context inference': (related_context, related_context_null),
+        'related context inference tasks': (rc_tasks, rc_null_tasks),
         'new context': (new_context, new_context_null),
         'new context tasks': (nc_tasks, nc_null_tasks),
         'new task': (new_task, new_task_null),

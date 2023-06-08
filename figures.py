@@ -437,7 +437,7 @@ class FigureGeometryConsequences(ModularizerFigure):
                                        75, 100,
                                        side, 100 - side,
                                        10, 10)
-        nt_axs = self.get_axs(nt_grid, squeeze=True)
+        nt_axs = self.get_axs(nt_grid, squeeze=True, sharex='all', sharey='all')
         # gss['panel_new_task'] = nt_axs[0, 0]
         # gss['panel_new_context'] = nt_axs[0, 1]
         gss["panel_learning_consequences"] = nt_axs
@@ -569,6 +569,11 @@ class FigureGeometryConsequences(ModularizerFigure):
             "new context tasks",
             "related context tasks",
         )
+        plot_labels = (
+            "novel",
+            "new context",
+            "related context",
+        )
         # plot_keys = (
         #     "new task",
         #     "new context",
@@ -582,8 +587,6 @@ class FigureGeometryConsequences(ModularizerFigure):
                 loss_null = np.mean(loss_null, axis=2)
             ax = axs[i]
             xs = np.arange(1, loss_pre.shape[1] + 1)
-            print(loss_pre.shape)
-            print(xs.shape)
             if i == len(plot_keys) - 1:
                 l_mod = mod_name
                 l_naive = naive_name
@@ -605,7 +608,9 @@ class FigureGeometryConsequences(ModularizerFigure):
                     label="orthogonal tasks",
                     linestyle="dashed",
                 )
-            ax.set_ylabel('{} loss'.format(key))
+            ax.set_ylabel('{}\ntask performance'.format(plot_labels[i]))
+            ax.set_xlabel('training epochs')
+            gpl.add_hlines(.5, ax)
 
     def panel_specialization(self, recompute=False):
         key = "panel_specialization"
