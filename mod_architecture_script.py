@@ -213,7 +213,7 @@ if __name__ == '__main__':
 
     related_context_all_null = np.zeros((args.n_reps, args.model_epochs))
     rc_all_null_tasks = np.zeros(
-        (args.n_reps, args.model_epochs + 1, args.tasks_per_group_tasks)
+        (args.n_reps, args.model_epochs + 1, tasks_per_group)
     )
     related_context_all = np.zeros_like(related_context_all_null)
     rc_all_tasks = np.zeros_like(rc_all_null_tasks)
