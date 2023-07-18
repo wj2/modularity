@@ -747,7 +747,6 @@ class Modularizer:
         if not self.compiled:
             self._compile()
 
-        print('train data')
         train_x, train_true, train_targ = self.get_x_true(
             train_x,
             train_true,
@@ -756,8 +755,6 @@ class Modularizer:
             only_groups=only_groups,
             only_tasks=only_tasks,
         )
-        print(train_targ)
-        print('val data')
         eval_x, eval_true, eval_targ = self.get_x_true(
             eval_x,
             eval_true,
@@ -766,7 +763,6 @@ class Modularizer:
             only_groups=val_only_groups,
             only_tasks=val_only_tasks,
         )
-        print(eval_targ)
 
         eval_set = (eval_x, eval_targ)
 

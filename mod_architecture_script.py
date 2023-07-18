@@ -228,7 +228,6 @@ if __name__ == '__main__':
     new_task = np.zeros_like(related_context_null)
     nt_tasks = np.zeros_like(nt_null_tasks)
 
-    print(model_type)
     for i in range(args.n_reps):
         (_, hist), (_, hist_null) = ma.new_related_context_training(
             fdg,

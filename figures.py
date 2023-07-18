@@ -44,6 +44,7 @@ class ModularizerFigure(pu.Figure):
             if dg_dim is None:
                 dg_dim = self.params.getint("dg_dim")
 
+            rescale = self.params.getboolean("rescale_fdg")
             dg_epochs = self.params.getint("dg_epochs")
             dg_noise = self.params.getfloat("dg_noise")
             dg_regweight = self.params.getlist("dg_regweight", typefunc=float)
@@ -65,6 +66,7 @@ class ModularizerFigure(pu.Figure):
                 noise=dg_noise,
                 use_pr_reg=dg_pr_reg,
                 l2_weight=dg_regweight,
+                rescale=rescale,
             )
             fdg.fit(
                 source_distribution=source_distr,
@@ -110,7 +112,9 @@ class ModularizerFigure(pu.Figure):
 
     def _quantification_panel(self, quant_keys, ri_list, axs, label_dict=None,
                               nulls=None, legend_keys=('group_size',),
-                              plot_ylabels=None):
+                              plot_ylabels=None, colors=None):
+        if colors is None:
+            colors = {}
         if plot_ylabels is None:
             plot_ylabels = quant_keys
         model_templ = self.params.get('model_template')
@@ -127,7 +131,8 @@ class ModularizerFigure(pu.Figure):
             )
             for k, (xs, qs) in qk_ri.items():
                 gpl.plot_trace_werr(xs, qs.T, ax=axs[i],
-                                    label=label_dict[k], log_x=True)
+                                    label=label_dict[k], log_x=True,
+                                    color=colors.get(k))
             axs[i].set_ylabel(plot_ylabels[i])
             gpl.add_hlines(nulls[i], axs[i])
 
@@ -236,9 +241,16 @@ class FigureInput(ModularizerFigure):
 
         cmap = self.params.get("cluster_cmap")
 
+        c1_color = self.params.getcolor("con1_color")
+        c2_color = self.params.getcolor("con2_color")
+        neutral_color = self.params.getcolor("noncon_color")
+
         modu = self.make_ident_modularizer()
-        mv.plot_context_clusters(modu, ax=ax_clust, cmap=cmap)
-        mv.plot_context_scatter(modu, ax=ax_scatt)
+        mv.plot_context_clusters(modu, ax=ax_clust, cmap=cmap,
+                                 context_colors=(c1_color, c2_color))
+        mv.plot_context_scatter(
+            modu, ax=ax_scatt, colors=(c1_color, neutral_color, c2_color)
+        )
         ax_scatt.set_xlabel("activity in context 1")
         ax_scatt.set_ylabel("activity in context 2")
         ax_clust.set_xlabel("units")
@@ -318,7 +330,7 @@ class FigureEmergence(ModularizerFigure):
 
 class FigureModularity(ModularizerFigure):
     def __init__(self, fig_key='modularity_discrete', colors=colors, **kwargs):
-        fsize = (7, 5)
+        fsize = (8, 7)
         cf = u.ConfigParserColor()
         cf.read(config_path)
 
@@ -344,7 +356,7 @@ class FigureModularity(ModularizerFigure):
         tc_grid = pu.make_mxn_gridspec(self.gs, 3, n_plots,
                                        50, 100,
                                        20, 70,
-                                       5, 5)
+                                       10, 8)
         tc_axs = self.get_axs(tc_grid,
                               sharey="horizontal",
                               sharex="horizontal")
@@ -360,10 +372,17 @@ class FigureModularity(ModularizerFigure):
         ri_list = self.params.getlist('ri_list')
 
         label_dict = {(3,): 'D = 3', (5,): 'D = 5', (8,): 'D = 8'}
+        colors = {
+            (3,): self.params.getcolor("l3_color"),
+            (5,): self.params.getcolor("l5_color"),
+            (8,): self.params.getcolor("l8_color"),
+        }
+        labels = ("D = 3", "D = 5", "D = 8")
+
         nulls = (0, 0, .5, .5)
         self._quantification_panel(quant_keys, ri_list, axs_all,
                                    label_dict=label_dict, nulls=nulls,
-                                   plot_ylabels=y_labels)
+                                   plot_ylabels=y_labels, colors=colors)
         axs_all[-1].set_xlabel('tasks')
 
     def panel_task_compare(self, refit_models=False, recompute_ablation=False):
@@ -393,6 +412,11 @@ class FigureModularity(ModularizerFigure):
             self.data[key] = (fdg, models, hists, abls)
 
         fdg, models, hists, abls = self.data[key]
+        c1_color = self.params.getcolor("con1_color")
+        c2_color = self.params.getcolor("con2_color")
+        neutral_color = self.params.getcolor("noncon_color")
+
+        colors = (c1_color, neutral_color, c2_color)
         for i, nt in enumerate(n_tasks):
             m_i = models[i]
             tc_i = abls[i]
@@ -402,12 +426,16 @@ class FigureModularity(ModularizerFigure):
                 )
 
             axs_i = axs_all[:, i]
-            mv.plot_context_clusters(m_i, ax=axs_i[0], cmap=act_cmap)
-            mv.plot_context_scatter(m_i, ax=axs_i[1])
+            mv.plot_context_clusters(
+                m_i, ax=axs_i[0], cmap=act_cmap, context_colors=(c1_color, c2_color),
+            )
+            mv.plot_context_scatter(m_i, ax=axs_i[1], colors=colors)
 
+            if i > 0:
+                axs_i[1].set_ylabel('')
             tc_i[tc_i < 0] = 0
             m = axs_i[2].imshow(tc_i, cmap=ablation_cmap)
-            self.f.colorbar(m, ax=axs_i[2], label="normalized\nperformance change")
+            self.f.colorbar(m, ax=axs_i[2], label="performance\nchange")
             axs_i[2].set_xlabel("context")
             axs_i[2].set_ylabel("inferred cluster")
             axs_i[2].set_yticks([0, 1, 2])
@@ -432,8 +460,8 @@ class FigureGeometryConsequences(ModularizerFigure):
     def make_gss(self):
         gss = {}
 
-        side = 10
-        nt_grid = pu.make_mxn_gridspec(self.gs, 1, 3,
+        side = 0
+        nt_grid = pu.make_mxn_gridspec(self.gs, 1, 4,
                                        75, 100,
                                        side, 100 - side,
                                        10, 10)
@@ -568,18 +596,16 @@ class FigureGeometryConsequences(ModularizerFigure):
             "new task tasks",
             "new context tasks",
             "related context tasks",
+            "related context inference tasks",
         )
         plot_labels = (
             "novel",
             "new context",
             "related context",
+            "related context untrained",
         )
-        # plot_keys = (
-        #     "new task",
-        #     "new context",
-        #     "related context",
-        # )
         log_y = False
+
         for i, key in enumerate(plot_keys):
             loss_pre, loss_null = plot_dict[key]
             if len(loss_pre.shape) > 2:
@@ -637,9 +663,9 @@ class FigureGeometryConsequences(ModularizerFigure):
             self.params.getcolor("con1_color"),
             self.params.getcolor("con2_color"),
         )
-        for i in u_clusts:
+        for i, c_i in enumerate(u_clusts):
             xs, ys = [], []
-            mask = clusts == i
+            mask = clusts == c_i
             for f1, f2 in it.combinations(range(n_feats), 2):
                 xs.append(ws_mu[0, f1, mask])
                 ys.append(ws_mu[0, f2, mask])
@@ -1109,7 +1135,6 @@ class FigureOtherCases(ModularizerFigure):
             axs_quant[0, 1].set_ylabel("ablation effect")
             axs_quant[0, 0].set_ylabel("excess dimensionality")
 
-
     def panel_overlap_clusters(self):
         key = self.panel_keys[1]
         axs_scatters = self.gss[key]
@@ -1129,10 +1154,14 @@ class FigureOtherCases(ModularizerFigure):
             self.data[key] = mod_dict
 
         mod_dict = self.data[key]
+        c1_color = self.params.getcolor("con1_color")
+        c2_color = self.params.getcolor("con2_color")
+        neutral_color = self.params.getcolor("noncon_color")
+        colors = (c1_color, neutral_color, c2_color)
         for i, ((mt, ov), (mod, hist)) in enumerate(mod_dict.items()):
             ax_s = axs_scatters[i]
 
-            mv.plot_context_scatter(mod, ax=ax_s)
+            mv.plot_context_scatter(mod, ax=ax_s, colors=colors)
             ax_s.set_xlabel("C1 activity")
             ax_s.set_ylabel("C2 activity")
 

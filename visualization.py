@@ -379,20 +379,30 @@ def plot_linear_model(
     return f, axs
 
 
-def plot_context_scatter(m, n_samps=1000, ax=None, fwid=3, from_layer=None):
+def plot_context_scatter(m, n_samps=1000, ax=None, fwid=3, from_layer=None,
+                         colors=None):
     if ax is None:
         f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
     labels, act = ma.infer_activity_clusters(
         m, n_samps=n_samps, use_mean=True, ret_act=True, from_layer=from_layer
     )
-    xy_labels = ('context 1  activity', 'context 2 activity')
+    xy_labels = ('context 1 activity', 'context 2 activity')
+    u_labels = np.unique(labels)
+    if colors is None:
+        colors = (None,)*act.shape[1]
+        colors = (None,)*len(u_labels)
     if act.shape[1] > 2:
         p = skd.PCA(2)
         act = p.fit_transform(act)
         xy_labels = ('PC 1', 'PC 2')
-    for i, l in enumerate(np.unique(labels)):
+
+    mean_diff = list(
+        np.mean(act[labels == l, 1] - act[labels == l, 0]) for l in u_labels
+    )
+    u_labels = u_labels[np.argsort(mean_diff)]
+    for i, l in enumerate(u_labels):
         mask = labels == l
-        ax.plot(act[mask, 0], act[mask, 1], "o")
+        ax.plot(act[mask, 0], act[mask, 1], "o", color=colors[i])
     ax.set_xlabel(xy_labels[0])
     ax.set_ylabel(xy_labels[1])
     gpl.clean_plot(ax, 0)
@@ -448,7 +458,15 @@ def visualize_ri_list(
 
 
 def plot_context_clusters(
-    m, n_samps=1000, ax=None, fwid=3, from_layer=None, cmap="Blues"
+    m,
+    n_samps=1000,
+    ax=None,
+    fwid=3,
+    from_layer=None,
+    cmap="Blues",
+    context_colors=None,
+    gap=.05,
+    fontsize="small",
 ):
     if ax is None:
         f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
@@ -458,11 +476,20 @@ def plot_context_clusters(
     activity = ma.sample_all_contexts(
         m, n_samps=n_samps, use_mean=False, from_layer=from_layer
     )
+    if context_colors is None:
+        context_colors = (None,)*len(activity)
     sort_inds = np.argsort(labels)
     a_full = np.concatenate(activity, axis=0)
+    gap = int(np.round(gap*n_samps))
     vmax = np.mean(a_full) + np.std(a_full)
     ax.imshow(a_full[:, sort_inds], aspect="auto", vmax=vmax, cmap=cmap)
-    gpl.clean_plot(ax, 0)
+    for i, a in enumerate(activity):
+        n_samps = a.shape[0]
+        gpl.make_yaxis_scale_bar(ax, anchor=(n_samps/2) + n_samps*i,
+                                 magnitude=n_samps/2 - gap,
+                                 label='context\n{}'.format(i + 1),
+                                 color=context_colors[i], fontsize=fontsize)
+    gpl.clean_plot(ax, 1)
     ax.set_xlabel('hidden units')
     return ax
 
