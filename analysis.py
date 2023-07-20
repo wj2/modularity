@@ -1873,6 +1873,10 @@ def compute_weight_vectors(xs, ys, gate_vectors):
     for i in range(c):
         signs = np.sign(np.sum(gvs[i] * split_w[i].T, axis=1, keepdims=True))
         out_uvs[i] = u.make_unit_vector(np.sum(split_w[i].T * signs, axis=0))
+        # out_uvs[i] = u.make_unit_vector(np.sum(split_w[i].T, axis=0))
+    # print(gvs.shape, split_w.shape)
+    # print(out_uvs.shape)
+    # print(signs.shape)
     return out_uvs
 
 
@@ -2190,7 +2194,7 @@ def check_stability(
     inferred_vec = compute_weight_vector_simple(
         xs[x_mask], ys[x_mask], corr_vec, n_orig=xs.shape[0]
     )
-    print(inferred_vec.shape)
+    # print(inferred_vec.shape)
 
     # vec = compute_weight_vector(xs[x_mask], ys[x_mask],
     #                             renorm_targs=renorm_targs,

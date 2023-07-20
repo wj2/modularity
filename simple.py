@@ -275,6 +275,21 @@ def load_image_dg(full_data_file, no_learn_lvs, img_resize=(224, 224),
     return dg_wrap
 
 
+class TrackReps(tfk.callbacks.Callback):
+    def __init__(self, model, stim, *args, **kwargs):
+        self.rep_model = model
+        self.stim = stim
+        super().__init__(*args, **kwargs)
+        self.reps = []
+
+    def on_train_begin(self, logs=None):
+        self.reps = []
+
+    def on_epoch_end(self, epoch, logs=None):
+        reps_i = self.rep_model(self.stim).numpy()
+        self.reps.append(reps_i)
+
+
 class TrackWeights(tfk.callbacks.Callback):
     def __init__(self, model, layer_ind, *args, **kwargs):
         self.model = model
@@ -1059,12 +1074,16 @@ def make_linear_network(
         cb.append(weight_callback)
         bias_callback = TrackWeights(m, 1)
         cb.append(bias_callback)
+        rep_callback = TrackReps(m_rep, xs)
+        cb.append(rep_callback)
         kwargs["callbacks"] = cb
 
     original_weights = u.make_unit_vector(np.copy(m.weights[0]).T)
     h = m.fit(xs, ys, epochs=n_epochs, **kwargs)
-    h.history["weights"] = weight_callback.weights
-    h.history["bias"] = bias_callback.weights
+    if track_weights:
+        h.history["weights"] = weight_callback.weights
+        h.history["bias"] = bias_callback.weights
+        h.history["reps"] = rep_callback.reps
     return m, m_rep, h, original_weights
 
 

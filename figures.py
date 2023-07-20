@@ -299,11 +299,8 @@ class FigureEmergence(ModularizerFigure):
                     axis_tasks=True,
                 )
                 svs, hist = ma.compute_stable_wvs(stims, targs)
-                print(svs.shape)
                 thr = 0.1
-                print(hist[-5:, :])
                 svs = svs[hist[-1, :] < thr]
-                print(svs.shape)
                 model_out = ms.make_linear_network(
                     stims, targs, use_relu=True, verbose=False
                 )
@@ -312,19 +309,19 @@ class FigureEmergence(ModularizerFigure):
                 stable_gates[nt] = (stims, targs, svs, ws, model_out)
             self.data[key] = stable_gates
 
-        stable_key = self.data[key]
+        stable_gates = self.data[key]
         for i, nt in enumerate(nts):
             stims, targs, gates, ws, model_out = stable_gates[nt]
             resp = model_out[1](stims)
             mask_c1 = stims[:, -1] == 1
 
-            print(gates)
-            print(ws[:10])
+            # print(gates)
+            # print(ws[:10])
             resp_c1 = np.mean(resp[mask_c1], axis=0)
             resp_c2 = np.mean(resp[~mask_c1], axis=0)
             # axs_vis[i].plot(resp_c1, resp_c2, 'o')
             mv.visualize_stable_gates(stims, targs, gates, ws=ws, ax=axs_vis[i])
-            axs_vis[i].view_init(0, 0)
+            axs_vis[i].view_init(0, 50)
             mv.visualize_gate_angle(stims, targs, gates, ws=ws, ax=axs_dirs[i])
 
 

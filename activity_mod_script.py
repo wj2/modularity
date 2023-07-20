@@ -80,6 +80,7 @@ def create_parser():
     parser.add_argument('--eval_intermediate', default=False, action='store_true')
     parser.add_argument('--reload_image_dataset', default=False, action='store_true')
     parser.add_argument('--no_geometry_analysis', default=False, action='store_true')
+    parser.add_argument('--rescale_fdg', default=False, action='store_true')
     return parser
 
 
@@ -132,7 +133,7 @@ if __name__ == '__main__':
     else:
         source_distr = u.MultiBernoulli(.5, inp_dim)
         model_type = args.model_type
-        
+
     if args.kernel_init_std is not None:
         kernel_init = args.kernel_init_std
     else:
@@ -166,7 +167,8 @@ if __name__ == '__main__':
         fdg = dg.FunctionalDataGenerator(inp_dim, (300,), args.rep_dim,
                                          source_distribution=source_distr,
                                          use_pr_reg=True,
-                                         kernel_init=args.fdg_weight_init)
+                                         kernel_init=args.fdg_weight_init,
+                                         rescale=args.rescale_fdg)
         fdg.fit(epochs=args.fdg_epochs, verbose=False,
                 batch_size=args.dg_batch_size)
     print('dg dim', fdg.representation_dimensionality(participation_ratio=True))
