@@ -228,7 +228,14 @@ if __name__ == '__main__':
     new_task = np.zeros_like(related_context_null)
     nt_tasks = np.zeros_like(nt_null_tasks)
 
+    print("blah")
     for i in range(args.n_reps):
+        print(i)
+        print(fdg)
+        print(model_kwargs)
+        print(train_kwargs)
+        print(untrained_tasks)
+        print(args.separate_untrained)
         (_, hist), (_, hist_null) = ma.new_related_context_training(
             fdg,
             model_type_str=model_type,
@@ -242,6 +249,7 @@ if __name__ == '__main__':
         related_context_null[i] = hist_null.history['val_loss']
         rc_null_tasks[i] = np.array(hist_null.history['corr_rate'])[:, :untrained_tasks]
 
+        print("a")
         (_, hist), (_, hist_null) = ma.new_related_context_training(
             fdg,
             model_type_str=model_type,
@@ -253,6 +261,7 @@ if __name__ == '__main__':
         related_context_all_null[i] = hist_null.history['val_loss']
         rc_all_null_tasks[i] = np.array(hist_null.history['corr_rate'])
 
+        print("b")
         (_, hist), (_, hist_null) = ma.new_context_training(
             fdg,
             model_type_str=model_type,
@@ -274,6 +283,8 @@ if __name__ == '__main__':
         new_task[i] = hist.history['val_loss']
         new_task_null[i] = hist_null.history['val_loss']
         cr_null = np.array(hist_null.history["corr_rate"])
+        print("c")
+
         if len(cr_null.shape) == 1:
             cr_null = np.expand_dims(cr_null, 1)
         nt_null_tasks[i] = cr_null[:, :args.novel_tasks]

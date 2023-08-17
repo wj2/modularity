@@ -1181,7 +1181,7 @@ def new_related_context_training(
 def new_context_training(
     fdg,
     params=None,
-    verbose=False,
+    verbose=True,
     total_groups=3,
     novel_groups=1,
     n_tasks=10,
@@ -1200,6 +1200,8 @@ def new_context_training(
         separate_tasks = None
 
     all_groups = list(range(total_groups))
+    print('orig')
+    print(verbose, params, total_groups, novel_groups, n_tasks)
     out_two = ms.train_modularizer(
         fdg,
         verbose=verbose,
@@ -1219,6 +1221,7 @@ def new_context_training(
     else:
         only_tasks = None
         val_only_tasks = None
+    print("next", train_samps, only_tasks)
     h_next = out_two[0].fit(track_dimensionality=True,
                             epochs=train_epochs,
                             n_train=train_samps,
@@ -1229,6 +1232,7 @@ def new_context_training(
                             track_mean_tasks=False,
                             val_only_tasks=val_only_tasks)
 
+    print("final")
     out_one = ms.train_modularizer(
         fdg,
         verbose=verbose,
