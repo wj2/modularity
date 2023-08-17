@@ -149,6 +149,7 @@ if __name__ == '__main__':
 
     print(args.rep_dim)
     if args.discrete_mixed_input:
+        print(inp_dim)
         mix_strength = args.dm_input_mixing/args.dm_input_mixing_denom
         fdg = dg.MixedDiscreteDataGenerator(inp_dim, n_units=args.rep_dim,
                                             mix_strength=mix_strength)

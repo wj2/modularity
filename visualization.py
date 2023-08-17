@@ -39,6 +39,17 @@ def _get_cluster_order(ws, n_groups=None, alg=None):
     return order
 
 
+def visualize_model_order(orders, out_scores, ax=None, color_dict=None):
+    if ax is None:
+        f, ax = plt.subplots(1, 1)
+    if color_dict is None:
+        color_dict = {}
+    for k, scores in out_scores.items():
+        ax.plot(orders, scores, color=color_dict.get(k), label=k)
+    ax.legend(frameon=False)
+    return ax
+
+
 def visualize_splitting_likelihood(
     n_tasks,
     n_latents,
