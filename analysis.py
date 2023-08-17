@@ -6,6 +6,8 @@ import sklearn.cluster as skcl
 import sklearn.mixture as skmx
 import sklearn.svm as skm
 import sklearn.model_selection as skms
+import sklearn.pipeline as sklpipe
+import sklearn.feature_selection as skfs
 import itertools as it
 import scipy.stats as sts
 import scipy.special as ss
@@ -1077,7 +1079,7 @@ def task_performance_learned(
     **kwargs
 ):
     pipe = na.make_model_pipeline(
-        classifier_model, pca=pca, post_norm=post_norm, **kwargs
+        classifier_model, pca=pca, post_norm=post_norm, dual="auto", **kwargs
     )
     stim_rep, stim, targ = model.get_x_true(n_train=n_samps)
     if use_model_rep:
@@ -1176,6 +1178,146 @@ def new_related_context_training(
         *args, total_groups=total_groups, novel_groups=novel_groups,
         share_pairs=share_pairs, **kwargs
     )
+
+
+def train_controlled_model(
+    n_group,
+    mixing_strength,
+    n_cons=2,
+    n_units=500,
+    n_feats=None,
+    train_epochs=20,
+    n_train=5000,
+    tasks_per_group=20,
+    n_overlap=None,
+    group_width=50,
+    **kwargs,
+):
+    if n_overlap is None:
+        n_overlap = n_group
+    if n_feats is None:
+        n_feats = n_group*n_cons - n_overlap*(n_cons - 1) + n_cons
+    mddg = dg.MixedDiscreteDataGenerator(
+        n_feats, mix_strength=mixing_strength, n_units=n_units
+    )
+    model, hist = ms.train_modularizer(
+        mddg,
+        group_size=n_group,
+        n_groups=n_cons,
+        n_overlap=n_overlap,
+        train_epochs=train_epochs,
+        n_train=n_train,
+        group_width=group_width,
+        single_output=True,
+        integrate_context=True,
+        tasks_per_group=tasks_per_group,
+        **kwargs,
+    )
+    return mddg, model, hist
+
+
+def analyze_model_orders(model, **kwargs):
+    _, stim, _ = model.get_x_true(n_train=2)
+    orders = np.arange(1, stim.shape[1] + 1)
+
+    for i, order in enumerate(orders):
+        out = analyze_model_order(model, order, **kwargs)
+        out_models, out_scores = out
+        if i == 0:
+            score_dict = {k: np.zeros(len(orders)) for k in out_scores.keys()}
+            model_dict = {
+                k: np.zeros(len(orders), dtype=object) for k in out_scores.keys()
+            }
+        for k in out_models.keys():
+            model_dict[k][i] = out_models[k]
+        for k in out_scores.keys():
+            score_dict[k][i] = out_scores[k]
+    return orders, model_dict, score_dict
+
+
+def analyze_model_order(model, order, subset=True, layer=None, n_samps=1000, **kwargs):
+    inp_rep, stim, targ = model.get_x_true(n_train=n_samps)
+    rep = model.get_representation(inp_rep, layer=layer)
+    print(stim.shape, inp_rep.shape, rep.shape, targ.shape)
+    if subset:
+        gs = model.groups
+        group_inds = np.unique(np.concatenate(gs))
+        n_cons = np.arange(-len(gs), 0)
+        inds = np.concatenate((group_inds, n_cons))
+        stim = stim[:, inds]
+    ir_model, ir_score = explain_order_regression(stim, inp_rep, order, **kwargs)
+    rep_model, rep_score = explain_order_regression(stim, rep, order, **kwargs)
+    task_model, task_score = explain_order_regression(stim, targ, order, **kwargs)
+    out_scores = {
+        "input": ir_score,
+        "model_rep": rep_score,
+        "task": task_score,
+    }
+    out_models = {
+        "input": ir_model,
+        "model_rep": rep_model,
+        "task": task_model,
+    }
+    return out_models, out_scores
+
+
+def order_regression(order, n_feats, n_vals=2, min_order=1, single_order=False):
+    if single_order:
+        min_order = order
+    vals = np.array(list(it.product(np.arange(n_vals), repeat=n_feats)))
+
+    pf = skp.PolynomialFeatures(
+        degree=(min_order, order), interaction_only=True, include_bias=False
+    )
+    steps = (skp.OneHotEncoder(), pf, skfs.VarianceThreshold())
+    pipe = sklpipe.make_pipeline(*steps)
+    pipe.fit(vals)
+    betas = pipe.transform(vals).todense()
+    return pipe, betas
+
+
+def explain_order_regression(
+    samps, targs, order, lm_model=sklm.Ridge, **kwargs,
+):
+    n_feats = samps.shape[1]
+    pipe, _ = order_regression(order, n_feats, **kwargs)
+
+    betas = np.asarray(pipe.transform(samps).todense())
+    m = lm_model()
+    m.fit(betas, targs)
+    score = m.score(betas, targs)
+    return m, score
+
+
+def task_order_regression(
+    order,
+    n_tasks,
+    group_size,
+    n_cons=2,
+    n_samples=1000,
+    axis_tasks=False,
+    **kwargs,
+):
+    n_feats = group_size + n_cons
+
+    source = u.MultiBernoulli(.5, n_feats - 1)
+    samps = source.rvs(n_samples)
+    samps = np.concatenate((samps, np.expand_dims(1 - samps[:, -1], 1)), axis=1)
+
+    task_func = ms.make_contextual_task_func(
+        group_size, n_tasks=n_tasks, renorm=False, axis_tasks=axis_tasks
+    )
+    targs = task_func(samps)
+
+    out = explain_order_regression(
+        samps, targs, order, **kwargs,
+    )
+    return out
+
+
+def rep_order_regression(model, order, n_samples=1000, **kwargs):
+    samps, reps = model.sample_reps(n_samples)
+    return explain_order_regression(samps, reps, order, **kwargs)
 
 
 def new_context_training(
@@ -1349,7 +1491,7 @@ def linearly_separable_condition(stim, targs, mask_dims, thresh=0.90, **kwargs):
     scores = np.zeros(targs.shape[1])
     for j in range(targs.shape[1]):
         if len(np.unique(targs[:, j])) > 1 and sum(mask_dims) > 0:
-            m = skm.LinearSVC(**kwargs)
+            m = skm.LinearSVC(dual="auto", **kwargs)
             m.fit(stim[:, mask_dims], targs[:, j])
             scores[j] = m.score(stim[:, mask_dims], targs[:, j])
         else:
@@ -1374,7 +1516,7 @@ def _dichotomy_generator(stim, mask, thr=0.99):
         if np.all(d_mask) or np.all(~d_mask):
             pass
         else:
-            m = skm.LinearSVC()
+            m = skm.LinearSVC(dual="auto")
             m.fit(stim, d_mask)
             sep = m.score(stim, d_mask)
             uv = u.make_unit_vector(m.coef_)
@@ -2154,7 +2296,7 @@ def compute_alignment(reps, samps, n_contexts=2, n_folds=10):
         samps_con = np.array(samps[con_mask])
         reps_con = np.array(reps[con_mask])
         for j in range(samps.shape[1] - n_contexts):
-            pipe = na.make_model_pipeline(skm.LinearSVC)
+            pipe = na.make_model_pipeline(skm.LinearSVC, dual="auto")
             out = skms.cross_validate(
                 pipe, reps_con, samps_con[:, j], return_estimator=True, cv=n_folds
             )
@@ -2301,7 +2443,7 @@ def covariance_spectrum(*args, **kwargs):
 
 def compute_gate_vector(rel_samps, reps, func, **kwargs):
     mask = func(rel_samps)
-    m = skm.LinearSVC(**kwargs)
+    m = skm.LinearSVC(dual="auto", **kwargs)
     m.fit(reps, mask)
     return u.make_unit_vector(m.coef_)
 

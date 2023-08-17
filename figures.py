@@ -86,6 +86,59 @@ class ModularizerFigure(pu.Figure):
         m_ident, h = self.train_modularizer(model_type=m_type, train_epochs=0, **kwargs)
         return m_ident
 
+    def _plot_learning_cons(
+            self,
+            plot_dict,
+            plot_dict_rand,
+            axs,
+            colors=None,
+            mod_name="modular network",
+            naive_name="naive network",
+            plot_keys=("new task tasks",
+                       "new context tasks",
+                       "related context tasks",
+                       "related context inference tasks"),
+            plot_labels=("novel",
+                         "new context",
+                         "related context",
+                         "related context untrained"),
+            log_y=False
+    ):
+        if colors is None:
+            colors = (None, None)
+        naive_color, mod_color = colors
+        for i, key in enumerate(plot_keys):
+            loss_pre, loss_null = plot_dict[key]
+            if len(loss_pre.shape) > 2:
+                loss_pre = np.mean(loss_pre, axis=2)
+                loss_null = np.mean(loss_null, axis=2)
+            ax = axs[i]
+            xs = np.arange(0, loss_pre.shape[1])
+            if i == len(plot_keys) - 1:
+                l_mod = mod_name
+                l_naive = naive_name
+            else:
+                l_mod = ""
+                l_naive = ""
+            gpl.plot_trace_werr(
+                xs, loss_null, ax=ax, color=naive_color, log_y=log_y, label=l_naive,
+            )
+            gpl.plot_trace_werr(
+                xs, loss_pre, ax=ax, color=mod_color, log_y=log_y, label=l_mod,
+            )
+            if key == plot_keys[-1]:
+                loss_pre_rand, _ = plot_dict_rand[key]
+                if len(loss_pre_rand.shape) > 2:
+                    loss_pre_rand = np.mean(loss_pre_rand, axis=2)
+                gpl.plot_trace_werr(
+                    xs, loss_pre_rand, ax=ax, color=mod_color, log_y=log_y,
+                    label="orthogonal tasks",
+                    linestyle="dashed",
+                )
+            ax.set_ylabel('{}\ntask performance'.format(plot_labels[i]))
+            ax.set_xlabel('training epochs')
+            gpl.add_hlines(.5, ax)
+    
     def make_modularizers(self, retrain=False):
         if self.data.get("trained_models") is None or retrain:
             act_reg = self.params.getfloat("act_reg")
@@ -139,7 +192,7 @@ class ModularizerFigure(pu.Figure):
 
 class FigureInput(ModularizerFigure):
     def __init__(self, fig_key="input_figure", colors=colors, **kwargs):
-        fsize = (1.4, 4)
+        fsize = (4, 3)
         cf = u.ConfigParserColor()
         cf.read(config_path)
 
@@ -155,18 +208,48 @@ class FigureInput(ModularizerFigure):
     def make_gss(self):
         gss = {}
 
-        dim_sparse_grid = pu.make_mxn_gridspec(self.gs, 1, 2, 0, 20, 0, 100, 10, 30)
+        dim_sparse_grid = pu.make_mxn_gridspec(self.gs, 1, 2, 70, 100, 0, 40, 10, 20)
         gss["panel_dim_sparse"] = self.get_axs(
             dim_sparse_grid, squeeze=True, sharex="row"
         )
 
-        act_grid = pu.make_mxn_gridspec(self.gs, 2, 1, 40, 100, 10, 90, 10, 10)
+        eg_act_grid = pu.make_mxn_gridspec(self.gs, 2, 1, 0, 40, 0, 40, 20, 30)
+        gss["panel_eg_act"] = self.get_axs(
+            eg_act_grid, squeeze=True, sharex="row"
+        )
+
+        act_grid = pu.make_mxn_gridspec(self.gs, 2, 1, 0, 100, 60, 100, 20, 10)
         gss["panel_act"] = self.get_axs(act_grid, squeeze=True)
 
-        tasks_grid = self.gs[85:100, 70:]
-        gss["panel_tasks"] = self.get_axs((tasks_grid,), squeeze=False)[0, 0]
+        # tasks_grid = self.gs[85:100, 70:]
+        # gss["panel_tasks"] = self.get_axs((tasks_grid,), squeeze=False)[0, 0]
 
         self.gss = gss
+
+    def panel_eg_act(self):
+        key = "panel_eg_act"
+        inp_ax, rep_ax = self.gss[key]
+
+        fdg = self.make_fdg()
+        n_egs = 3
+        lvs, reps = fdg.sample_reps(n_egs)
+
+        cmap = self.params.get("cluster_cmap")
+
+        vs = np.arange(lvs.shape[1])
+        us = np.arange(reps.shape[1])
+        egs = np.arange(n_egs)
+        gpl.pcolormesh(vs, egs, lvs, ax=inp_ax, cmap=cmap)
+        gpl.pcolormesh(us, egs, reps, ax=rep_ax, cmap=cmap)
+
+        gpl.clean_plot(inp_ax, 0)
+        gpl.clean_plot(rep_ax, 0)
+        inp_ax.set_xticks([0, 10, 20])
+        rep_ax.set_xticks([0, 200, 400])
+        inp_ax.set_xlabel("latent variables")
+        inp_ax.set_ylabel("stimuli")
+        rep_ax.set_xlabel("input units")
+        rep_ax.set_ylabel("input reps")
 
     def panel_dim_sparse(self):
         key = "panel_dim_sparse"
@@ -179,6 +262,7 @@ class FigureInput(ModularizerFigure):
         lv_sparse = u.quantify_sparseness(lvs)
 
         rep_sparse = u.quantify_sparseness(reps)
+        rep_sparse = rep_sparse[~np.isnan(rep_sparse)]
         rep_pr = u.participation_ratio(reps)
 
         lv_color = self.params.getcolor("lv_color")
@@ -438,6 +522,65 @@ class FigureModularity(ModularizerFigure):
             axs_i[2].set_yticks([0, 1, 2])
 
 
+class FigureControlled(ModularizerFigure):
+    def __init__(self, fig_key="controlled", colors=colors, **kwargs):
+        fsize = (2, 6)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = (
+            "panel_consequences",
+        )
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        cons_grid = pu.make_mxn_gridspec(
+            self.gs, 4, 1, 0, 100, 0, 100, 10, 10
+        )
+        gss["panel_consequences"] = self.get_axs(cons_grid, squeeze=True)
+
+        self.gss = gss
+
+    def panel_consequences(self):
+        key = "panel_consequences"
+        axs = self.gss[key]
+
+        run_ind = self.params.get("consequences_run_ind")
+        run_ind_rand = self.params.get("consequences_run_ind_random")
+        controlled_template = self.params.get("controlled_template")
+        controlled_folder = self.params.get("controlled_folder")
+
+        mod_color = self.params.getcolor("partition_color")
+        naive_color = self.params.getcolor("naive_color")
+
+        out_dict = maux.load_consequence_runs(
+            run_ind,
+            folder=controlled_folder,
+            template=controlled_template,
+            ref_key="dm_input_mixing",
+        )
+        out_dict_rand = maux.load_consequence_runs(
+            run_ind_rand,
+            folder=controlled_folder,
+            template=controlled_template,
+            ref_key="dm_input_mixing",
+        )
+        mixing = 70
+        plot_dict = out_dict[mixing]
+        plot_dict_rand = out_dict_rand[mixing]
+        print(plot_dict['args'])
+        self._plot_learning_cons(
+            plot_dict,
+            plot_dict_rand,
+            axs,
+            colors=(naive_color, mod_color),
+        )
+
+
 class FigureGeometryConsequences(ModularizerFigure):
     def __init__(self, fig_key="geometry_consequences", colors=colors, **kwargs):
         fsize = (7, 6)
@@ -578,62 +721,21 @@ class FigureGeometryConsequences(ModularizerFigure):
         run_ind = self.params.get("consequences_run_ind")
         run_ind_rand = self.params.get("consequences_run_ind_random")
         n_tasks = self.params.getint("consequences_n_tasks")
+
+        mod_color = self.params.getcolor("partition_color")
+        naive_color = self.params.getcolor("naive_color")
+
         out_dict = maux.load_consequence_runs(run_ind)
         out_dict_rand = maux.load_consequence_runs(run_ind_rand)
         plot_dict = out_dict[n_tasks]
         plot_dict_rand = out_dict_rand[n_tasks]
 
-        mod_color = self.params.getcolor("partition_color")
-        naive_color = self.params.getcolor("naive_color")
-
-        mod_name = "modular network"
-        naive_name = "naive network"
-
-        plot_keys = (
-            "new task tasks",
-            "new context tasks",
-            "related context tasks",
-            "related context inference tasks",
+        self._plot_learning_cons(
+            plot_dict,
+            plot_dict_rand,
+            axs,
+            colors=(naive_color, mod_color),
         )
-        plot_labels = (
-            "novel",
-            "new context",
-            "related context",
-            "related context untrained",
-        )
-        log_y = False
-
-        for i, key in enumerate(plot_keys):
-            loss_pre, loss_null = plot_dict[key]
-            if len(loss_pre.shape) > 2:
-                loss_pre = np.mean(loss_pre, axis=2)
-                loss_null = np.mean(loss_null, axis=2)
-            ax = axs[i]
-            xs = np.arange(1, loss_pre.shape[1] + 1)
-            if i == len(plot_keys) - 1:
-                l_mod = mod_name
-                l_naive = naive_name
-            else:
-                l_mod = ""
-                l_naive = ""
-            gpl.plot_trace_werr(
-                xs, loss_null, ax=ax, color=naive_color, log_y=log_y, label=l_naive,
-            )
-            gpl.plot_trace_werr(
-                xs, loss_pre, ax=ax, color=mod_color, log_y=log_y, label=l_mod,
-            )
-            if key == plot_keys[-1]:
-                loss_pre_rand, _ = plot_dict_rand[key]
-                if len(loss_pre_rand.shape) > 2:
-                    loss_pre_rand = np.mean(loss_pre_rand, axis=2)
-                gpl.plot_trace_werr(
-                    xs, loss_pre_rand, ax=ax, color=mod_color, log_y=log_y,
-                    label="orthogonal tasks",
-                    linestyle="dashed",
-                )
-            ax.set_ylabel('{}\ntask performance'.format(plot_labels[i]))
-            ax.set_xlabel('training epochs')
-            gpl.add_hlines(.5, ax)
 
     def panel_specialization(self, recompute=False):
         key = "panel_specialization"

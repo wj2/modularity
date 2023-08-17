@@ -910,9 +910,9 @@ class IdentityModularizer(Modularizer):
         return stim
 
     def model(self, stim):
-        return stim
+        return stim        
 
-
+    
 def make_linear_task_func(n_g, n_tasks=1, i_var=0, center=0.5, renorm=False, **kwargs):
     task, intercept = generate_linear_tasks(
         n_g, n_tasks=n_tasks, intercept_var=i_var, **kwargs
@@ -920,6 +920,30 @@ def make_linear_task_func(n_g, n_tasks=1, i_var=0, center=0.5, renorm=False, **k
     return ft.partial(
         apply_linear_task, task=task, intercept=intercept, center=center, renorm=renorm
     )
+
+
+def make_contextual_task_func(
+        n_g, n_tasks, n_cons=2, task_func=make_linear_task_func, **kwargs
+):
+    if not u.check_list(n_g):
+        n_g = np.arange(n_g)
+    if not u.check_list(n_cons):
+        n_cons = np.arange(-n_cons, 0)
+
+    task_groups = []
+    for i in range(len(n_cons)):
+        task_groups.append(task_func(len(n_g), n_tasks, **kwargs))
+
+    def task_func(samps):
+        rel_vars = samps[:, n_g]
+        task_outs = list(tg(rel_vars) for tg in task_groups)
+        out = np.zeros_like(task_outs[0])
+        con_inds = np.argmax(samps[:, n_cons], axis=1)
+        for i in range(len(n_cons)):
+            mask = con_inds == i
+            out[mask] = task_outs[i][mask]
+        return out
+    return task_func
 
 
 class LinearIdentityModularizer(IdentityModularizer):
@@ -962,10 +986,11 @@ class LinearModularizer(Modularizer):
         center=0,
         renorm=False,
         separate_tasks=None,
+        axis_tasks=False,
     ):
         return make_linear_task_func(
             n_g, n_tasks=n_tasks, i_var=i_var, center=center, renorm=renorm,
-            separate_tasks=separate_tasks,
+            separate_tasks=separate_tasks, axis_tasks=axis_tasks,
         )
 
     def __init__(
@@ -979,6 +1004,7 @@ class LinearModularizer(Modularizer):
         n_common_tasks=0,
         share_pairs=None,
         separate_tasks=None,
+        axis_tasks=False,
         **kwargs
     ):
         # COMMON TASKS FOR EACH GROUP
@@ -993,6 +1019,7 @@ class LinearModularizer(Modularizer):
                     center=center,
                     renorm=renorm_tasks,
                     separate_tasks=separate_tasks,
+                    axis_tasks=axis_tasks,
                 )
             )
         if share_pairs is not None:
