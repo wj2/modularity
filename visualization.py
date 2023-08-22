@@ -50,6 +50,82 @@ def visualize_model_order(orders, out_scores, ax=None, color_dict=None):
     return ax
 
 
+def plot_desired_order_runs(df, key_dict, **kwargs):
+    runs = maux.find_key_runs(df, key_dict)
+    ax = kwargs.pop("ax", None)
+    for i, r in enumerate(runs):
+        run_df = df[df["runind"] == r]
+        ax = plot_order_run(run_df, ax=ax, set_labels=i == 0, **kwargs)
+    return ax
+
+
+def plot_order_spectrum(spectrum_dict, axs=None, key_order=None, shares=None):
+    if key_order is None:
+        if "model_rep_dynamic" in spectrum_dict.keys():
+            key_order = ("input", "model_rep_dynamic", "model_rep", "task")
+            shares = (.05, .8, .05, .05)
+        else:
+            key_order = ("input", "model_rep", "task")
+    if shares is None:
+        shares = (1/len(key_order),)*len(key_order)
+    if axs is None:
+        f = plt.figure()
+        gs = f.add_gridspec(100, 100)
+        axs = []
+        start = 0
+        sharey = None
+        for i, s in enumerate(shares):
+            end = int(np.round(s*100)) + start
+            axs.append(f.add_subplot(gs[:, start:end], sharey=sharey))
+            start = end
+            sharey = axs[i]
+    for i, k in enumerate(key_order):
+        v = spectrum_dict[k]
+        if len(v.shape) == 1:
+            v = np.expand_dims(v, 0)
+            axs[i].set_xticks([0])
+            axs[i].set_xticklabels([k], rotation=90)
+        axs[i].plot(v, "o-")
+        gpl.clean_plot(axs[i], i)
+    return axs
+
+
+def plot_order_run(
+    run_df,
+    x_key="mixing_strength",
+    pks=("out_scores_input",
+         "out_scores_model_rep",
+         "out_scores_task"),
+    labels=("input", "rep", "tasks"),
+    fwid=2,
+    ax=None,
+    thr=.99,
+    set_labels=True,
+):
+    if not set_labels:
+        labels = ("",)*len(labels)
+    if ax is None:
+        f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
+    run_df = run_df.sort_values(x_key)
+    order_list = {}
+    x_list = run_df[x_key]
+    for i, (_, row) in enumerate(run_df.iterrows()):
+        orders = row["orders"]
+        for j, pk in enumerate(pks):
+            o_l_j = order_list.get(pk, [])
+            o_pk = np.where(row[pk] > thr)[0][0]
+            o_l_j.append(orders[o_pk])
+            order_list[pk] = o_l_j
+    for i, (pk, l) in enumerate(order_list.items()):
+        l = ax.plot(x_list, order_list[pk], label=labels[i])
+        ax.plot(x_list, order_list[pk], "o", color=l[0].get_color())
+    ax.legend(frameon=False)
+    gpl.clean_plot(ax, 0)
+    ax.set_xlabel(x_key)
+    ax.set_ylabel("order explaining > {}".format(thr))
+    return ax
+
+
 def visualize_splitting_likelihood(
     n_tasks,
     n_latents,

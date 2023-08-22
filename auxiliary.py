@@ -29,12 +29,35 @@ def save_model_information(models, folder, file_name="model_results.pkl", **kwar
             group_members[ind] = models[ind].out_group_labels
             groups[ind] = models[ind].groups
     else:
-        weights, group_members, groups = None, None, None    
+        weights, group_members, groups = None, None, None
     save_dict = dict(weights=weights, group_members=group_members, groups=groups)
     save_dict.update(kwargs)
     file_path = os.path.join(folder, file_name)
     os.mkdir(folder)
     pickle.dump(save_dict, open(file_path, "wb"))
+
+
+def load_order_runs(
+    folder="modularity/order_modularizers/",
+    pattern="order_(?P<arr>[0-9]+)_(?P<runind>[0-9]+)\.pkl",
+    merge_keys=("args", "metrics"),
+    format_keys=("out_models", "out_scores"),
+):
+    return u.load_cluster_runs(
+        folder, pattern, merge_keys=merge_keys, format_keys=format_keys
+    )
+
+
+def find_key_runs(data, constraint_dict, ret_key="runind", filt_counts=1):
+    masks = []
+    for k, v in constraint_dict.items():
+        mask = data[k] == v
+        masks.append(mask)
+    mask = np.product(masks, axis=0, dtype=bool)
+    rks = data[ret_key][mask]
+    vals, counts = np.unique(rks, return_counts=True)
+    vals = vals[counts > filt_counts]
+    return vals
 
 
 def load_consequence_runs(

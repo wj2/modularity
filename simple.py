@@ -275,21 +275,6 @@ def load_image_dg(full_data_file, no_learn_lvs, img_resize=(224, 224),
     return dg_wrap
 
 
-class TrackReps(tfk.callbacks.Callback):
-    def __init__(self, model, stim, *args, **kwargs):
-        self.rep_model = model
-        self.stim = stim
-        super().__init__(*args, **kwargs)
-        self.reps = []
-
-    def on_train_begin(self, logs=None):
-        self.reps = []
-
-    def on_epoch_end(self, epoch, logs=None):
-        reps_i = self.rep_model(self.stim).numpy()
-        self.reps.append(reps_i)
-
-
 class TrackWeights(tfk.callbacks.Callback):
     def __init__(self, model, layer_ind, *args, **kwargs):
         self.model = model
@@ -303,6 +288,24 @@ class TrackWeights(tfk.callbacks.Callback):
     def on_epoch_end(self, epoch, logs=None):
         weights = self.model.weights
         self.weights.append(np.array(weights[self.layer_ind]))
+
+
+class TrackReps(tfk.callbacks.Callback):
+    def __init__(self, model, *args, n_rep_samps=10**4, mean_tasks=True,
+                 only_groups=None, **kwargs):
+        self.modu_model = model
+        super().__init__(*args, **kwargs)
+
+        inp_rep, stim, _ = model.get_x_true(n_train=n_rep_samps)
+        self.inp_rep = inp_rep
+        self.stim = stim
+
+    def on_train_begin(self, logs=None):
+        self.reps = []
+        self.reps.append(self.modu_model.get_representation(self.inp_rep))
+
+    def on_epoch_end(self, epoch, logs=None):
+        self.reps.append(self.modu_model.get_representation(self.inp_rep))
 
 
 class DimCorrCallback(tfk.callbacks.Callback):
@@ -753,6 +756,7 @@ class Modularizer:
         val_only_groups=None,
         val_only_tasks=None,
         track_mean_tasks=True,
+        track_reps=True,
         **kwargs
     ):
         if val_only_groups is None:
@@ -794,6 +798,11 @@ class Modularizer:
                                          only_groups=val_only_groups)
             cb.append(d_callback)
             kwargs["callbacks"] = cb
+        if track_reps:
+            cb = kwargs.get("callbacks", [])
+            rep_callback = TrackReps(self, n_rep_samps=2000)
+            cb.append(rep_callback)
+            kwargs["callbacks"] = cb
 
         out = self.model.fit(
             x=train_x,
@@ -807,6 +816,12 @@ class Modularizer:
             out.history["dimensionality"] = d_callback.dim
             out.history["dimensionality_c0"] = d_callback.dim_c0
             out.history["corr_rate"] = d_callback.corr
+        if track_reps:
+            out.history["tracked_activity"] = (
+                rep_callback.stim,
+                rep_callback.inp_rep,
+                np.stack(rep_callback.reps, axis=0)
+            )
         if return_training:
             out = (out, (train_x, train_true, train_targ))
         return out

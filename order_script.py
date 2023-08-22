@@ -56,8 +56,8 @@ if __name__ == '__main__':
         kernel_init=weight_kernel_init,
         train_epochs=args.training_epochs,
     )
-
     orders, out_lms, out_scores = ma.analyze_model_orders(model)
+    out_spectrum = ma.compute_model_spectrum(model, history=hist)
 
     models = np.array([[model]])
     metric_results = {}
@@ -73,6 +73,7 @@ if __name__ == '__main__':
     save_dict = {
         "args": args_dict,
         "orders": orders,
+        "spectrum": out_spectrum,
         "out_models": out_lms,
         "out_scores": out_scores,
         "metrics": metric_results,

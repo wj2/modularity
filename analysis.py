@@ -1235,32 +1235,6 @@ def analyze_model_orders(model, **kwargs):
     return orders, model_dict, score_dict
 
 
-def analyze_model_order(model, order, subset=True, layer=None, n_samps=1000, **kwargs):
-    inp_rep, stim, targ = model.get_x_true(n_train=n_samps)
-    rep = model.get_representation(inp_rep, layer=layer)
-    print(stim.shape, inp_rep.shape, rep.shape, targ.shape)
-    if subset:
-        gs = model.groups
-        group_inds = np.unique(np.concatenate(gs))
-        n_cons = np.arange(-len(gs), 0)
-        inds = np.concatenate((group_inds, n_cons))
-        stim = stim[:, inds]
-    ir_model, ir_score = explain_order_regression(stim, inp_rep, order, **kwargs)
-    rep_model, rep_score = explain_order_regression(stim, rep, order, **kwargs)
-    task_model, task_score = explain_order_regression(stim, targ, order, **kwargs)
-    out_scores = {
-        "input": ir_score,
-        "model_rep": rep_score,
-        "task": task_score,
-    }
-    out_models = {
-        "input": ir_model,
-        "model_rep": rep_model,
-        "task": task_model,
-    }
-    return out_models, out_scores
-
-
 def order_regression(order, n_feats, n_vals=2, min_order=1, single_order=False):
     if single_order:
         min_order = order
@@ -1287,6 +1261,101 @@ def explain_order_regression(
     m.fit(betas, targs)
     score = m.score(betas, targs)
     return m, score
+
+
+def compute_order_spectrum(
+    stim, rep, max_order, lm_model=sklm.Ridge, **kwargs,
+):
+    n_feats = stim.shape[1]
+    spectrum = np.zeros(max_order)
+    for i in range(1, max_order + 1):
+        if i > 1:
+            lo_pipe, _ = order_regression(i - 1, n_feats, min_order=1)
+            lo_coeffs = lo_pipe.transform(stim)
+            m_low = lm_model()
+            m_low.fit(lo_coeffs, rep)
+            o_guess = m_low.predict(lo_coeffs)
+            remaining = 1 - m_low.score(lo_coeffs, rep)
+            residual = rep - o_guess
+        else:
+            residual = rep
+            remaining = 1
+        targ_pipe, _ = order_regression(i, n_feats, single_order=True)
+        targ_coeffs = targ_pipe.transform(stim)
+        m_targ = lm_model()
+        m_targ.fit(targ_coeffs, residual)
+        spectrum[i - 1] = m_targ.score(targ_coeffs, residual)*remaining
+    return spectrum
+
+
+def compute_model_spectrum(
+    model,
+    max_order=None,
+    subset=True,
+    layer=None,
+    n_samps=1000,
+    history=None,
+    **kwargs,
+):
+    inp_rep, stim, targ = model.get_x_true(n_train=n_samps)
+    rep = model.get_representation(inp_rep, layer=layer)
+    if subset:
+        gs = model.groups
+        group_inds = np.unique(np.concatenate(gs))
+        n_cons = np.arange(-len(gs), 0)
+        inds = np.concatenate((group_inds, n_cons))
+        stim = stim[:, inds]
+    if max_order is None:
+        max_order = stim.shape[1]
+    ir_spec = compute_order_spectrum(stim, inp_rep, max_order, **kwargs)
+    rep_spec = compute_order_spectrum(stim, rep, max_order, **kwargs)
+    task_spec = compute_order_spectrum(stim, targ, max_order, **kwargs)
+    out_dict = {
+        "input": ir_spec,
+        "model_rep": rep_spec,
+        "task": task_spec,
+    }
+    if history is not None and history.history.get("tracked_activity") is not None:
+        stim, _, rep_dynamic = history.history.get("tracked_activity")
+        dynamic_spectrum = np.zeros((len(rep_dynamic), max_order))
+        for i, rd_i in enumerate(rep_dynamic):
+            dynamic_spectrum[i] = compute_order_spectrum(
+                stim, rd_i, max_order, **kwargs,
+            )
+        out_dict["model_rep_dynamic"] = dynamic_spectrum
+    return out_dict
+
+
+def analyze_model_order(
+    model,
+    order,
+    subset=True,
+    layer=None,
+    n_samps=1000,
+    **kwargs
+):
+    inp_rep, stim, targ = model.get_x_true(n_train=n_samps)
+    rep = model.get_representation(inp_rep, layer=layer)
+    if subset:
+        gs = model.groups
+        group_inds = np.unique(np.concatenate(gs))
+        n_cons = np.arange(-len(gs), 0)
+        inds = np.concatenate((group_inds, n_cons))
+        stim = stim[:, inds]
+    ir_model, ir_score = explain_order_regression(stim, inp_rep, order, **kwargs)
+    rep_model, rep_score = explain_order_regression(stim, rep, order, **kwargs)
+    task_model, task_score = explain_order_regression(stim, targ, order, **kwargs)
+    out_scores = {
+        "input": ir_score,
+        "model_rep": rep_score,
+        "task": task_score,
+    }
+    out_models = {
+        "input": ir_model,
+        "model_rep": rep_model,
+        "task": task_model,
+    }
+    return out_models, out_scores
 
 
 def task_order_regression(
