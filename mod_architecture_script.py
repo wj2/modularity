@@ -84,6 +84,8 @@ def create_parser():
     parser.add_argument('--untrained_tasks', default=.5, type=float)
     parser.add_argument('--separate_untrained', default=False, action="store_true")
     parser.add_argument('--novel_tasks', default=1, type=int)
+    parser.add_argument('--zs_test_samps', default=1000, type=int)
+    parser.add_argument('--fix_n_irrel_vars', default=1, type=int)
     return parser
 
 
@@ -229,6 +231,8 @@ if __name__ == '__main__':
     new_task = np.zeros_like(related_context_null)
     nt_tasks = np.zeros_like(nt_null_tasks)
 
+    zs = np.zeros((args.n_reps, 2, args.zs_test_samps, tasks_per_group))
+
     print("blah")
     for i in range(args.n_reps):
         print(i)
@@ -293,6 +297,17 @@ if __name__ == '__main__':
         if len(cr.shape) == 1:
             cr = np.expand_dims(cr, 1)
         nt_tasks[i] = cr[:, :args.novel_tasks]
+
+        errs_ood, errs_ind = ma.zero_shot_training(
+            fdg,
+            model_type_str=model_type,
+            fix_n_irrel_vars=args.fix_n_irrel_vars,
+            test_samps=args.zs_test_samps,
+            **model_kwargs,
+            **train_kwargs,
+        )
+        zs[i] = np.stack((errs_ood.numpy(), errs_ind.numpy()),
+                         axis=0)
 
     all_save = {
         'related context': (related_context_all, related_context_all_null),

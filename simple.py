@@ -453,6 +453,13 @@ class Modularizer:
         self.group_size = group_size
         self.inp_dims = inp_dims
         self.out_dims = out_dims
+        self.rel_vars = np.unique(np.concatenate(groups))
+        con_vars = np.arange(inp_dims - len(groups), inp_dims)
+        irrel_vars = set(np.arange(inp_dims))
+        self.irrel_vars = np.array(list(
+            irrel_vars.difference(np.concatenate((self.rel_vars, con_vars)))
+        ))
+
         self.hidden_dims = int(round(len(groups) * group_width))
         self.out_group_labels = np.concatenate(
             list((i,) * tasks_per_group for i in range(n_groups))
@@ -690,6 +697,8 @@ class Modularizer:
         special_fdg=None,
         only_groups=None,
         only_tasks=None,
+        fix_vars=None,
+        fix_value=0,
     ):
         if only_groups is not None:
             group_inds = self.rng.choice(only_groups, n_train)
@@ -721,6 +730,8 @@ class Modularizer:
                 to_add = to_add[:, :-1]
         if self.single_output and self.integrate_context and not self.continuous:
             true = np.concatenate((true, to_add), axis=1)
+        if fix_vars is not None:
+            true[:, fix_vars] = fix_value
         if x is None and special_fdg is None:
             x = self.mix_func(true)
         elif x is None and special_fdg is not None:
@@ -757,6 +768,8 @@ class Modularizer:
         val_only_tasks=None,
         track_mean_tasks=True,
         track_reps=True,
+        fix_vars=None,
+        fix_value=0,
         **kwargs
     ):
         if val_only_groups is None:
@@ -773,6 +786,8 @@ class Modularizer:
             special_fdg=special_fdg,
             only_groups=only_groups,
             only_tasks=only_tasks,
+            fix_vars=fix_vars,
+            fix_value=fix_value,
         )
         eval_x, eval_true, eval_targ = self.get_x_true(
             eval_x,
@@ -781,6 +796,8 @@ class Modularizer:
             special_fdg=special_fdg,
             only_groups=val_only_groups,
             only_tasks=val_only_tasks,
+            fix_vars=fix_vars,
+            fix_value=fix_value,
         )
 
         eval_set = (eval_x, eval_targ)
@@ -1249,6 +1266,8 @@ def train_modularizer(
     val_only_tasks=None,
     batch_size=100,
     track_mean_tasks=True,
+    fix_n_irrel_vars=0,
+    fix_irrel_value=0,
     **kwargs
 ):
     if params is not None:
@@ -1312,6 +1331,11 @@ def train_modularizer(
         model_type = model_type_dict[model_type_str]
 
     m = model_type(inp_dim, **config_dict)
+    if fix_n_irrel_vars > 0 and len(m.irrel_vars) > fix_n_irrel_vars:
+        fix_irrel_vars = m.irrel_vars[:fix_n_irrel_vars]
+    else:
+        fix_irrel_vars = None
+
     if train_epochs > 0:
         h = m.fit(
             epochs=train_epochs,
@@ -1324,6 +1348,8 @@ def train_modularizer(
             val_only_tasks=val_only_tasks,
             val_only_groups=val_only_groups,
             track_mean_tasks=track_mean_tasks,
+            fix_vars=fix_irrel_vars,
+            fix_value=fix_irrel_value,
         )
     else:
         h = None

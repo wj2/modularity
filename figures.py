@@ -1,6 +1,7 @@
 import itertools as it
 import numpy as np
 import scipy.stats as sts
+import scipy.special as ss
 import matplotlib.pyplot as plt
 
 import modularity.simple as ms
@@ -188,6 +189,222 @@ class ModularizerFigure(pu.Figure):
                                     color=colors.get(k))
             axs[i].set_ylabel(plot_ylabels[i])
             gpl.add_hlines(nulls[i], axs[i])
+
+
+class FigureWorldIntro(ModularizerFigure):
+    def __init__(self, fig_key="task_intro_figure", colors=colors, **kwargs):
+        fsize = (6, 6)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = (
+            "panel_minimal_order",
+            "panel_input_spectrum",
+            "panel_generalization",
+        )
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+        ps_grid = pu.make_mxn_gridspec(
+            self.gs, 2, 1, 0, 100, 60, 100, 8, 2)
+
+        gss["panel_scaling"] = self.get_axs(
+            ps_grid, squeeze=True, sharex="all", sharey="all",
+        )
+
+        self.gss = gss
+
+    def panel_scaling(self):
+        key = "panel_scaling"
+        ax_lin, ax_nonlin = self.gss[key]
+
+        max_rel = self.params.getint("max_relevant_dims")
+        n_cons = self.params.getint("n_contexts")
+        n_vals = self.params.getint("n_vals")
+        relevant_dims = np.arange(2, max_rel + 1)
+        orders = np.arange(1, max_rel)
+
+        cmap = self.params.get("order_cmap")
+        mf_num = self.params.getfloat("max_flex_color")
+        cm = plt.get_cmap(cmap)
+        mf_color = cm(mf_num)
+        o_colors = cm(np.linspace(.2, .9, len(orders)))
+
+        con_task_color = self.params.getcolor("contextual_color")
+        lin_task_color = self.params.getcolor("partition_color")
+
+        # any binary task
+        max_flex = n_vals**relevant_dims
+
+        # any second order task
+        for i, o in enumerate(orders):
+            oi_dim = np.array(list(ma.order_dim(rd, o) for rd in relevant_dims))
+            mask = oi_dim > 0
+            ax_nonlin.plot(relevant_dims[mask], oi_dim[mask], color=o_colors[i])
+
+        # any contextual linear task
+        ax_lin.plot(
+            relevant_dims, relevant_dims, color=lin_task_color, label="linear"
+        )
+        linear_basis = n_cons*((relevant_dims - n_cons + 1))
+        ax_lin.plot(
+            relevant_dims, linear_basis, color=con_task_color, label="contextual"
+        )
+
+        ax_lin.plot(relevant_dims, max_flex, color=mf_color, label="any")
+        ax_nonlin.plot(relevant_dims, max_flex, color=mf_color, label="any")
+
+        ax_lin.set_yscale("log")
+
+        ax_lin.legend(frameon=False)
+        gpl.clean_plot(ax_lin, 0)
+        gpl.clean_plot(ax_nonlin, 0)
+        ax_lin.set_ylabel("required\ndimensionality")
+        ax_nonlin.set_ylabel("required\ndimensionality")
+        ax_nonlin.set_xlabel("relevant latent variables")
+
+
+class FigureTaskIntro(ModularizerFigure):
+    def __init__(self, fig_key="task_intro_figure", colors=colors, **kwargs):
+        fsize = (6, 6)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = (
+            "panel_minimal_order",
+            "panel_input_spectrum",
+            "panel_generalization",
+        )
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        gss["panel_task_spectrum"] = self.get_axs(
+            (self.gs[10:20, 55:70],), squeeze=False, sharex="row"
+        )[0, 0]
+
+        gss["panel_minimal_order"] = self.get_axs(
+            (self.gs[0:20, 80:100],), squeeze=False, sharex="row"
+        )[0, 0]
+
+        inp_rep_grid = pu.make_mxn_gridspec(self.gs, 1, 3,
+                                            25, 60,
+                                            0, 100, 8, 2)
+        inp_spec_grid = pu.make_mxn_gridspec(self.gs, 1, 3,
+                                             60, 75,
+                                             10, 90, 8, 20)
+        axs_rep = self.get_axs(inp_rep_grid, all_3d=True)
+        axs_spec = self.get_axs(inp_spec_grid, sharex="all", sharey="all")
+        gss["panel_input_spectrum"] = (axs_rep, axs_spec)
+
+        metric_grid = pu.make_mxn_gridspec(self.gs, 1, 4,
+                                           85, 100,
+                                           0, 100, 8, 8)
+        gss["panel_metrics"] = self.get_axs(metric_grid)
+
+        self.gss = gss
+
+    def panel_task_spectrum(self):
+        key = "panel_task_spectrum"
+        ax = self.gss[key]
+
+        n_feats = self.params.getint("n_feats")
+        n_tasks = self.params.getint("n_tasks")
+        axis_tasks = self.params.getboolean("axis_tasks")
+        if self.data.get(key) is None:
+            source = u.MultiBernoulli(.5, n_feats + 1)
+            stim = source.rvs(1000)
+            stim = np.concatenate(
+                (stim, np.expand_dims(1 - stim[:, -1], 1)), axis=1
+            )
+
+            task_func = ms.make_contextual_task_func(
+                n_feats, n_tasks=n_tasks, renorm=False, axis_tasks=axis_tasks
+            )
+            rep = task_func(stim)
+            self.data[key] = ma.compute_order_spectrum(stim, rep, n_feats)
+        x_spec = np.arange(1, n_feats + 1)
+        mv.plot_spectrum(x_spec, self.data[key], ax=ax)
+
+    def panel_minimal_order(self):
+        key = "panel_minimal_order"
+        ax_order = self.gss[key]
+
+        max_rel = self.params.getint("max_relevant_dims")
+        order = 2
+        amb_dims = self.params.getint("ambient_dims")
+        n_cons = self.params.getint("n_contexts")
+        n_vals = self.params.getint("n_vals")
+        relevant_dims = np.arange(1, max_rel + 1)
+
+        full_dim = ss.binom(amb_dims, relevant_dims)*n_vals**relevant_dims
+        o2_dim = ss.binom(amb_dims, order)*n_vals**order
+        nonlinear_basis = n_vals**(n_cons - 1 + relevant_dims)
+        linear_basis = n_cons*2*relevant_dims
+
+        ax_order.plot(
+            relevant_dims, np.ones_like(relevant_dims)*o2_dim, label="all second-order"
+        )
+        # ax_order.plot(relevant_dims, full_dim, label="relevant-order terms")
+        # ax_order.plot(relevant_dims, nonlinear_basis, label="relevant nonlinear")
+        ax_order.plot(relevant_dims, linear_basis, label="needed")
+        ax_order.set_ylim([0, 200])
+        ax_order.legend(frameon=False)
+        gpl.clean_plot(ax_order, 0)
+        ax_order.set_ylabel("dimensionality")
+        ax_order.set_xlabel("relevant dimensions")
+
+    def panel_input_spectrum(self):
+        key = "panel_input_spectrum"
+        axs_rep, axs_spec = self.gss[key]
+
+        mixing_levels = self.params.getlist("mixing_levels", typefunc=float)
+        n_feats = self.params.getint("n_feats")
+        n_units = self.params.getint("n_units")
+        if self.data.get(key) is None:
+            spectrums = np.zeros((len(mixing_levels), n_feats))
+            for i, ml in enumerate(mixing_levels):
+                mddg = dg.MixedDiscreteDataGenerator(
+                    n_feats, mix_strength=ml, n_units=n_units
+                )
+                stim, rep = mddg.sample_reps(1000, add_noise=False)
+                spectrums[i] = ma.compute_order_spectrum(stim, rep, n_feats)
+            self.data[key] = spectrums
+        spectrums = self.data[key]
+        x_spec = np.arange(1, n_feats + 1)
+
+        lv1_color = self.params.getcolor("lv_color")
+        lv2_color = self.params.getcolor("noncon_color")
+        lv3_color = self.params.getcolor("con1_color")
+        cols = (lv1_color, lv2_color, lv3_color)
+        for i, ml in enumerate(mixing_levels):
+            mddg = dg.MixedDiscreteDataGenerator(
+                n_feats, mix_strength=ml, n_units=n_units
+            )
+            rd = mddg.code.rep_dict
+            stims = []
+            reps = []
+            list((stims.append(k[0]), reps.append(v)) for k, v in rd.items())
+            stims = np.array(stims)
+            reps = np.array(reps)
+            _, p = gpl.plot_highdim_points(reps, ax=axs_rep[0, i])
+            for (j, k) in it.combinations(range(reps.shape[0]), 2):
+                diff = (stims[j] - stims[k])**2
+                if np.sum(diff) == 4:
+                    col_ind = np.argmax(diff)
+                    color = cols[col_ind]
+                    tr = np.stack((reps[j], reps[k]), axis=0)
+                    gpl.plot_highdim_trace(tr, ax=axs_rep[0, i], p=p, color=color)
+            _, p = gpl.plot_highdim_points(reps, ax=axs_rep[0, i], p=p)
+            gpl.clean_3d_plot(axs_rep[0, i])
+            gpl.make_3d_bars(axs_rep[0, i], bar_len=.5)
+            mv.plot_spectrum(x_spec, spectrums[i], ax=axs_spec[0, i])
 
 
 class FigureInput(ModularizerFigure):

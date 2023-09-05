@@ -1131,6 +1131,8 @@ def new_task_training(
     all_tasks = set(range(n_tasks))
     nov_task = set(range(novel_tasks))
     pretrain_tasks = all_tasks.difference(nov_task)
+    kwargs["single_output"] = True
+
     out_two = ms.train_modularizer(
         fdg, params=params, verbose=verbose,
         train_epochs=len(pretrain_tasks)*train_epochs,
@@ -1233,6 +1235,50 @@ def analyze_model_orders(model, **kwargs):
         for k in out_scores.keys():
             score_dict[k][i] = out_scores[k]
     return orders, model_dict, score_dict
+
+
+def order_dim_cij(k, o, n=2):
+    all_avgs = np.zeros(o - 1)
+    no = n**o
+    n2o = n**(2*o)
+    for r in range(1, o):
+        a = ss.binom(o, r)*ss.binom(k - o, o - r)
+        nr = n**r
+        r_out = a*(nr - 1)/(n2o*no)
+
+        all_avgs[r - 1] = r_out
+    out = sum(all_avgs) + (no - 1)*(1/n2o)**2
+    return out
+
+
+def order_dim(k, o, n=2):
+    no = n**o
+    big_n = ss.binom(k, o)*no
+
+    c2_ij_sum = order_dim_cij(k, o, n=n)
+    c2_ij_mu = c2_ij_sum/(big_n - 1)
+
+    c2_ii = (1/(no**2))*(1 - 1/no)**2
+    pr = big_n*c2_ii/(c2_ii + (big_n - 1)*c2_ij_mu)
+    return pr
+
+
+def order2_dim(k, n=2, o=2):
+    no = n**o
+    nop = n**(o + 1)
+    no2p = n**(2*o + 1)
+    big_n = ss.binom(k, o)*no
+    o_terms = 2*(ss.binom(k - 1, o - 1) - 1)
+    print(o_terms)
+    o_terms = ss.binom(o, 1)*ss.binom(k - o, o - 1)
+    print(o_terms)
+
+    a = (o_terms*(no - 2) + no - 1)*(1/no)**4
+    b = n*o_terms*((1/nop) - 4/no2p + (1/no)**2)**2
+    c2_ij_mu = (a + b)/(big_n - 1)
+    c2_ii = (1/no*(1 - 1/no)**2 + (1 - 1/no)*1/no**2)**2
+    pr = big_n*c2_ii/(c2_ii + (big_n - 1)*c2_ij_mu)
+    return pr
 
 
 def order_regression(order, n_feats, n_vals=2, min_order=1, single_order=False):
@@ -1389,6 +1435,47 @@ def rep_order_regression(model, order, n_samples=1000, **kwargs):
     return explain_order_regression(samps, reps, order, **kwargs)
 
 
+def zero_shot_training(
+    fdg,
+    params=None,
+    verbose=True,
+    total_groups=2,
+    n_tasks=10,
+    train_epochs=10,
+    train_samps=5000,
+    test_samps=1000,
+    fix_n_irrel_vars=1,
+    **kwargs,
+):
+    kwargs["single_output"] = True
+    out = ms.train_modularizer(
+        fdg,
+        verbose=verbose,
+        params=params,
+        n_groups=total_groups,
+        train_epochs=train_epochs,
+        n_train=train_samps,
+        tasks_per_group=n_tasks,
+        track_mean_tasks=False,
+        fix_n_irrel_vars=fix_n_irrel_vars,
+        fix_irrel_value=0,
+        **kwargs
+    )
+    model, hist = out
+
+    irrel = model.irrel_vars[:fix_n_irrel_vars]
+    irep, true, targ = model.get_x_true(n_train=test_samps, fix_vars=irrel, fix_value=1)
+    resps = model.out_model(model.get_representation(irep))
+    errs_ood = (resps > .5) == (targ > .5)
+
+    irrel = model.irrel_vars[:fix_n_irrel_vars]
+    irep, true, targ = model.get_x_true(n_train=test_samps, fix_vars=irrel, fix_value=0)
+    resps = model.out_model(model.get_representation(irep))
+    errs_ind = (resps > .5) == (targ > .5)
+
+    return errs_ood, errs_ind
+
+
 def new_context_training(
     fdg,
     params=None,
@@ -1413,6 +1500,7 @@ def new_context_training(
     all_groups = list(range(total_groups))
     print('orig')
     print(verbose, params, total_groups, novel_groups, n_tasks)
+    kwargs["single_output"] = True
     out_two = ms.train_modularizer(
         fdg,
         verbose=verbose,
@@ -1426,6 +1514,7 @@ def new_context_training(
         track_mean_tasks=False,
         **kwargs
     )
+    print(n_tasks, out_two[0].get_x_true()[-1].shape)
     if untrained_tasks > 0:
         only_tasks = train_tasks
         val_only_tasks = untrained_task

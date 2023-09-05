@@ -90,6 +90,18 @@ def plot_order_spectrum(spectrum_dict, axs=None, key_order=None, shares=None):
     return axs
 
 
+def plot_spectrum(x_spec, spectrum, ax=None, **kwargs):
+    if ax is None:
+        f, ax = plt.subplots(1, 1)
+    ax.bar(x_spec, spectrum, **kwargs)
+    gpl.clean_plot(ax, 0)
+    gpl.make_yaxis_scale_bar(
+        ax, .5, double=False, label=r"$r^{2}$", text_buff=.5
+    )
+    ax.set_xlabel("order")
+    return ax
+
+
 def plot_order_run(
     run_df,
     x_key="mixing_strength",
