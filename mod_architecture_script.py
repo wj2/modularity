@@ -318,6 +318,7 @@ if __name__ == '__main__':
         'new context tasks': (nc_tasks, nc_null_tasks),
         'new task': (new_task, new_task_null),
         'new task tasks': (nt_tasks, nt_null_tasks),
+        'zero shot': zs,
     }
 
     maux.save_model_information(None, args.output_folder, args=args,
