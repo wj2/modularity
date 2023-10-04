@@ -382,6 +382,7 @@ class Modularizer:
         renorm_stim=False,
         n_common_tasks=0,
         n_common_dims=2,
+        inp_noise=0.01,
         **kwargs
     ):
         self.rng = np.random.default_rng()
@@ -465,8 +466,11 @@ class Modularizer:
             list((i,) * tasks_per_group for i in range(n_groups))
         )
 
-        out = self.make_model(inp_net, self.hidden_dims, self.out_dims, **kwargs)
+        out = self.make_model(
+            inp_net, self.hidden_dims, self.out_dims, inp_noise=inp_noise, **kwargs
+        )
         model, rep_model, out_model = out
+        self.inp_noise = inp_noise
         self.out_model = out_model
         self.rep_model = rep_model
         self.model = model

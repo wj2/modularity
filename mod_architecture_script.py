@@ -306,12 +306,15 @@ if __name__ == '__main__':
             **model_kwargs,
             **train_kwargs,
         )
+        if args.discrete_mixed_input:
+            fdg.code.get_predicted_ccgp()
+            fdg.code.get_predicted_classification()
         zs[i] = np.stack((errs_ood.numpy(), errs_ind.numpy()),
                          axis=0)
 
     all_save = {
         'related context': (related_context_all, related_context_all_null),
-        'related context tasks': (rc_all_tasks, rc_all_null_tasks),        
+        'related context tasks': (rc_all_tasks, rc_all_null_tasks),
         'related context inference': (related_context, related_context_null),
         'related context inference tasks': (rc_tasks, rc_null_tasks),
         'new context': (new_context, new_context_null),

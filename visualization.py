@@ -50,6 +50,34 @@ def visualize_model_order(orders, out_scores, ax=None, color_dict=None):
     return ax
 
 
+def plot_zs_generalization(
+        con_run, ax=None, boots=1000, key="zero shot", gen_color=None, dec_color=None,
+):
+    if ax is None:
+        f, ax = plt.subplots(1, 1)
+    xs = np.zeros(len(con_run))
+    vs_gen = np.zeros_like(xs)
+    vs_dec = np.zeros_like(xs)
+    for i, (k, v) in enumerate(con_run.items()):
+        xs[i] = k
+        mu = np.mean(v[key], axis=(2, 3))
+        gen, dec = mu[:, 0], mu[:, 1]
+        l = ax.plot((k,)*len(dec), gen, 'o', color=gen_color)
+        gen_color = l[0].get_color()
+        vs_gen[i] = np.mean(gen)
+        vs_dec[i] = np.mean(dec)
+    inds = np.argsort(xs)
+    xs = xs[inds]
+    vs_gen = vs_gen[inds]
+    ax.plot(xs, vs_gen, color=gen_color, label="generalization")
+    vs_dec = vs_dec[inds]
+    ax.plot(xs, vs_dec, color=dec_color, label="performance")
+
+    gpl.add_hlines(.5, ax)
+    ax.set_ylabel("task performance")
+    ax.set_xlabel("nonlinear mixing")
+
+
 def plot_desired_order_runs(df, key_dict, **kwargs):
     runs = maux.find_key_runs(df, key_dict)
     ax = kwargs.pop("ax", None)

@@ -193,7 +193,7 @@ class ModularizerFigure(pu.Figure):
 
 class FigureWorldIntro(ModularizerFigure):
     def __init__(self, fig_key="task_intro_figure", colors=colors, **kwargs):
-        fsize = (6, 6)
+        fsize = (4.4, 4)
         cf = u.ConfigParserColor()
         cf.read(config_path)
 
@@ -240,31 +240,45 @@ class FigureWorldIntro(ModularizerFigure):
         max_flex = n_vals**relevant_dims
 
         # any second order task
+        label_orders = (1, 5, 10, 15)
         for i, o in enumerate(orders):
             oi_dim = np.array(list(ma.order_dim(rd, o) for rd in relevant_dims))
             mask = oi_dim > 0
-            ax_nonlin.plot(relevant_dims[mask], oi_dim[mask], color=o_colors[i])
+            if o in label_orders:
+                label = "O = {} tasks".format(o)
+            else:
+                label = ""
+            ax_nonlin.plot(
+                relevant_dims[mask],
+                oi_dim[mask],
+                color=o_colors[i],
+                label=label,
+            )
 
         # any contextual linear task
         ax_lin.plot(
-            relevant_dims, relevant_dims, color=lin_task_color, label="linear"
+            relevant_dims, relevant_dims, color=lin_task_color, label="linear tasks"
         )
         linear_basis = n_cons*((relevant_dims - n_cons + 1))
         ax_lin.plot(
-            relevant_dims, linear_basis, color=con_task_color, label="contextual"
+            relevant_dims,
+            linear_basis,
+            color=con_task_color,
+            label="contextual tasks",
         )
 
-        ax_lin.plot(relevant_dims, max_flex, color=mf_color, label="any")
-        ax_nonlin.plot(relevant_dims, max_flex, color=mf_color, label="any")
+        ax_lin.plot(relevant_dims, max_flex, color=mf_color, label="arbitrary tasks")
+        ax_nonlin.plot(relevant_dims, max_flex, color=mf_color, label="arbitrary tasks")
 
         ax_lin.set_yscale("log")
 
         ax_lin.legend(frameon=False)
+        ax_nonlin.legend(frameon=False)
         gpl.clean_plot(ax_lin, 0)
         gpl.clean_plot(ax_nonlin, 0)
-        ax_lin.set_ylabel("required\ndimensionality")
-        ax_nonlin.set_ylabel("required\ndimensionality")
-        ax_nonlin.set_xlabel("relevant latent variables")
+        ax_lin.set_ylabel("basis\ndimensionality")
+        ax_nonlin.set_ylabel("basis\ndimensionality")
+        ax_nonlin.set_xlabel("latent variables")
 
 
 class FigureTaskIntro(ModularizerFigure):
@@ -741,7 +755,7 @@ class FigureModularity(ModularizerFigure):
 
 class FigureControlled(ModularizerFigure):
     def __init__(self, fig_key="controlled", colors=colors, **kwargs):
-        fsize = (2, 6)
+        fsize = (6, 6)
         cf = u.ConfigParserColor()
         cf.read(config_path)
 
@@ -756,7 +770,7 @@ class FigureControlled(ModularizerFigure):
         gss = {}
 
         cons_grid = pu.make_mxn_gridspec(
-            self.gs, 4, 1, 0, 100, 0, 100, 10, 10
+            self.gs, 4, 3, 0, 100, 0, 100, 10, 10
         )
         gss["panel_consequences"] = self.get_axs(cons_grid, squeeze=True)
 
@@ -786,16 +800,65 @@ class FigureControlled(ModularizerFigure):
             template=controlled_template,
             ref_key="dm_input_mixing",
         )
-        mixing = 70
+        mixing = 0
         plot_dict = out_dict[mixing]
         plot_dict_rand = out_dict_rand[mixing]
-        print(plot_dict['args'])
         self._plot_learning_cons(
             plot_dict,
             plot_dict_rand,
-            axs,
+            axs[:, 0],
             colors=(naive_color, mod_color),
         )
+        mixing = 100
+        plot_dict = out_dict[mixing]
+        plot_dict_rand = out_dict_rand[mixing]
+        self._plot_learning_cons(
+            plot_dict,
+            plot_dict_rand,
+            axs[:, 2],
+            colors=(naive_color, mod_color),
+        )
+
+        mv.plot_cumulative_learning_cons(
+            out_dict,
+            out_dict_rand,
+            axs=axs[:, 1]
+        )
+
+
+class FigureModularityControlled(ModularizerFigure):
+    def __init__(self, fig_key="controlled_rep", colors=colors, **kwargs):
+        fsize = (7, 6)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = (
+            "panel_eg_networks",
+            "panel_param_sweep",
+        )
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        eg_grid = pu.make_mxn_gridspec(self.gs, 2, 2,
+                                       0, 100,
+                                       0, 100,
+                                       30, 60)
+        eg_axs = self.get_axs(eg_grid, squeeze=True, sharex='all', sharey='all')
+        gss["panel_eg_networks"] = eg_axs
+
+        gss["panel_param_sweep"] = self.get_axs((self.gs[20:80, 20:80],))[0, 0]
+
+        self.gss = gss
+
+    def panel_eg_networks(self):
+        key = "panel_eg_networks"
+        axs = self.gss[key]
+
+        
 
 
 class FigureGeometryConsequences(ModularizerFigure):
