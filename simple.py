@@ -92,6 +92,10 @@ def apply_linear_task(x, task=None, intercept=0, center=0.5, renorm=False):
     return bools
 
 
+def apply_central_group(x):
+    return np.var(x, axis=1) == 0
+
+
 def generate_coloring(n_g, prob=0.5):
     return np.random.default_rng().uniform(size=n_g) <= prob
 
@@ -854,6 +858,35 @@ class XORModularizer(Modularizer):
         self.group_func = (group_func,) * len(self.groups)
 
 
+class CentralModularizer(Modularizer):
+    def _make_group_func(self, n_g, tasks_per_group=1):
+        funcs = []
+        for i in range(tasks_per_group):
+            funcs.append(ft.partial(apply_central_group))
+        return lambda x: np.concatenate(list(f(x) for f in funcs), axis=1)
+
+    def __init__(
+        self, *args, n_colorings=None, task_merger=np.sum,
+        share_pairs=None, **kwargs,
+    ):
+        tasks_per_group = 1
+        super().__init__(*args, tasks_per_group=tasks_per_group, **kwargs)
+        group_func = []
+        for g in self.groups:
+            group_func.append(
+                self._make_group_func(
+                    len(g),
+                    tasks_per_group=tasks_per_group,
+                    merger=task_merger,
+                )
+            )
+        if share_pairs is not None:
+            for (i, j) in share_pairs:
+                group_func[i] = group_func[j]
+                self.groups[i] = self.groups[j]
+        self.group_func = tuple(group_func)
+
+        
 class ColoringModularizer(Modularizer):
     def _make_group_func(self, n_colorings, n_g, tasks_per_group=1, merger=np.sum):
         funcs = []

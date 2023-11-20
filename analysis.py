@@ -608,6 +608,29 @@ def train_n_models(
     return out_ms, out_hs
 
 
+def contextual_performance(
+        mod,
+        context_ind=-1,
+        c1_ind=0,
+        c2_ind=1,
+        n_samps=200,
+        model=skm.LinearSVC,
+        n_folds=20,
+        rep_kwargs=None,
+        **kwargs,
+):
+    if rep_kwargs is None:
+        rep_kwargs = {}
+    stim, reps = mod.sample_reps(n_samps, **rep_kwargs)
+    targ = np.zeros(n_samps)
+    mask = stim[:, context_ind] == 1
+    targ[mask] = stim[mask, c1_ind]
+    targ[~mask] = stim[~mask, c2_ind]
+
+    pipe = na.make_model_pipeline(model, dual="auto", **kwargs)
+    out = skms.cross_validate(pipe, reps, targ, cv=n_folds)
+    return out["test_score"]
+
 # def task_dimensionality(n_tasks, n_g, contexts, m_type, n_overlap=0,
 #                         group_maker=ms.overlap_groups, group_inds=None):
 #     inp_dim = n_g*contexts + contexts

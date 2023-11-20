@@ -51,7 +51,13 @@ def visualize_model_order(orders, out_scores, ax=None, color_dict=None):
 
 
 def plot_zs_generalization(
-        con_run, ax=None, boots=1000, key="zero shot", gen_color=None, dec_color=None,
+    con_run,
+    ax=None,
+    boots=1000,
+    key="zero shot",
+    gen_color=None,
+    dec_color=None,
+    x_denom=100
 ):
     if ax is None:
         f, ax = plt.subplots(1, 1)
@@ -59,6 +65,7 @@ def plot_zs_generalization(
     vs_gen = np.zeros_like(xs)
     vs_dec = np.zeros_like(xs)
     for i, (k, v) in enumerate(con_run.items()):
+        k = k/x_denom
         xs[i] = k
         mu = np.mean(v[key], axis=(2, 3))
         gen, dec = mu[:, 0], mu[:, 1]
@@ -71,7 +78,7 @@ def plot_zs_generalization(
     vs_gen = vs_gen[inds]
     ax.plot(xs, vs_gen, color=gen_color, label="generalization")
     vs_dec = vs_dec[inds]
-    ax.plot(xs, vs_dec, color=dec_color, label="performance")
+    # ax.plot(xs, vs_dec, color=dec_color, label="performance")
 
     gpl.add_hlines(.5, ax)
     ax.set_ylabel("task performance")
@@ -390,9 +397,14 @@ def visualize_module_activity(
     ax=None,
     n_samps=1000,
     line_color=None,
+    line_colors=None,
     pt_color=None,
     pt_alpha=1,
+    resp_colors=(None, None),
+    plot_resp_cats=True,
+    task_ind=0,
     ms=None,
+    p=None,
     **kwargs
 ):
     inp_rep, stim, targ = model.get_x_true(n_train=n_samps, group_inds=context)
@@ -405,10 +417,12 @@ def visualize_module_activity(
         plot_line=False,
         plot_points=True,
         ax=ax,
+        p=p,
         color=pt_color,
         alpha=pt_alpha,
         ms=ms,
     )
+
     rep_cents = {}
     for c in centroids:
         mask = np.all(rel_stim == np.expand_dims(c, 0), axis=1)
@@ -423,17 +437,46 @@ def visualize_module_activity(
             ms=ms,
         )
         rep_cents[tuple(c)] = rep_cent
+    if line_colors is None:
+        line_colors = (line_color,)*centroids.shape[1]
     for c1, c2 in it.combinations(centroids, 2):
         if np.sum((c1 - c2) ** 2) == 1:
+            ind = np.argmax((c1 - c2)**2)
             rc1 = rep_cents[tuple(c1)]
             rc2 = rep_cents[tuple(c2)]
             comb = np.concatenate((rc1, rc2), axis=0)
-            gpl.plot_highdim_trace(comb, ax=ax, p=p, color=line_color)
+            gpl.plot_highdim_trace(comb, ax=ax, p=p, color=line_colors[ind])
 
+    if plot_resp_cats:
+        cats = model.group_func[context](rel_stim)[:, task_ind]
+
+        ax, p = gpl.plot_highdim_trace(
+            rep[cats],
+            plot_line=False,
+            plot_points=True,
+            ax=ax,
+            p=p,
+            color=resp_colors[0],
+            alpha=pt_alpha,
+            ms=ms,
+        )
+        ax, p = gpl.plot_highdim_trace(
+            rep[~cats],
+            plot_line=False,
+            plot_points=True,
+            ax=ax,
+            p=p,
+            color=resp_colors[1],
+            alpha=pt_alpha,
+            ms=ms,
+        )
     gpl.clean_3d_plot(ax)
+    gpl.make_3d_bars(ax, bar_len=1)
+    ax.set_aspect("equal")
     ax.set_xlabel("PC 1")
     ax.set_ylabel("PC 2")
     ax.set_zlabel("PC 3")
+    return ax, p
 
 
 clustering_metrics_all = (
