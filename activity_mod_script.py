@@ -104,6 +104,7 @@ metric_methods = {
     'diff_graph_ablation': ma.diff_graph_ablation,
     'diff_act_ablation': ma.diff_act_ablation,
     'model_frac': ma.compute_frac_contextual,
+    'alignment_index': ma.compute_alignment_index,
     'fdg_frac': ma.compute_fdg_frac_contextual,
 }
 
