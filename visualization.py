@@ -39,6 +39,53 @@ def _get_cluster_order(ws, n_groups=None, alg=None):
     return order
 
 
+def visualize_activity(
+        inputs,
+        activity,
+        targs,
+        con_inds=(-2, -1),
+        c_colors=("r", "g"),
+        r1_color="b",
+        r2_color="m",
+        trs=None,
+        ax=None,
+):
+    if ax is None:
+        f, ax = plt.subplots(1, 1, subplot_kw={"projection": "3d"})
+    cons = np.argmax(inputs[:, con_inds], axis=1)
+    u_cons = np.unique(cons)
+    _, trs = gpl.plot_highdim_points(
+        activity,
+        ax=ax,
+        p=trs,
+        dim_red_mean=False,
+        colors=((.1, .1, .1),),
+    )
+    for i, c in enumerate(u_cons):
+        c_mask = cons == c
+        con_act = activity[c_mask]
+        lvs = inputs[c_mask]
+        for j, k in it.combinations(range(len(lvs)), 2):
+            if np.sum((lvs[j] - lvs[k])**2) == 1:
+                rel_points = con_act[np.array([j, k])]
+                gpl.plot_highdim_trace(
+                    rel_points,
+                    ax=ax,
+                    p=trs,
+                    colors=(c_colors[i]),
+                )
+    r1_mask = targs[:, 0] == 0
+    r2_mask = targs[:, 0] == 1
+    gpl.plot_highdim_points(
+        activity[r1_mask],
+        activity[r2_mask],
+        ax=ax,
+        p=trs,
+        colors=(r1_color, r2_color),
+    )
+    return ax
+
+
 def visualize_model_order(orders, out_scores, ax=None, color_dict=None):
     if ax is None:
         f, ax = plt.subplots(1, 1)

@@ -92,8 +92,11 @@ def apply_linear_task(x, task=None, intercept=0, center=0.5, renorm=False):
     return bools
 
 
-def apply_central_group(x):
-    return np.var(x, axis=1) == 0
+def apply_central_group(x, flip=False):
+    out = np.var(x, axis=1) == 0
+    if flip:
+        out = ~out
+    return out
 
 
 def generate_coloring(n_g, prob=0.5):
@@ -192,7 +195,7 @@ class Mixer:
         self.compiled = True
 
     def get_representation(self, x):
-        return self.model(x)
+        return self.model(x).to_numpy()
 
     def sample_representations(self, n_samples):
         samps = self.source_distribution.rvs((n_samples,))
@@ -296,13 +299,17 @@ class TrackWeights(tfk.callbacks.Callback):
 
 class TrackReps(tfk.callbacks.Callback):
     def __init__(self, model, *args, n_rep_samps=10**4, mean_tasks=True,
-                 only_groups=None, **kwargs):
+                 only_groups=None, sample_all=False, **kwargs):
         self.modu_model = model
         super().__init__(*args, **kwargs)
 
-        inp_rep, stim, _ = model.get_x_true(n_train=n_rep_samps)
+        if sample_all:
+            stim, inp_rep, targ = model.get_all_stim()
+        else:
+            inp_rep, stim, targ = model.get_x_true(n_train=n_rep_samps)
         self.inp_rep = inp_rep
         self.stim = stim
+        self.targ = targ
 
     def on_train_begin(self, logs=None):
         self.reps = []
@@ -364,7 +371,7 @@ class Modularizer:
         self,
         inp_dims,
         groups=None,
-        group_width=2,
+        group_width=50,
         group_size=2,
         group_maker=sequential_groups,
         n_groups=None,
@@ -375,8 +382,8 @@ class Modularizer:
         mixer_kwargs=None,
         use_early_stopping=True,
         early_stopping_field="val_loss",
-        single_output=False,
-        integrate_context=False,
+        single_output=True,
+        integrate_context=True,
         n_overlap=0,
         augmented_inputs=0,
         common_augmented_inputs=False,
@@ -651,6 +658,13 @@ class Modularizer:
             stim = 2 * (stim - 0.5)
         return stim
 
+    def get_all_stim(self):
+        con_dims = np.arange(-self.n_groups, 0)
+        stim, reps = self.mix.get_all_stim(con_dims=con_dims)
+        group_inds = np.argmax(stim[:, con_dims], axis=1)
+        targs = self.generate_target(stim, group_inds=group_inds)
+        return stim, reps, targs
+
     def get_loss(self, **kwargs):
         return self.get_ablated_loss(ablation_mask=None, **kwargs)
 
@@ -825,7 +839,10 @@ class Modularizer:
             kwargs["callbacks"] = cb
         if track_reps:
             cb = kwargs.get("callbacks", [])
-            rep_callback = TrackReps(self, n_rep_samps=2000)
+            try:
+                rep_callback = TrackReps(self, sample_all=True)
+            except AttributeError:
+                rep_callback = TrackReps(self, n_rep_samps=2000)
             cb.append(rep_callback)
             kwargs["callbacks"] = cb
 
@@ -845,6 +862,7 @@ class Modularizer:
             out.history["tracked_activity"] = (
                 rep_callback.stim,
                 rep_callback.inp_rep,
+                rep_callback.targ,
                 np.stack(rep_callback.reps, axis=0)
             )
         if return_training:
@@ -859,25 +877,26 @@ class XORModularizer(Modularizer):
 
 
 class CentralModularizer(Modularizer):
-    def _make_group_func(self, n_g, tasks_per_group=1):
+    def _make_group_func(self, n_g, tasks_per_group=1, flip=False):
         funcs = []
         for i in range(tasks_per_group):
-            funcs.append(ft.partial(apply_central_group))
-        return lambda x: np.concatenate(list(f(x) for f in funcs), axis=1)
+            funcs.append(ft.partial(apply_central_group, flip=flip))
+        return lambda x: np.stack(list(f(x) for f in funcs), axis=1)
 
     def __init__(
-        self, *args, n_colorings=None, task_merger=np.sum,
-        share_pairs=None, **kwargs,
+            self, *args, n_colorings=None, task_merger=np.sum,
+            share_pairs=None, flip_groups=(), tasks_per_group=1,
+            separate_tasks=None, **kwargs,
     ):
         tasks_per_group = 1
         super().__init__(*args, tasks_per_group=tasks_per_group, **kwargs)
         group_func = []
-        for g in self.groups:
+        for i, g in enumerate(self.groups):
             group_func.append(
                 self._make_group_func(
                     len(g),
                     tasks_per_group=tasks_per_group,
-                    merger=task_merger,
+                    flip=i in flip_groups,
                 )
             )
         if share_pairs is not None:
@@ -1130,6 +1149,7 @@ model_type_dict = {
     "linear": LinearModularizer,
     "identity": IdentityModularizer,
     "continuous": LinearContinuousModularizer,
+    "central": CentralModularizer,
 }
 
 
@@ -1360,10 +1380,10 @@ def train_modularizer(
         }
     config_dict.update(kwargs)
     inp_dim = config_dict["use_dg"].input_dim
-    train_epochs = config_dict.pop("train_epochs")
+    train_epochs = config_dict.pop("train_epochs", 10)
     model_type = config_dict.pop("model_type")
-    n_train = config_dict.pop("n_train")
-    batch_size = config_dict.pop("batch_size")
+    n_train = config_dict.pop("n_train", 1000)
+    batch_size = config_dict.pop("batch_size", 100)
     if model_type_str is not None:
         model_type = model_type_dict[model_type_str]
 

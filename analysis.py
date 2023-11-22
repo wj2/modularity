@@ -21,6 +21,7 @@ import modularity.simple as ms
 import modularity.auxiliary as maux
 import disentangled.data_generation as dg
 import composite_tangling.code_creation as cc
+import sklearn.metrics.pairwise as skmp
 
 tfk = tf.keras
 
@@ -322,17 +323,17 @@ def train_variable_models(
         dtype=object,
     )
     out_hs = np.zeros_like(out_ms)
-    for i, j, k, l, m in u.make_array_ind_iterator(out_ms.shape[:-1]):
+    for i, j, k, l_, m in u.make_array_ind_iterator(out_ms.shape[:-1]):
         out = train_n_models(
             group_size[i],
             tasks_per_group[j],
             group_maker=group_maker[k],
-            model_type=model_type[l],
+            model_type=model_type[l_],
             n_overlap=n_overlap[m],
             n_reps=n_reps,
             **kwargs,
         )
-        out_ms[i, j, k, l, m], out_hs[i, j, k, l, m] = out
+        out_ms[i, j, k, l_, m], out_hs[i, j, k, l_, m] = out
     return out_ms, out_hs
 
 
@@ -495,11 +496,11 @@ def task_dimensionality(
         pv_nc = np.zeros_like(pv_tot)
 
         for ind in u.make_array_ind_iterator(dims_tot.shape):
-            (i, j, k, l, m) = ind
+            (i, j, k, l_, m) = ind
             m_null = model(
                 inp_dim,
                 group_size=group_size[i],
-                n_groups=n_groups[l],
+                n_groups=n_groups[l_],
                 group_maker=group_maker,
                 tasks_per_group=tasks_per_group[k],
                 n_overlap=n_overlap[j],
@@ -931,7 +932,7 @@ def ablate_label_sets(
         out = c_losses, n_losses
     else:
         out = c_losses
-    return c_losses
+    return out
 
 
 def act_cluster(
@@ -1782,13 +1783,13 @@ def estimate_split_probability(n_latents, n_tasks, n_reps=100, **kwargs):
 
 
 @u.arg_list_decorator
-def split_prob(l, p, rand_sample=True, n_samps=1000):
-    l = np.array(l)
+def split_prob(l_, p, rand_sample=True, n_samps=1000):
+    l_ = np.array(l_)
     p = np.array(p)
-    out = np.zeros((len(l), len(p)))
+    out = np.zeros((len(l_), len(p)))
     rng = np.random.default_rng()
     for i, j in u.make_array_ind_iterator(out.shape):
-        l_ij = l[i]
+        l_ij = l_[i]
         p_ij = p[j]
         if rand_sample:
             elims = [0, l_ij - 1, l_ij - 2]
@@ -1811,12 +1812,12 @@ def split_prob(l, p, rand_sample=True, n_samps=1000):
     return out
 
 
-def split_prob2(l, p):
-    l = np.array(l)
+def split_prob2(l_, p):
+    l_ = np.array(l_)
     p = np.array(p)
-    out = np.zeros((len(l), len(p)))
+    out = np.zeros((len(l_), len(p)))
     for i, j in u.make_array_ind_iterator(out.shape):
-        l_ij = l[i]
+        l_ij = l_[i]
         p_ij = p[j]
 
         p_l2 = 1 - 1 / l_ij
@@ -1965,17 +1966,17 @@ def decompose_task_object(stim, targs, **kwargs):
     return out
 
 
-def binom_func(l, k, n):
-    num = ss.binom(l, k) * ss.binom(l - k, n)
-    denom = ss.binom(l, k) * ss.binom(l, n)
+def binom_func(l_, k, n):
+    num = ss.binom(l_, k) * ss.binom(l_ - k, n)
+    denom = ss.binom(l_, k) * ss.binom(l_, n)
     return num / denom
 
 
 @u.arg_list_decorator
-def noncontext_split_probability(l, t):
-    outs = np.zeros((len(l), len(t)))
+def noncontext_split_probability(l_, t):
+    outs = np.zeros((len(l_), len(t)))
     for i, j in u.make_array_ind_iterator(outs.shape):
-        l_ij, t_ij = l[i], t[j]
+        l_ij, t_ij = l_[i], t[j]
         p1 = 1 / (2 * l_ij)
         p2 = 1 - 1 / l_ij
 
@@ -1997,6 +1998,95 @@ def noncontext_split_probability(l, t):
     outs[outs < 0] = 0
     outs[outs > 1] = 1
     return np.squeeze(outs)
+
+
+def _make_metric_mat(
+        stim,
+        groups,
+        con_inds=(-2, -1),
+        flip_groups=None,
+        merger=ft.partial(np.concatenate, axis=1),
+        metric=skmp.euclidean_distances,
+        collapse_dim=None
+):
+    c_masks = list(stim[:, ci] == 1 for ci in con_inds)
+
+    group_size = len(groups[0])
+    group_stim = np.zeros((len(groups), len(stim), group_size))
+    for i, cm in enumerate(c_masks):
+        g = stim[cm][:, groups[i]]
+        group_stim[i, cm] = g
+        
+    if flip_groups is not None:
+        for fg in flip_groups:
+            group_stim[fg, c_masks[fg], 0] = 1 - group_stim[fg, c_masks[fg], 0]
+    
+    if collapse_dim is not None:
+        for i in range(len(c_masks)):
+            cd = np.reshape(collapse_dim, (group_size, 1))
+            group_stim[i] = group_stim[i] @ cd
+    group_stim = merger(group_stim)
+
+    dists = metric(group_stim)
+    return dists
+    
+
+def make_shared_metric(
+        *args,
+        **kwargs,
+):
+    merger = ft.partial(np.sum, axis=0)
+    return _make_metric_mat(*args, merger=merger, **kwargs)
+
+
+def make_orthog_metric(
+        *args,
+        **kwargs,
+):
+    merger = ft.partial(np.concatenate, axis=1)
+    return _make_metric_mat(*args, merger=merger, **kwargs)
+
+
+default_hypoth_makers = {
+    "shared_full": make_shared_metric,
+    "orthog_full": make_orthog_metric,
+    "shared_collapse": ft.partial(make_shared_metric, collapse_dim=(1, -1)),
+    "orthog_collapse": ft.partial(make_orthog_metric, collapse_dim=(1, -1)),
+}
+
+def rsa_correlation(
+        model,
+        time_reps=None,
+        hypoth_makers=default_hypoth_makers,
+        flip_groups=None,
+        metric=skmp.linear_kernel,
+        **kwargs,
+):
+    stim, inp_rep, targs = model.get_all_stim()
+    con_inds = np.arange(-model.n_groups, 0)
+    s_inds = np.argsort(stim[:, con_inds[-1]], axis=0)
+    stim = stim[s_inds]
+    inp_rep = inp_rep[s_inds]
+    targs = targs[s_inds]
+    model_rep = model.get_representation(inp_rep)
+    groups = model.groups
+    model_mat = metric(model_rep)
+    corrs = {}
+    for k, h_func in hypoth_makers.items():
+        hypoth_mat = h_func(stim, groups, con_inds=con_inds, metric=metric, **kwargs)
+        hm_flat = hypoth_mat.flatten()
+        m_flat = model_mat.flatten()
+        end_corr = np.corrcoef(hm_flat, m_flat)
+        if time_reps is not None:
+            t_corr = np.zeros((len(time_reps),) + end_corr.shape)
+            for i, tr in enumerate(time_reps):
+                tr_flat = metric(tr).flatten()
+                t_corr[i] = np.corrcoef(tr_flat, hm_flat)
+        else:
+             t_corr = None   
+            
+        corrs[k] = (end_corr, t_corr, hypoth_mat)
+    return corrs
 
 
 def task_masks(splits, n_vals=2):
@@ -2439,6 +2529,28 @@ def compute_frac_contextual(mod, **kwargs):
     singles = np.sum(active_units, axis=0) == 1
     frac = np.mean(singles)
     return frac
+
+
+def compute_alignment_index(mod, n_samps=1000, **kwargs):
+    con_inds = np.arange(-mod.n_groups, 0)
+    stim, _, rep = mod.sample_reps(n_samps)
+    cons = np.argmax(stim[:, con_inds], axis=1)
+    stim_cons = np.arange(mod.n_groups)
+    con_ais = []
+    for (i, j) in it.combinations(stim_cons, 2):
+        m1 = cons == i
+        m2 = cons == j
+        ai_ij = u.alignment_index(rep[m1], rep[m2])
+        con_ais.append(ai_ij)
+    con_ais = np.array(con_ais)
+    
+    rel_vars = np.unique(mod.groups)
+    rv_ais = np.zeros(len(rel_vars))
+    for i, rv in enumerate(rel_vars):
+        m1 = stim[:, rv] == 0
+        m2 = stim[:, rv] == 1
+        rv_ais[i] = u.alignment_index(rep[m1], rep[m2])
+    return np.log(np.mean(rv_ais) / np.mean(con_ais))
 
 
 def compute_silences(

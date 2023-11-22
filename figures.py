@@ -420,7 +420,7 @@ class FigureTaskIntro(ModularizerFigure):
 
 class FigureControlledInput(ModularizerFigure):
     def __init__(self, fig_key="input_controlled_figure", colors=colors, **kwargs):
-        fsize = (4, 3)
+        fsize = (4, 6)
         cf = u.ConfigParserColor()
         cf.read(config_path)
 
@@ -445,7 +445,7 @@ class FigureControlledInput(ModularizerFigure):
 
         
         quant_grid = pu.make_mxn_gridspec(
-            self.gs, 1, 3, 70, 100, 0, 100, 10, 20
+            self.gs, 1, 2, 80, 100, 10, 90, 10, 20
         )
         gss["panel_quant"] = self.get_axs(
             quant_grid, squeeze=True
@@ -455,8 +455,9 @@ class FigureControlledInput(ModularizerFigure):
 
     def panel_quant(self, recompute=False):
         key = "panel_quant"
-        ax_dim, ax_sep, _ = self.gss[key]
+        ax_dim, ax_sep = self.gss[key]
 
+        color = self.params.getcolor("dg_color")
         nls_args = self.params.getlist("nl_bounds", typefunc=float)
         n_nls = self.params.getint("n_nls")
         nl_strengths = np.linspace(*nls_args, n_nls)
@@ -480,8 +481,13 @@ class FigureControlledInput(ModularizerFigure):
                 )
             self.data[key] = (dims, seps)
         dims, seps = self.data[key]
-        gpl.plot_trace_werr(nl_strengths, dims, ax=ax_dim)
-        gpl.plot_trace_werr(nl_strengths, seps.T, ax=ax_sep)
+        gpl.plot_trace_werr(nl_strengths, dims, ax=ax_dim, color=color)
+        gpl.plot_trace_werr(nl_strengths, seps.T, ax=ax_sep, color=color)
+        ax_dim.set_xlabel("nonlinear mixing")
+        ax_sep.set_xlabel("nonlinear mixing")
+        ax_dim.set_ylabel("dimensionality")
+        ax_sep.set_ylabel("linear separability")
+        gpl.add_hlines(.5, ax_sep)
         
     def panel_vis(self, recompute=False):
         key = "panel_vis"
