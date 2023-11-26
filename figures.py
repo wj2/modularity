@@ -161,6 +161,11 @@ class ModularizerFigure(pu.Figure):
         out = maux.load_run(run_ind, folder=folder, **kwargs)
         return out
 
+    def load_nls_runs(self, *args, **kwargs):
+        folder = self.params.get("sim_folder")
+        out = maux.load_nls_param_sweep(*args, folder=folder, **kwargs)
+        return out        
+
     def _quantification_panel(self, quant_keys, ri_list, axs, label_dict=None,
                               nulls=None, legend_keys=('group_size',),
                               plot_ylabels=None, colors=None):
@@ -1022,14 +1027,17 @@ class FigureModularityControlled(ModularizerFigure):
         eg_axs = self.get_axs(eg_grid, squeeze=True, sharex='all', sharey='all')
         gss["panel_eg_networks"] = eg_axs
 
-        gap = 10
+        ps_grid = pu.make_mxn_gridspec(self.gs, 2, 1,
+                                       0, 100,
+                                       30, 70,
+                                       10, 60)
         gss["panel_param_sweep"] = self.get_axs(
-            (self.gs[20+gap:80-gap, 20+gap:80-gap],)
-        )[0, 0]
+            ps_grid, sharex="all", sharey="all", squeeze=True,
+        )
 
         self.gss = gss
 
-    def panel_eg_networks(self):
+    def panel_eg_networks(self, retrain=False):
         key = "panel_eg_networks"
         axs = self.gss[key]
 
@@ -1037,7 +1045,7 @@ class FigureModularityControlled(ModularizerFigure):
         nl_strengths = self.params.getlist("nl_strs", typefunc=float)
         n_units = self.params.getint("n_units")
         n_feats = self.params.getint("n_feats")
-        if self.data.get(key) is None:
+        if self.data.get(key) is None or retrain:
             models = np.zeros((len(n_tasks), len(nl_strengths)), dtype=object)
             hists = np.zeros_like(models)
             for i, nt in enumerate(n_tasks):
@@ -1053,8 +1061,32 @@ class FigureModularityControlled(ModularizerFigure):
         for (i, j) in u.make_array_ind_iterator(models.shape):
             n_t = n_tasks[i]
             n_l = nl_strengths[j]
+            print("n_tasks", n_t, "      nl_str", n_l)
             mv.plot_context_clusters(models[i, j], ax=axs[j, i])
+            print(ma.compute_alignment_index(models[i, j]))
+            print(ma.compute_frac_contextual(models[i, j]))
 
+    def panel_sweep_metrics(self, reload_=False):
+        key = "panel_param_sweep"
+        axs = self.gss[key]
+
+        template = self.params.get("nls_template_big")
+        nl_inds = self.params.getlist("nls_big_ids")
+        plot_keys = ("model_frac", "alignment_index")
+        cms = ("Blues", "Oranges")
+        if self.data.get(key) is None or reload_:
+            out_arrs, n_parts, mixes = self.load_nls_runs(template, nl_inds, plot_keys)
+            self.data[key] = out_arrs, n_parts, mixes
+        out_arrs, n_parts, mixes = self.data[key]
+
+        for i, pk in enumerate(plot_keys):
+            arr = np.mean(out_arrs[pk], axis=2)
+            gpl.pcolormesh(
+                n_parts, mixes, arr, ax=axs[i], cmap=cms[i], vmin=0,
+            )
+            axs[i].set_xticks([n_parts[0], 10, n_parts[-1]])
+            axs[i].set_yticks([0, .5, 1])
+        
     def panel_param_sweep(self, reload_=False):
         key = "panel_param_sweep"
         ax = self.gss[key]

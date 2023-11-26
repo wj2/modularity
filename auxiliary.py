@@ -249,6 +249,7 @@ def load_run(
         "corr_rate",
         "model_frac",
         "fdg_frac",
+        "alignment_index",
     ),
     add_keys=None,
 ):
@@ -281,6 +282,32 @@ def load_run(
     for k, func in add_keys.items():
         out_dict[k] = func(out_dict)
     return sort_dict(out_dict, ordering) + (args,)
+
+
+def load_nls_param_sweep(template, nl_inds, plot_keys, **kwargs):
+    nl_loaded = {k: {} for k in plot_keys}
+    for i, ind in enumerate(nl_inds):
+        out = load_run(
+            ind,
+            file_template=template,
+            **kwargs,
+        )
+        sd, n_tasks, args = out
+        n_reps = args["n_reps"]
+        mix = args["dm_input_mixing"] / args["dm_input_mixing_denom"]
+        for pk in plot_keys:
+            nl_loaded[pk][mix] = sd[pk]
+    arr_shape = (len(nl_inds), len(n_tasks), n_reps)
+    out_arrs = {}
+    for pk in plot_keys:
+        mix_keys = np.array(list(nl_loaded[pk].keys()))
+        inds = np.argsort(mix_keys)
+        mix_sorted = mix_keys[inds]
+        arr = np.zeros(arr_shape)
+        for i, mix_s in enumerate(mix_sorted):
+            arr[i] = nl_loaded[pk][mix_s]
+        out_arrs[pk] = arr
+    return out_arrs, n_tasks, mix_keys
 
 
 def load_models(
