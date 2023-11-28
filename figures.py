@@ -940,7 +940,7 @@ class FigureControlled(ModularizerFigure):
 
 class FigureConsequencesK99(ModularizerFigure):
     def __init__(self, fig_key="controlled", colors=colors, **kwargs):
-        fsize = (2.5, 1)
+        fsize = (4, 1.2)
         cf = u.ConfigParserColor()
         cf.read(config_path)
 
@@ -955,41 +955,88 @@ class FigureConsequencesK99(ModularizerFigure):
         gss = {}
 
         cons_grid = pu.make_mxn_gridspec(
-            self.gs, 1, 2, 0, 100, 0, 100, 10, 20
+            self.gs, 1, 3, 0, 100, 0, 100, 10, 20
         )
-        gss["panel_consequences"] = self.get_axs(
+        gss["panel_consequences_trace"] = self.get_axs(
+            cons_grid, squeeze=True, sharex="all", sharey="all",
+        )
+        gss["panel_consequences_map"] = self.get_axs(
             cons_grid, squeeze=True, sharex="all", sharey="all",
         )
 
         self.gss = gss
 
-    def panel_consequences(self):
-        key = "panel_consequences"
+    def _load_consequences_run(self, key="panel_consequences"):
+        if self.data.get(key) is None:
+            run_ind = self.params.get("consequences_run_ind")
+            controlled_template = self.params.get("controlled_template")
+            controlled_folder = self.params.get("controlled_folder")
+
+            out_dict = maux.load_consequence_runs(
+                run_ind,
+                folder=controlled_folder,
+                template=controlled_template,
+                ref_key="dm_input_mixing",
+            )
+            self.data[key] = out_dict
+        return self.data[key]
+
+    def panel_consequences_map(self, recompute=False):
+        key = "panel_consequences_map"
         axs = self.gss[key]
 
-        run_ind = self.params.get("consequences_run_ind")
-        controlled_template = self.params.get("controlled_template")
-        controlled_folder = self.params.get("controlled_folder")
+        if self.data.get(key) is None or recompute:
+            out_dict = self._load_consequences_run()
+            mix_arr = np.array(list(out_dict.keys()))
+            mix_inds = np.argsort(mix_arr)
+            mix_sort = mix_arr[mix_inds]
+
+            plot_keys = ("new task tasks", "related context tasks", "new context tasks")
+            n_mixes = len(mix_arr)
+            metric_dict = {}
+            for pk in plot_keys:
+                for i, mix in enumerate(mix_sort):
+                    pre, null = out_dict[mix][pk]
+                    if len(pre.shape) > 2:
+                        pre = np.mean(pre, axis=2)
+                        null = np.mean(null, axis=2)
+                    pre_arr, null_arr = metric_dict.get(pk, (None, None))
+                    if pre_arr is None:
+                        pre_arr = np.zeros((n_mixes,) + pre.shape)
+                        null_arr = np.zeros_like(pre_arr)
+                    pre_arr[i] = pre
+                    null_arr[i] = null
+                    metric_dict[pk] = (pre_arr, null_arr)
+            self.data[key] = (mix_sort, metric_dict)
+        mix_sort, metric_dict = self.data[key]
+
+        labels = ("novel task", "related context", "unrelated context")
+        for i, pk in enumerate(plot_keys):
+            pre_pk, null_pk = metric_dict[pk]
+            print(pre_pk.shape)
+            diff = np.sum(pre_pk - null_pk, axis=2)
+            gpl.plot_trace_werr(mix_sort, diff.T, ax=axs[i], conf95=True)
+                    
+    
+    def panel_consequences_trace(self):
+        key = "panel_consequences_trace"
+        axs = self.gss[key]
+
+        out_dict = self._load_consequences_run()
 
         input_dim_colormap = self.params.get("input_dim_colormap")
         cmap = plt.get_cmap(input_dim_colormap)
 
-        out_dict = maux.load_consequence_runs(
-            run_ind,
-            folder=controlled_folder,
-            template=controlled_template,
-            ref_key="dm_input_mixing",
-        )
-
         plot_mixing = (0, 100)
-        mixing_labels = ("disentangled", "entangled")
+        mixing_labels = ("modular", "unstructured")
         mix_colors = cmap(np.linspace(.3, .7, len(plot_mixing)))
-        plot_keys = ("related context tasks", "new context tasks")
-        labels = ("related context", "unrelated context")
+        plot_keys = ("new task tasks", "related context tasks", "new context tasks")
+        labels = ("novel task", "related context", "unrelated context")
         for i, mixing in enumerate(plot_mixing):
             plot_dict = out_dict[mixing]
             for j, pk in enumerate(plot_keys):
-                loss_pre, _ = plot_dict[pk]
+                loss_pre, x = plot_dict[pk]
+                print(mixing, pk, loss_pre.shape, x.shape)
                 if len(loss_pre.shape) > 2:
                     loss_pre = np.mean(loss_pre, axis=2)
                 ax = axs[j]
@@ -1005,7 +1052,7 @@ class FigureConsequencesK99(ModularizerFigure):
 
 class FigureModularityControlled(ModularizerFigure):
     def __init__(self, fig_key="controlled_rep", colors=colors, **kwargs):
-        fsize = (4, 2)
+        fsize = (5, 3.5)
         cf = u.ConfigParserColor()
         cf.read(config_path)
 
@@ -1032,7 +1079,7 @@ class FigureModularityControlled(ModularizerFigure):
                                        30, 70,
                                        10, 60)
         gss["panel_param_sweep"] = self.get_axs(
-            ps_grid, sharex="all", sharey="all", squeeze=True,
+            ps_grid, squeeze=True,
         )
 
         self.gss = gss
@@ -1073,6 +1120,10 @@ class FigureModularityControlled(ModularizerFigure):
         template = self.params.get("nls_template_big")
         nl_inds = self.params.getlist("nls_big_ids")
         plot_keys = ("model_frac", "alignment_index")
+        labels = {
+            "model_frac": "fraction of units",
+            "alignment_index": "subspace specialization",
+        }
         cms = ("Blues", "Oranges")
         if self.data.get(key) is None or reload_:
             out_arrs, n_parts, mixes = self.load_nls_runs(template, nl_inds, plot_keys)
@@ -1081,11 +1132,19 @@ class FigureModularityControlled(ModularizerFigure):
 
         for i, pk in enumerate(plot_keys):
             arr = np.mean(out_arrs[pk], axis=2)
-            gpl.pcolormesh(
-                n_parts, mixes, arr, ax=axs[i], cmap=cms[i], vmin=0,
+            img = gpl.pcolormesh(
+                n_parts, mixes, arr, ax=axs[i], cmap=cms[i], vmin=0, rasterized=True,
             )
+            self.f.colorbar(img, ax=axs[i], label=labels[pk])
+
+            axs[i].set_xlabel("number of tasks")
+            axs[i].set_ylabel("input entanglement")
             axs[i].set_xticks([n_parts[0], 10, n_parts[-1]])
             axs[i].set_yticks([0, .5, 1])
+            axs[i].invert_yaxis()
+            axs[i].tick_params(
+                top=True, labeltop=True, bottom=False, labelbottom=False
+            )
         
     def panel_param_sweep(self, reload_=False):
         key = "panel_param_sweep"
