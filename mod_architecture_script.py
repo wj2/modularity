@@ -298,19 +298,22 @@ if __name__ == '__main__':
             cr = np.expand_dims(cr, 1)
         nt_tasks[i] = cr[:, :args.novel_tasks]
 
-        errs_ood, errs_ind = ma.zero_shot_training(
-            fdg,
-            model_type_str=model_type,
-            fix_n_irrel_vars=args.fix_n_irrel_vars,
-            test_samps=args.zs_test_samps,
-            **model_kwargs,
-            **train_kwargs,
-        )
-        if args.discrete_mixed_input:
-            fdg.code.get_predicted_ccgp()
-            fdg.code.get_predicted_classification()
-        zs[i] = np.stack((errs_ood.numpy(), errs_ind.numpy()),
-                         axis=0)
+        
+        # errs_ood, errs_ind = ma.zero_shot_training(
+        #     fdg,
+        #     model_type_str=model_type,
+        #     fix_n_irrel_vars=args.fix_n_irrel_vars,
+        #     test_samps=args.zs_test_samps,
+        #     **model_kwargs,
+        #     **train_kwargs,
+        # )
+        # if args.discrete_mixed_input:
+        #     # fdg.code.get_predicted_ccgp()
+        #     # fdg.code.get_predicted_classification()
+        #     pass
+        # zs[i] = np.stack((errs_ood.numpy(), errs_ind.numpy()),
+        #                  axis=0)
+        zs = None 
 
     all_save = {
         'related context': (related_context_all, related_context_all_null),
