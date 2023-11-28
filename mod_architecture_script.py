@@ -278,6 +278,8 @@ if __name__ == '__main__':
         new_context_null[i] = hist_null.history['val_loss']
         nc_null_tasks[i] = np.mean(hist_null.history['corr_rate'], axis=1)
 
+        nt_model_kwargs = dict(**model_kwargs)
+        nt_model_kwargs["n_tasks"] = nt_model_kwargs["n_tasks"] + args.novel_tasks
         (_, hist), (_, hist_null) = ma.new_task_training(
             fdg,
             model_type_str=model_type,
