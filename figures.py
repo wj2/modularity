@@ -940,7 +940,7 @@ class FigureControlled(ModularizerFigure):
 
 class FigureConsequencesK99(ModularizerFigure):
     def __init__(self, fig_key="controlled", colors=colors, **kwargs):
-        fsize = (4, 1.2)
+        fsize = (4, 2)
         cf = u.ConfigParserColor()
         cf.read(config_path)
 
@@ -955,17 +955,39 @@ class FigureConsequencesK99(ModularizerFigure):
         gss = {}
 
         cons_grid = pu.make_mxn_gridspec(
-            self.gs, 1, 3, 0, 100, 0, 100, 10, 20
+            self.gs, 2, 3, 0, 100, 0, 100, 10, 20
         )
-        gss["panel_consequences_trace"] = self.get_axs(
-            cons_grid, squeeze=True, sharex="all", sharey="all",
+        axs = self.get_axs(
+            cons_grid, squeeze=True, 
         )
-        gss["panel_consequences_map"] = self.get_axs(
-            cons_grid, squeeze=True, sharex="all", sharey="all",
-        )
+        gss["panel_consequences_trace"] = axs[0]
+        gss["panel_consequences_map"] = axs[1]
 
         self.gss = gss
 
+    def _load_consequences_sweep(self, key="panel_consequences_map", reload=False):
+        if self.data.get(key) is None or reload:
+            run_inds = self.params.getlist("run_inds_sweep")
+            controlled_template = self.params.get("controlled_template")
+            controlled_folder = self.params.get("controlled_folder")
+
+            mixing = []
+            mix_dicts = []
+            for i, ri in enumerate(run_inds):
+                out_dict = maux.load_consequence_runs(
+                    ri,
+                    folder=controlled_folder,
+                    template=controlled_template,
+                    ref_key="tasks_per_group"
+                )
+                m = out_dict[1]["args"]["dm_input_mixing"]
+                m = m / out_dict[1]["args"]["dm_input_mixing_denom"]
+                mix_dicts.append(out_dict)
+                mixing.append(m)
+            self.data[key] = (mixing, mix_dicts)
+        return self.data[key]
+        
+        
     def _load_consequences_run(self, key="panel_consequences"):
         if self.data.get(key) is None:
             run_ind = self.params.get("consequences_run_ind")
@@ -986,37 +1008,57 @@ class FigureConsequencesK99(ModularizerFigure):
         axs = self.gss[key]
 
         if self.data.get(key) is None or recompute:
-            out_dict = self._load_consequences_run()
-            mix_arr = np.array(list(out_dict.keys()))
-            mix_inds = np.argsort(mix_arr)
-            mix_sort = mix_arr[mix_inds]
+            out = self._load_consequences_sweep(reload=recompute)
+            mixing, mix_dicts = out
+            inds = np.argsort(mixing)
+            mix_sort = np.array(mixing)[inds]
 
-            plot_keys = ("new task tasks", "related context tasks", "new context tasks")
-            n_mixes = len(mix_arr)
             metric_dict = {}
-            for pk in plot_keys:
-                for i, mix in enumerate(mix_sort):
-                    pre, null = out_dict[mix][pk]
-                    if len(pre.shape) > 2:
-                        pre = np.mean(pre, axis=2)
-                        null = np.mean(null, axis=2)
-                    pre_arr, null_arr = metric_dict.get(pk, (None, None))
-                    if pre_arr is None:
-                        pre_arr = np.zeros((n_mixes,) + pre.shape)
-                        null_arr = np.zeros_like(pre_arr)
-                    pre_arr[i] = pre
-                    null_arr[i] = null
-                    metric_dict[pk] = (pre_arr, null_arr)
-            self.data[key] = (mix_sort, metric_dict)
-        mix_sort, metric_dict = self.data[key]
+            for i, ind in enumerate(inds):
+                out_dict = mix_dicts[ind]
+                task_arr = np.array(list(out_dict.keys()))
+                task_inds = np.argsort(task_arr)
+                task_sort = task_arr[task_inds]
 
+                plot_keys = ("new task tasks", "related context tasks", "new context tasks")
+                n_ts = len(task_arr)
+                for pk in plot_keys:
+                    for j, nt in enumerate(task_sort):
+                        pre, null = out_dict[nt][pk]
+                        if len(pre.shape) > 2:
+                            pre = np.mean(pre, axis=2)
+                            null = np.mean(null, axis=2)
+                        pre_arr, null_arr = metric_dict.get(pk, ([], []))
+                        if len(pre_arr) <= i:
+                            pre_arr_i = np.zeros((n_ts,) + pre.shape)
+                            null_arr_i = np.zeros_like(pre_arr_i)
+                            pre_arr.append(pre_arr_i)
+                            null_arr.append(null_arr_i)
+                        pre_arr[i][j] = pre
+                        null_arr[i][j] = null
+                        metric_dict[pk] = (pre_arr, null_arr)
+            metric_dict = {k: np.stack(v, axis=0) for k, v in metric_dict.items()}
+            self.data[key] = (mix_sort, task_sort, metric_dict)
+        mix_sort, task_sort, metric_dict = self.data[key]
+
+        cm = plt.get_cmap(self.params.get("diverge_cmap"))
         labels = ("novel task", "related context", "unrelated context")
         for i, pk in enumerate(plot_keys):
             pre_pk, null_pk = metric_dict[pk]
-            print(pre_pk.shape)
-            diff = np.sum(pre_pk - null_pk, axis=2)
-            gpl.plot_trace_werr(mix_sort, diff.T, ax=axs[i], conf95=True)
-                    
+            diff = np.mean(np.sum(pre_pk - null_pk, axis=3), axis=2)
+            bound = np.max(np.abs(diff))
+            gpl.pcolormesh(
+                task_sort,
+                mix_sort,
+                diff,
+                ax=axs[i],
+                cmap=cm,
+                vmin=-bound,
+                vmax=bound
+            )
+            # gpl.plot_trace_werr(mix_sort, diff.T, ax=axs[i], conf95=True)
+            axs[i].set_xticks([task_sort[0], 10, task_sort[-1]])
+            axs[i].set_yticks([mix_sort[0], .5, mix_sort[-1]])
     
     def panel_consequences_trace(self):
         key = "panel_consequences_trace"

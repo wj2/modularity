@@ -1166,13 +1166,14 @@ def new_task_training(
         **kwargs
     )
     print('second phase')
-    h_next = out_two[0].fit(track_dimensionality=True,
-                            epochs=train_epochs,
-                            n_train=train_samps,
-                            verbose=False,
-                            val_only_tasks=nov_task,
-                            track_mean_tasks=False,
-                            )
+    h_next = out_two[0].fit(
+        track_dimensionality=True,
+        epochs=train_epochs,
+        n_train=train_samps,
+        verbose=False,
+        val_only_tasks=nov_task,
+        track_mean_tasks=False,
+    )
 
     print('single task model')
     out_one = ms.train_modularizer(
