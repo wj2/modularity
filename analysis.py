@@ -2531,6 +2531,87 @@ def compute_frac_contextual(mod, **kwargs):
     return frac
 
 
+def _get_unit_std(
+        mod,
+        n_samps=1000,
+        use_abs=True,
+        layer=None,
+        rescale=True,
+        use_fdg=False,
+        use_rotation=False,
+):
+    n_g = mod.n_groups
+    if use_fdg:
+        use_ind = 1
+    else:
+        use_ind = 2
+
+    mod_reps = list(mod.sample_reps(n_samps, context=i, layer=layer)[use_ind]
+                    for i in range(n_g))
+    mod_rep = np.stack(mod_reps, axis=0)
+    if use_rotation:
+        trs = sts.ortho_group(mod_rep.shape[2]).rvs(1)
+        mod_rep = mod_rep @ trs
+    if use_abs:
+        mod_rep = np.abs(mod_rep)
+    if rescale:
+        unit_norms = np.max(mod_rep, axis=(0, 1), keepdims=True)
+        mod_rep = mod_rep / unit_norms
+    unit_std = np.zeros((n_g, mod_rep.shape[2]))
+    for i in range(n_g):
+        mr_i = mod_rep[i]
+        unit_std[i] = np.std(mr_i, axis=0) 
+    return unit_std
+
+
+def compute_variance_specialization(mod, **kwargs):
+    unit_stds = _get_unit_std(mod, **kwargs)
+    n_cons = unit_stds.shape[0]
+    f = np.zeros((n_cons, n_cons, unit_stds.shape[1]))
+    for i, j in it.combinations(range(n_cons), 2):
+        denom = (unit_stds[i] + unit_stds[j])
+        f[i, j] = (unit_stds[i] - unit_stds[j]) / denom
+        f[j, i] = (unit_stds[j] - unit_stds[i]) / denom
+    return f
+
+
+def compute_null_variance_specialization(mod, n_reps=100, **kwargs):
+    n_groups = mod.n_groups
+    n_units = mod.hidden_dims
+    null_matrix = np.zeros((n_reps, n_groups, n_groups, n_units))
+    for i in range(n_reps):
+        null_matrix[i] = compute_variance_specialization(
+            mod, use_rotation=True, **kwargs,
+        )
+    return null_matrix
+
+
+def compute_variance_specialization_signif(
+        mod, n_reps=100, p_thr=.01, **kwargs
+):
+    tv = compute_variance_specialization(mod, **kwargs)
+    null = compute_null_variance_specialization(mod, n_reps=n_reps, **kwargs)
+    tv_exp = np.expand_dims(tv, 0)
+    cond_high = (tv_exp - null) > 0
+    cond_low = (null - tv_exp) > 0
+    sig_high = np.mean(cond_high[:, 0, 1], axis=0) > (1 - p_thr/2)
+    sig_low = np.mean(cond_low[:, 0, 1], axis=0) > (1 - p_thr/2)
+    frac = np.sum(np.logical_or(sig_high, sig_low)) / cond_low.shape[3]
+    return frac
+
+
+def compute_variance_threshold_frac(
+        mod,
+        thr=1e-2,
+        **kwargs,
+):
+    active_units = _get_unit_std(mod, **kwargs)
+    active_units = active_units > thr
+    singles = np.sum(active_units, axis=0) == 1
+    frac = np.mean(singles)
+    return frac
+
+
 def compute_alignment_index(mod, n_samps=1000, **kwargs):
     con_inds = np.arange(-mod.n_groups, 0)
     stim, _, rep = mod.sample_reps(n_samps)
