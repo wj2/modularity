@@ -2550,7 +2550,7 @@ def _get_unit_std(
                     for i in range(n_g))
     mod_rep = np.stack(mod_reps, axis=0)
     if use_rotation:
-        trs = sts.ortho_group(mod_rep.shape[2]).rvs(1)
+        trs = sts.ortho_group.rvs(mod_rep.shape[2])
         mod_rep = mod_rep @ trs
     if use_abs:
         mod_rep = np.abs(mod_rep)
