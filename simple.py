@@ -465,11 +465,10 @@ class Modularizer:
         self.group_size = group_size
         self.inp_dims = inp_dims
         self.out_dims = out_dims
-        self.rel_vars = np.unique(np.concatenate(groups))
-        con_vars = np.arange(inp_dims - len(groups), inp_dims)
+        self.rel_vars = np.unique(groups)
         irrel_vars = set(np.arange(inp_dims))
         self.irrel_vars = np.array(list(
-            irrel_vars.difference(np.concatenate((self.rel_vars, con_vars)))
+            irrel_vars.difference(self.rel_vars)
         ))
 
         self.hidden_dims = int(round(len(groups) * group_width))
@@ -1388,7 +1387,7 @@ def train_modularizer(
         model_type = model_type_dict[model_type_str]
 
     m = model_type(inp_dim, **config_dict)
-    if fix_n_irrel_vars > 0 and len(m.irrel_vars) > fix_n_irrel_vars:
+    if fix_n_irrel_vars > 0 and len(m.irrel_vars) >= fix_n_irrel_vars:
         fix_irrel_vars = m.irrel_vars[:fix_n_irrel_vars]
     else:
         fix_irrel_vars = None

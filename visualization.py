@@ -452,9 +452,13 @@ def visualize_module_activity(
     task_ind=0,
     ms=None,
     p=None,
+    fix_vars=None,
+    fix_value=0,
     **kwargs
 ):
-    inp_rep, stim, targ = model.get_x_true(n_train=n_samps, group_inds=context)
+    inp_rep, stim, targ = model.get_x_true(
+        n_train=n_samps, group_inds=context, fix_vars=fix_vars, fix_value=fix_value,
+    )
     rep = model.get_representation(inp_rep)
     rel_stim = stim[:, model.groups[context]]
     centroids = np.unique(rel_stim, axis=0)
@@ -603,7 +607,7 @@ def plot_context_scatter(m, n_samps=1000, ax=None, fwid=3, from_layer=None,
     labels, act = ma.infer_activity_clusters(
         m, n_samps=n_samps, use_mean=True, ret_act=True, from_layer=from_layer
     )
-    xy_labels = ('context 1 activity', 'context 2 activity')
+    xy_labels = ('con 1 activity', 'con 2 activity')
     u_labels = np.unique(labels)
     if colors is None:
         colors = (None,)*act.shape[1]
@@ -704,7 +708,7 @@ def plot_context_clusters(
         n_samps = a.shape[0]
         gpl.make_yaxis_scale_bar(ax, anchor=(n_samps/2) + n_samps*i,
                                  magnitude=n_samps/2 - gap,
-                                 label='context\n{}'.format(i + 1),
+                                 label='con {}'.format(i + 1),
                                  color=context_colors[i], fontsize=fontsize)
     gpl.clean_plot(ax, 1)
     ax.set_xlabel('hidden units')

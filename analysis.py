@@ -1497,7 +1497,7 @@ def zero_shot_training(
     resps = model.out_model(model.get_representation(irep))
     errs_ind = (resps > .5) == (targ > .5)
 
-    return errs_ood, errs_ind
+    return errs_ood, errs_ind, (model, hist)
 
 
 def new_context_training(

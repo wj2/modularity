@@ -302,7 +302,7 @@ if __name__ == '__main__':
         nt_tasks[i] = cr[:, :args.novel_tasks]
 
         print("-------- ZS ZS ZS --------")
-        errs_ood, errs_ind = ma.zero_shot_training(
+        errs_ood, errs_ind, _ = ma.zero_shot_training(
             fdg,
             model_type_str=model_type,
             fix_n_irrel_vars=args.fix_n_irrel_vars,

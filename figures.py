@@ -3,6 +3,7 @@ import numpy as np
 import scipy.stats as sts
 import scipy.special as ss
 import matplotlib.pyplot as plt
+import sklearn.decomposition as skd
 
 import modularity.simple as ms
 import modularity.analysis as ma
@@ -74,6 +75,95 @@ class ModularizerFigure(pu.Figure):
             )
             self.data["trained_fdg"] = fdg
         return self.data["trained_fdg"]
+
+    def make_mddg(self, nl, **kwargs):
+        
+        n_units = kwargs.get("n_units", self.params.getint("n_units"))
+        n_feats = kwargs.get("n_feats", self.params.getint("n_feats"))
+        mddg = dg.MixedDiscreteDataGenerator(
+            n_feats, mix_strength=nl, n_units=n_units,
+        )
+        return mddg
+
+
+    def _load_consequences_sweep(
+            self,
+            key="consequences_simulations",
+            reload=False,
+            run_key="run_inds_sweep",
+            template_key="controlled_template",
+            folder_key="controlled_folder",
+    ):
+        if self.data.get(key) is None or reload:
+            run_inds = self.params.getlist(run_key)
+            controlled_template = self.params.get(template_key)
+            controlled_folder = self.params.get(folder_key)
+
+            mixing = []
+            mix_dicts = []
+            for i, ri in enumerate(run_inds):
+                out_dict = maux.load_consequence_runs(
+                    ri,
+                    folder=controlled_folder,
+                    template=controlled_template,
+                    ref_key="tasks_per_group"
+                )
+                m = out_dict[1]["args"]["dm_input_mixing"]
+                m = m / out_dict[1]["args"]["dm_input_mixing_denom"]
+                mix_dicts.append(out_dict)
+                mixing.append(m)
+            self.data[key] = (mixing, mix_dicts)
+        return self.data[key]
+
+    def load_and_organize_con_sweep(self, plot_keys, *args, load_num=2, **kwargs):
+        out = self._load_consequences_sweep(*args, **kwargs)
+        mixing, mix_dicts = out
+        inds = np.argsort(mixing)
+        mix_sort = np.array(mixing)[inds]
+
+        metric_dict = {}
+        for i, ind in enumerate(inds):
+            out_dict = mix_dicts[ind]
+            task_arr = np.array(list(out_dict.keys()))
+            task_inds = np.argsort(task_arr)
+            task_sort = task_arr[task_inds]
+
+            n_ts = len(task_arr)
+            for pk in plot_keys:
+                for j, nt in enumerate(task_sort):
+                    group = out_dict[nt][pk]
+                    if load_num == 1:
+                        group = (group,)
+                    if len(group[0].shape) > 2:
+                        group = list(np.mean(g, axis=-1) for g in group)
+                    group_arr = metric_dict.get(pk, (None,)*len(group))
+                    if group_arr[0] is None:
+                        shape = (len(mix_sort), n_ts,) + group[0].shape
+                        group_arr = list(np.zeros(shape) for g in group)
+                    for k, g in enumerate(group):
+                        group_arr[k][i, j] = g
+                    metric_dict[pk] = group_arr
+        out = (mix_sort, task_sort, metric_dict)
+        return out
+    
+    def train_eg_networks(self):
+        n_tasks = self.params.getlist("eg_n_tasks", typefunc=int)
+        nl_strengths = self.params.getlist("eg_nl_strs", typefunc=float)
+        n_units = self.params.getint("n_units")
+        n_feats = self.params.getint("n_feats")
+
+        models = np.zeros((len(n_tasks), len(nl_strengths)), dtype=object)
+        hists = np.zeros_like(models)
+        for i, nt in enumerate(n_tasks):
+            for j, nl in enumerate(nl_strengths):
+                mddg = dg.MixedDiscreteDataGenerator(
+                    n_feats, mix_strength=nl, n_units=n_units,
+                )
+                m_ij, h_ij = self.train_modularizer(fdg=mddg, tasks_per_group=nt)
+                models[i, j] = m_ij
+                hists[i, j] = h_ij
+        out = (n_tasks, nl_strengths), models, hists
+        return out
 
     def make_ident_modularizer(self, linear=False, **kwargs):
         if linear:
@@ -530,8 +620,6 @@ class FigureControlledInput(ModularizerFigure):
                 im_ident, ax=ax_scatt, colors=(c1_color, neutral_color, c2_color)
             )
             
-
-    
             
 class FigureInput(ModularizerFigure):
     def __init__(self, fig_key="input_figure", colors=colors, **kwargs):
@@ -684,6 +772,196 @@ class FigureInput(ModularizerFigure):
         ax_clust.set_ylabel("")
 
 
+class FigureControlledGeometry(ModularizerFigure):
+    def __init__(self, fig_key="geom_gen_figure", colors=colors, **kwargs):
+        fsize = (7, 5)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = (
+            "panel_eg_geom", "panel_geom", "panel_unit_align", "panel_zs",
+        )
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        full_ax = self.get_axs(
+            (self.gs[20:40, :20],), all_3d=True, squeeze=False,
+        )
+        eg_grid = pu.make_mxn_gridspec(self.gs, 2, 2, 0, 60, 20, 60, 2, 2)
+        eg_axs = self.get_axs(eg_grid, all_3d=True, squeeze=True)
+        gss["panel_eg_geom"] = full_ax, eg_axs
+
+        geom_grid = pu.make_mxn_gridspec(
+            self.gs, 2, 1, 0, 60, 70, 100, 10, 10
+        )
+        gss["panel_geom"] = self.get_axs(geom_grid, squeeze=True)
+
+        zs_grid = pu.make_mxn_gridspec(
+            self.gs, 2, 1, 60, 100, 70, 100, 10, 10
+        )
+        gss["panel_zs"] = self.get_axs((self.gs[70:100, 70:100],), squeeze=False)[0, 0]
+
+        zs_eg_grid = pu.make_mxn_gridspec(
+            self.gs, 1, 2, 60, 100, 20, 60, 2, 2
+        )
+        gss["panel_eg_zs"] = self.get_axs(zs_eg_grid, all_3d=True, squeeze=True,)
+        
+        self.gss = gss
+
+    def panel_eg_geom(self, refit=False):
+        key = "panel_eg_geom"
+        f_ax, axs = self.gss[key]
+
+        if self.data.get(key) is None or refit:
+            self.data[key] = self.train_eg_networks()
+
+        (n_tasks, nl_strs), models, hs = self.data[key]
+        
+        f1_color = self.params.getcolor("f1_color")
+        f2_color = self.params.getcolor("f2_color")
+        f3_color = self.params.getcolor("f2_color")
+
+        r1_color = self.params.getcolor("r1_color")
+        r2_color = self.params.getcolor("r2_color")
+
+        for ind in u.make_array_ind_iterator(axs.shape):
+            ax, p = mv.visualize_module_activity(
+                models[ind], 
+                0, 
+                line_colors=(f1_color, f2_color, f3_color), 
+                resp_colors=(r1_color, r2_color), 
+                ms=5,
+                ax=axs[ind],
+            )
+
+    def panel_geom(self, reload_=False):
+        key = "panel_geom"
+        axs = self.gss[key]
+        
+        template = self.params.get("nls_template_big")
+        nl_inds = self.params.getlist("nls_big_ids")
+        plot_keys = ("within_ccgp", "shattering")
+        labels = {
+            "within_ccgp": "abstraction",
+            "shattering": "shattering",
+        }
+        cms = ("Blues", "Oranges")
+        if self.data.get(key) is None or reload_:
+            out_arrs, n_parts, mixes = self.load_nls_runs(template, nl_inds, plot_keys)
+            self.data[key] = out_arrs, n_parts, mixes
+
+        out_arrs, n_parts, mixes = self.data[key]
+        for i, pk in enumerate(plot_keys):
+            arr = np.mean(out_arrs[pk], axis=2)
+            img = gpl.pcolormesh(
+                n_parts, mixes, arr, ax=axs[i], cmap=cms[i], vmin=.5, rasterized=True,
+            )
+            self.f.colorbar(img, ax=axs[i], label=labels[pk])
+
+            axs[i].set_xlabel("number of tasks")
+            axs[i].set_ylabel("input entanglement")
+            axs[i].set_xticks([n_parts[0], 10, n_parts[-1]])
+            axs[i].set_yticks([0, .5, 1])
+            axs[i].invert_yaxis()
+            axs[i].tick_params(
+                top=True, labeltop=True, bottom=False, labelbottom=False
+            )
+
+    def panel_zs(self, recompute=False):
+        key = "panel_zs"
+        ax = self.gss[key]
+
+        plot_key = "zero shot"
+        if self.data.get(key) is None or recompute:
+            self.data[key] = self.load_and_organize_con_sweep(
+                (plot_key,),
+                reload=recompute,
+                folder_key="sim_folder",
+                run_key="zs_run_inds",
+                load_num=1,
+            )
+        cm = plt.get_cmap(self.params.get("zs_cmap"))
+        mix_sort, task_sort, metric_dict = self.data[key]
+        zs_p = metric_dict[plot_key][0]
+        zs_ood = zs_p[..., 0, :]
+        zs_ood = np.mean(zs_ood, axis=(-2, -1))
+        m = gpl.pcolormesh(
+            task_sort,
+            mix_sort,
+            zs_ood,
+            ax=ax,
+            cmap=cm,
+            vmin=.5,
+            vmax=1,
+        )
+        self.f.colorbar(m, ax=ax, label="zero shot\ngeneralization")
+        ax.set_xticks([task_sort[0], 10, task_sort[-1]])
+        ax.set_yticks([mix_sort[0], .5, mix_sort[-1]])
+
+    def panel_eg_zs(self, retrain=False):
+        key = "panel_eg_zs"
+        axs = self.gss[key]
+
+        nl_zs = self.params.getlist("zs_eg_nls", typefunc=float)
+        fix_n_vars = self.params.getint("zs_fix_n_vars")
+        if self.data.get(key) is None or retrain:
+            out_dict = {}
+            for nlz in nl_zs:
+                mddg_nlz = self.make_mddg(nlz)
+                ood, ind, (m, h) = ma.zero_shot_training(
+                    mddg_nlz,
+                    n_tasks=5,
+                    group_size=2,
+                    n_overlap=2,
+                    fix_n_irrel_vars=fix_n_vars,
+                    verbose=False,
+                )
+                out_dict[nlz] = m
+            self.data[key] = out_dict
+
+        f1_color = self.params.getcolor("f1_color")
+        f2_color = self.params.getcolor("f2_color")
+
+        r1_color = self.params.getcolor("r1_color")
+        r2_color = self.params.getcolor("r2_color")
+
+        out_dict = self.data[key]
+        for i, nlz in enumerate(nl_zs):
+            m = out_dict[nlz]
+            irrel = m.irrel_vars[:fix_n_vars]
+            inp_rep, _, _ = m.get_x_true(group_inds=0)
+            rep = m.get_representation(inp_rep)
+            p = skd.PCA(3)
+            p = p.fit(rep)
+            _, p = mv.visualize_module_activity(
+                m,
+                0,
+                line_colors=(f1_color, f2_color),
+                resp_colors=(r1_color, r2_color), 
+                ms=5,
+                ax=axs[i],
+                fix_vars=irrel,
+                fix_value=0,
+                p=p,
+            )
+            _, p = mv.visualize_module_activity(
+                m,
+                0,
+                line_colors=(f1_color, f2_color),
+                resp_colors=(r1_color, r2_color), 
+                ms=5,
+                ax=axs[i],
+                fix_vars=irrel,
+                fix_value=1,
+                p=p,
+            )
+                
+
+        
 class FigureEmergence(ModularizerFigure):
     def __init__(self, fig_key="emergence_figure", colors=colors, **kwargs):
         fsize = (7, 5)
@@ -938,7 +1216,7 @@ class FigureControlled(ModularizerFigure):
         # )
 
 
-class FigureConsequencesK99(ModularizerFigure):
+class FigureConsequences(ModularizerFigure):
     def __init__(self, fig_key="controlled", colors=colors, **kwargs):
         fsize = (4, 2)
         cf = u.ConfigParserColor()
@@ -963,28 +1241,6 @@ class FigureConsequencesK99(ModularizerFigure):
         gss["panel_consequences"] = axs
 
         self.gss = gss
-
-    def _load_consequences_sweep(self, key="panel_consequences", reload=False):
-        if self.data.get(key) is None or reload:
-            run_inds = self.params.getlist("run_inds_sweep")
-            controlled_template = self.params.get("controlled_template")
-            controlled_folder = self.params.get("controlled_folder")
-
-            mixing = []
-            mix_dicts = []
-            for i, ri in enumerate(run_inds):
-                out_dict = maux.load_consequence_runs(
-                    ri,
-                    folder=controlled_folder,
-                    template=controlled_template,
-                    ref_key="tasks_per_group"
-                )
-                m = out_dict[1]["args"]["dm_input_mixing"]
-                m = m / out_dict[1]["args"]["dm_input_mixing_denom"]
-                mix_dicts.append(out_dict)
-                mixing.append(m)
-            self.data[key] = (mixing, mix_dicts)
-        return self.data[key]
         
     def panel_consequences(self, recompute=False):
         key = "panel_consequences"
@@ -994,33 +1250,9 @@ class FigureConsequencesK99(ModularizerFigure):
             "new task tasks", "related context tasks", "new context tasks"
         )
         if self.data.get(key) is None or recompute:
-            out = self._load_consequences_sweep(reload=recompute)
-            mixing, mix_dicts = out
-            inds = np.argsort(mixing)
-            mix_sort = np.array(mixing)[inds]
-
-            metric_dict = {}
-            for i, ind in enumerate(inds):
-                out_dict = mix_dicts[ind]
-                task_arr = np.array(list(out_dict.keys()))
-                task_inds = np.argsort(task_arr)
-                task_sort = task_arr[task_inds]
-
-                n_ts = len(task_arr)
-                for pk in plot_keys:
-                    for j, nt in enumerate(task_sort):
-                        pre, null = out_dict[nt][pk]
-                        if len(pre.shape) > 2:
-                            pre = np.mean(pre, axis=2)
-                            null = np.mean(null, axis=2)
-                        pre_arr, null_arr = metric_dict.get(pk, (None, None))
-                        if pre_arr is None:
-                            pre_arr = np.zeros((len(mix_sort), n_ts,) + pre.shape)
-                            null_arr = np.zeros_like(pre_arr)
-                        pre_arr[i, j] = pre
-                        null_arr[i, j] = null
-                        metric_dict[pk] = (pre_arr, null_arr)
-            self.data[key] = (mix_sort, task_sort, metric_dict)
+            self.data[key] = self.load_and_organize_con_sweep(
+                plot_keys, reload=recompute
+            )
         mix_sort, task_sort, metric_dict = self.data[key]
 
         task_fix = 1
@@ -1071,7 +1303,7 @@ class FigureConsequencesK99(ModularizerFigure):
 
 class FigureModularityControlled(ModularizerFigure):
     def __init__(self, fig_key="controlled_rep", colors=colors, **kwargs):
-        fsize = (5, 3.5)
+        fsize = (6, 5)
         cf = u.ConfigParserColor()
         cf.read(config_path)
 
@@ -1086,17 +1318,17 @@ class FigureModularityControlled(ModularizerFigure):
     def make_gss(self):
         gss = {}
 
-        eg_grid = pu.make_mxn_gridspec(self.gs, 2, 2,
+        eg_grid = pu.make_mxn_gridspec(self.gs, 2, 4,
+                                       0, 45,
                                        0, 100,
-                                       0, 100,
-                                       30, 60)
-        eg_axs = self.get_axs(eg_grid, squeeze=True, sharex='all', sharey='all')
+                                       10, 10)
+        eg_axs = self.get_axs(eg_grid, squeeze=True)
         gss["panel_eg_networks"] = eg_axs
 
-        ps_grid = pu.make_mxn_gridspec(self.gs, 2, 1,
+        ps_grid = pu.make_mxn_gridspec(self.gs, 1, 2,
+                                       60, 100,
                                        0, 100,
-                                       30, 70,
-                                       10, 60)
+                                       10, 10)
         gss["panel_param_sweep"] = self.get_axs(
             ps_grid, squeeze=True,
         )
@@ -1107,28 +1339,25 @@ class FigureModularityControlled(ModularizerFigure):
         key = "panel_eg_networks"
         axs = self.gss[key]
 
-        n_tasks = self.params.getlist("tasks", typefunc=int)
-        nl_strengths = self.params.getlist("nl_strs", typefunc=float)
-        n_units = self.params.getint("n_units")
-        n_feats = self.params.getint("n_feats")
         if self.data.get(key) is None or retrain:
-            models = np.zeros((len(n_tasks), len(nl_strengths)), dtype=object)
-            hists = np.zeros_like(models)
-            for i, nt in enumerate(n_tasks):
-                for j, nl in enumerate(nl_strengths):
-                    mddg = dg.MixedDiscreteDataGenerator(
-                        n_feats, mix_strength=nl, n_units=n_units,
-                    )
-                    m_ij, h_ij = self.train_modularizer(fdg=mddg, tasks_per_group=nt)
-                    models[i, j] = m_ij
-                    hists[i, j] = h_ij
-            self.data[key] = (models, hists)
-        models, _ = self.data[key]
+            self.data[key] = self.train_eg_networks()
+
+        c1_color = self.params.getcolor("con1_color")
+        c2_color = self.params.getcolor("con2_color")
+        neutral_color = self.params.getcolor("noncon_color")
+        colors = (c1_color, neutral_color, c2_color)
+
+        (n_tasks, nl_strengths), models, _ = self.data[key]
         for (i, j) in u.make_array_ind_iterator(models.shape):
             n_t = n_tasks[i]
             n_l = nl_strengths[j]
             print("n_tasks", n_t, "      nl_str", n_l)
-            mv.plot_context_clusters(models[i, j], ax=axs[j, i])
+            mv.plot_context_clusters(
+                models[i, j], ax=axs[j, i * 2], context_colors=(c1_color, c2_color),
+            )
+            mv.plot_context_scatter(
+                models[i, j], ax=axs[j, i * 2 + 1], colors=colors,
+            )
             print(ma.compute_alignment_index(models[i, j]))
             print(ma.compute_frac_contextual(models[i, j]))
 
