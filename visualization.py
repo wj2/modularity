@@ -276,6 +276,15 @@ def visualize_excess_dimensionality(
     ax.legend(frameon=False)
 
 
+def plot_training(hist, ax=None, training_key="val_loss", func=None, **kwargs):
+    if ax is None:
+        f, ax = plt.subplots(1, 1)
+    tc = np.array(hist.history[training_key])
+    epochs = np.arange(tc.shape[-1])
+    gpl.plot_trace_werr(epochs, tc, ax=ax, **kwargs)
+    return ax    
+    
+
 def visualize_training_dimensionality(
     mhs,
     label_templ=r"$\sigma_{weights} = $",

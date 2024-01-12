@@ -12,6 +12,7 @@ import general.utility as u
 import disentangled.aux as da
 import disentangled.disentanglers as dd
 import disentangled.data_generation as dg
+import modularity.auxiliary as maux
 
 tfk = tf.keras
 tfkl = tf.keras.layers
@@ -92,10 +93,10 @@ def apply_linear_task(x, task=None, intercept=0, center=0.5, renorm=False):
     return bools
 
 
-def apply_central_group(x, flip=False):
-    out = np.var(x, axis=1) == 0
+def apply_central_group(x, flip=False, n_values=2, thr=0):
     if flip:
-        out = ~out
+        x[:, 0] = n_values - 1 - x[:, 0]
+    out = np.var(x, axis=1) <= thr
     return out
 
 
@@ -876,19 +877,26 @@ class XORModularizer(Modularizer):
 
 
 class CentralModularizer(Modularizer):
-    def _make_group_func(self, n_g, tasks_per_group=1, flip=False):
+    def _make_group_func(self, n_g, tasks_per_group=1, flip=False, n_values=2):
         funcs = []
         for i in range(tasks_per_group):
-            funcs.append(ft.partial(apply_central_group, flip=flip))
+            funcs.append(ft.partial(
+                apply_central_group, flip=flip, n_values=n_values
+            ))
         return lambda x: np.stack(list(f(x) for f in funcs), axis=1)
 
     def __init__(
-            self, *args, n_colorings=None, task_merger=np.sum,
-            share_pairs=None, flip_groups=(), tasks_per_group=1,
-            separate_tasks=None, **kwargs,
+            self, *args,
+            share_pairs=None,
+            flip_groups=(),
+            tasks_per_group=1,
+            n_values=2,
+            **kwargs,
     ):
         tasks_per_group = 1
-        super().__init__(*args, tasks_per_group=tasks_per_group, **kwargs)
+        super().__init__(
+            *args, tasks_per_group=tasks_per_group, **kwargs,
+        )
         group_func = []
         for i, g in enumerate(self.groups):
             group_func.append(
@@ -896,6 +904,7 @@ class CentralModularizer(Modularizer):
                     len(g),
                     tasks_per_group=tasks_per_group,
                     flip=i in flip_groups,
+                    n_values=n_values,
                 )
             )
         if share_pairs is not None:
@@ -975,7 +984,7 @@ class IdentityModularizer(Modularizer):
         if use_dg is not None:
             self.mix = use_dg
             self.mix_func = use_dg.get_representation
-            inp_net = self.mix.output_dim
+            self.inp_net = self.mix.output_dim
         self.single_output = True
         self.integrate_context = integrate_context
         self.n_groups = len(self.groups)
@@ -1226,11 +1235,9 @@ class GatedLinearModularizerShell:
         return func(rel_stim)
 
     def make_module_set(self, func_dict, stim, n_units):
-        wi = self.weight_init
         input_units = self.model.inp_net
         output_units = self.model.out_dims
         stim_input = tfk.Input(shape=input_units, name="stim_input")
-        mod_dict = {}
         outs = []
         inputs = []
         ordered_funcs = []
@@ -1307,6 +1314,45 @@ class GatedLinearModularizerShell:
         self.gl_model.fit(inputs_all, targ, **kwargs)
 
 
+def make_and_train_mt_model_set(
+        mixing,
+        n_feats=4,
+        n_values=3,
+        n_cons=2,
+        params=None,
+        relational=True,
+        relational_weight=1,
+        **kwargs,
+):
+    fdg = dg.MixedDiscreteDataGenerator(
+        n_feats + n_cons, n_vals=n_values, mix_strength=mixing
+    )
+    if relational:
+        fdg = dg.RelationalAugmentor(fdg, weight=relational_weight)
+    shared_params = {
+        "n_overlap": 0,
+        "n_groups": 2,
+    }
+    out_same = train_modularizer(
+        fdg,
+        params=params,
+        n_values=n_values,
+        model_type=CentralModularizer,
+        **shared_params,
+        **kwargs,
+    )
+    out_flip = train_modularizer(
+        fdg,
+        params=params,
+        n_values=n_values,
+        flip_groups=(0,),
+        model_type=CentralModularizer,
+        **shared_params,
+        **kwargs,
+    )
+    return fdg, out_same, out_flip
+
+        
 def train_modularizer(
     fdg,
     verbose=False,
@@ -1366,7 +1412,6 @@ def train_modularizer(
             "integrate_context": integrate_context,
             "train_epochs": train_epochs,
             "model_type": model_type,
-            "use_dg": fdg,
             "n_train": n_train,
             "batch_size": batch_size,
         }
