@@ -459,6 +459,10 @@ def visualize_module_activity(
     inp_rep, stim, targ = model.get_x_true(
         n_train=n_samps, group_inds=context, fix_vars=fix_vars, fix_value=fix_value,
     )
+    stim, ind = np.unique(stim, axis=0, return_index=True)
+    targ = targ[ind]
+    inp_rep = inp_rep[ind]
+    
     rep = model.get_representation(inp_rep)
     rel_stim = stim[:, model.groups[context]]
     centroids = np.unique(rel_stim, axis=0)
@@ -703,6 +707,11 @@ def plot_context_clusters(
     a_full = np.concatenate(activity, axis=0)
     gap = int(np.round(gap*n_samps))
     vmax = np.mean(a_full) + np.std(a_full)
+    # gpl.pcolormesh(
+    #     a_full[:, sort_inds], vmax=vmax, cmap=cmap, rasterized=True, ax=ax,
+    # )
+    # xts = np.arange(0, a_full.shape[1] + 1, 50)
+    # ax.set_xticks(xts)
     ax.imshow(a_full[:, sort_inds], aspect="auto", vmax=vmax, cmap=cmap)
     for i, a in enumerate(activity):
         n_samps = a.shape[0]

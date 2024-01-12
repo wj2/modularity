@@ -1581,12 +1581,25 @@ def infer_activity_clusters(
     ret_act=False,
     model=skmx.GaussianMixture,
     from_layer=None,
+    order=True,
 ):
     activity = sample_all_contexts(
         m, n_samps=n_samps, use_mean=use_mean, from_layer=from_layer
     )
     act_full = np.concatenate(activity, axis=0)
     _, out = _fit_clusters(act_full, len(activity) + 1)
+    if order:
+        u_clust = np.unique(out)
+        m_diff = np.mean(activity[0] - activity[1], axis=0)
+        diffs = np.zeros(len(u_clust))
+        for i, uc in enumerate(u_clust):
+            diffs[i] = np.mean(m_diff[uc == out])
+        inds = np.argsort(diffs)
+        ranks = np.argsort(inds)
+        new_out = np.zeros_like(out)
+        for i, uc in enumerate(u_clust):
+            new_out[out == uc] = ranks[i]
+        out = new_out
     if ret_act:
         out = (out, act_full.T)
     return out

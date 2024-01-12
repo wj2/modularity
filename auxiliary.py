@@ -6,6 +6,113 @@ import pandas as pd
 import itertools as it
 
 import general.utility as u
+import mne
+
+from modularity.mt_package.dataprep import Data_Prep as DP
+
+def process_ns_meg_data(
+        sbjN="22",
+        timing="combined test",
+        trigger=103,
+        ch_pick="grad",
+        local=0,
+        res_freq=250,
+):
+    ch_n_dict = {"mag": 102, "grad": 204}
+    ch_n = ch_n_dict.get(ch_pick)
+    if ch_n is None:
+        raise IOError(
+            "ch_pick must be on of {}, not {}".format(ch_n_dict.keys(), ch_pick)
+        )
+    timing_dict = {"pretest": 1, "posttest": 2, "training": 0, "combined test": 3}
+    test = timing_dict.get(timing)
+    if test is None:
+        raise IOError(
+            "timing must be on of {}, not {}".format(timing_dict.keys(), timing)
+        )
+        
+    if test == 0:
+        epochs_cleaned, data, events_n, events = DP.Load_Data(
+            local=local, sbjN=sbjN, training=1, test=0
+        )
+        data, epochs_selected = DP.Trial_Selection(
+            data, trigger, events_n, epochs_cleaned
+        )
+    elif test <=2:
+        epochs_cleaned_post, data, events_n, events = DP.Load_Data(
+            local=local, sbjN=sbjN, training=0, test=test
+        )
+        data, epochs_selected = DP.Trial_Selection(
+            data, trigger, events_n, epochs_cleaned
+        )
+    elif test > 2:
+        epochs_cleaned_pre, data_pre, events_n, events = DP.Load_Data(
+            local=local, sbjN=sbjN, training=0, test=1
+        )
+        data_pre, epochs_selected_pre = DP.Trial_Selection(
+            data_pre, trigger, events_n, epochs_cleaned_pre
+        )
+       
+        epochs_cleaned_post, data_post, events_n, events = DP.Load_Data(
+            local=local, sbjN=sbjN, training=0, test=2
+        )
+        data_post, epochs_selected_post = DP.Trial_Selection(
+            data_post, trigger, events_n, epochs_cleaned_post
+        )
+       
+        epochs_selected = mne.concatenate_epochs(
+            [epochs_selected_pre,epochs_selected_post]
+        )
+        data = data_pre.append(data_post)
+    
+    epochs_selected.apply_baseline() # baseline correction
+    epochs_selected.pick_types(ch_pick) # pick sensors
+    epochs_selected.filter(None,30) # low-pass filter the data before analyses
+    epochs_selected.resample(res_freq) # Resample
+
+    MEG_data = epochs_selected.get_data() # Matrix with trialsXsensorsXtime
+    # The behavioural data file is called "data"
+    
+        
+    ch_pos = np.vstack([epochs_selected.info['chs'][ch]['loc'][0:3]
+                        for ch in range(0,ch_n)])
+    # matrix with the position of each sensor in the helmet
+    
+    time = epochs_selected.times # time of the epochs
+    kwargs = dict(
+        timing=timing,
+        trigger=trigger,
+        ch_pick=ch_pick,
+        local=local,
+        res_freq=res_freq,
+    )
+    out = {
+        "bhv": data,
+        "meg": MEG_data,
+        "xs": time,
+        "ch_pos": ch_pos,
+        "kwargs": kwargs,
+        "subject": sbjN,
+        "period": timing,
+        "ch_pick": ch_pick,
+    }
+    return out
+
+
+def save_mt_subject_data(
+        d_dict, folder="modularity/mt_processed_data/", template="p{}_{}_{}.pkl",
+):
+    fname = template.format(d_dict["subject"], d_dict["period"], d_dict["ch_pick"])
+    path = os.path.join(folder, fname)
+    pickle.dump(d_dict, open(path, "wb"))
+    return path
+
+
+def process_and_save_subject(
+        *args, save_folder=".", **kwargs
+):
+    data_dict = process_ns_meg_data(*args, **kwargs)
+    return save_mt_subject_data(data_dict, folder=save_folder)
 
 
 def get_relevant_dims(samps, m, preserve_order_if_same=True):

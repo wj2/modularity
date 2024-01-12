@@ -285,7 +285,7 @@ class ModularizerFigure(pu.Figure):
 
 class FigureWorldIntro(ModularizerFigure):
     def __init__(self, fig_key="task_intro_figure", colors=colors, **kwargs):
-        fsize = (4.4, 4)
+        fsize = (4.4, 3.5)
         cf = u.ConfigParserColor()
         cf.read(config_path)
 
@@ -329,7 +329,7 @@ class FigureWorldIntro(ModularizerFigure):
         lin_task_color = self.params.getcolor("partition_color")
 
         # any binary task
-        max_flex = n_vals**relevant_dims
+        max_flex = n_vals**relevant_dims - 1
 
         # any second order task
         label_orders = (1, 5, 10, 15)
@@ -349,20 +349,26 @@ class FigureWorldIntro(ModularizerFigure):
 
         # any contextual linear task
         ax_lin.plot(
-            relevant_dims, relevant_dims, color=lin_task_color, label="linear tasks"
+            relevant_dims, relevant_dims, color=(.8, .8, .8), label="disentangled"
         )
+        # linear_basis = n_cons*((relevant_dims - n_cons + 1))
         linear_basis = n_cons*((relevant_dims - n_cons + 1))
         ax_lin.plot(
             relevant_dims,
             linear_basis,
             color=con_task_color,
-            label="contextual tasks",
+            label="modular",
         )
-
-        ax_lin.plot(relevant_dims, max_flex, color=mf_color, label="arbitrary tasks")
+        o2_dim = np.array(list(ma.order_dim(rd, 2) for rd in relevant_dims))
+        ax_lin.plot(
+            relevant_dims, o2_dim, color=o_colors[-2], label="min unstructured"
+        )
+        
+        ax_lin.plot(relevant_dims, max_flex, color=mf_color, label="max unstructured")
         ax_nonlin.plot(relevant_dims, max_flex, color=mf_color, label="arbitrary tasks")
 
-        ax_lin.set_yscale("log")
+        # ax_lin.set_yscale("log")
+        ax_lin.set_ylim([0, 80])
 
         ax_lin.legend(frameon=False)
         ax_nonlin.legend(frameon=False)
@@ -371,6 +377,7 @@ class FigureWorldIntro(ModularizerFigure):
         ax_lin.set_ylabel("basis\ndimensionality")
         ax_nonlin.set_ylabel("basis\ndimensionality")
         ax_nonlin.set_xlabel("latent variables")
+        ax_lin.set_xlabel("latent variables")
 
 
 class FigureTaskIntro(ModularizerFigure):
@@ -670,8 +677,8 @@ class FigureInput(ModularizerFigure):
         vs = np.arange(lvs.shape[1])
         us = np.arange(reps.shape[1])
         egs = np.arange(n_egs)
-        gpl.pcolormesh(vs, egs, lvs, ax=inp_ax, cmap=cmap)
-        gpl.pcolormesh(us, egs, reps, ax=rep_ax, cmap=cmap)
+        gpl.pcolormesh(vs, egs, lvs, ax=inp_ax, cmap=cmap, rasterized=True)
+        gpl.pcolormesh(us, egs, reps, ax=rep_ax, cmap=cmap, rasterized=True)
 
         gpl.clean_plot(inp_ax, 0)
         gpl.clean_plot(rep_ax, 0)
@@ -820,6 +827,7 @@ class FigureControlledGeometry(ModularizerFigure):
             self.data[key] = self.train_eg_networks()
 
         (n_tasks, nl_strs), models, hs = self.data[key]
+        models = models.T
         
         f1_color = self.params.getcolor("f1_color")
         f2_color = self.params.getcolor("f2_color")
@@ -897,10 +905,18 @@ class FigureControlledGeometry(ModularizerFigure):
             cmap=cm,
             vmin=.5,
             vmax=1,
+            rasterized=True,
         )
         self.f.colorbar(m, ax=ax, label="zero shot\ngeneralization")
         ax.set_xticks([task_sort[0], 10, task_sort[-1]])
         ax.set_yticks([mix_sort[0], .5, mix_sort[-1]])
+        ax.invert_yaxis()
+        ax.set_xlabel("number of tasks")
+        ax.set_ylabel("input entanglement")
+        ax.tick_params(
+            top=True, labeltop=True, bottom=False, labelbottom=False
+        )
+
 
     def panel_eg_zs(self, retrain=False):
         key = "panel_eg_zs"
@@ -1218,7 +1234,7 @@ class FigureControlled(ModularizerFigure):
 
 class FigureConsequences(ModularizerFigure):
     def __init__(self, fig_key="controlled", colors=colors, **kwargs):
-        fsize = (4, 2)
+        fsize = (6, 3)
         cf = u.ConfigParserColor()
         cf.read(config_path)
 
@@ -1232,13 +1248,19 @@ class FigureConsequences(ModularizerFigure):
     def make_gss(self):
         gss = {}
 
-        cons_grid = pu.make_mxn_gridspec(
-            self.gs, 2, 3, 0, 100, 0, 100, 10, 20
+        cons_grid1 = pu.make_mxn_gridspec(
+            self.gs, 1, 3, 0, 40, 0, 100, 10, 10
         )
-        axs = self.get_axs(
-            cons_grid, squeeze=True, 
+        axs1 = self.get_axs(
+            cons_grid1, squeeze=True, 
         )
-        gss["panel_consequences"] = axs
+        cons_grid2 = pu.make_mxn_gridspec(
+            self.gs, 1, 3, 60, 100, 0, 100, 10, 20
+        )
+        axs2 = self.get_axs(
+            cons_grid2, squeeze=True, 
+        )
+        gss["panel_consequences"] = np.stack((axs1, axs2), axis=0)
 
         self.gss = gss
         
@@ -1272,6 +1294,7 @@ class FigureConsequences(ModularizerFigure):
                 diff,
                 ax=axs_map[i],
                 cmap=cm,
+                rasterized=True,
                 # vmin=-bound,
                 # vmax=bound
             )
@@ -1297,13 +1320,18 @@ class FigureConsequences(ModularizerFigure):
                     color=trace_colors[j],
                     label=label,
                 )
+            axs_trace[i].set_xlabel("training epoch")
+            axs_trace[i].set_ylabel("task performance")
             axs_map[i].set_xticks([task_sort[0], 10, task_sort[-1]])
             axs_map[i].set_yticks([mix_sort[0], .5, mix_sort[-1]])
+            axs_map[i].set_xlabel("number of tasks")
+            axs_map[i].set_ylabel("input entangling")
+            axs_map[i].invert_yaxis()
     
 
 class FigureModularityControlled(ModularizerFigure):
     def __init__(self, fig_key="controlled_rep", colors=colors, **kwargs):
-        fsize = (6, 5)
+        fsize = (6, 4.4)
         cf = u.ConfigParserColor()
         cf.read(config_path)
 
@@ -1319,14 +1347,14 @@ class FigureModularityControlled(ModularizerFigure):
         gss = {}
 
         eg_grid = pu.make_mxn_gridspec(self.gs, 2, 4,
-                                       0, 45,
+                                       0, 55,
                                        0, 100,
                                        10, 10)
         eg_axs = self.get_axs(eg_grid, squeeze=True)
         gss["panel_eg_networks"] = eg_axs
 
-        ps_grid = pu.make_mxn_gridspec(self.gs, 1, 2,
-                                       60, 100,
+        ps_grid = pu.make_mxn_gridspec(self.gs, 1, 3,
+                                       70, 100,
                                        0, 100,
                                        10, 10)
         gss["panel_param_sweep"] = self.get_axs(
@@ -1365,9 +1393,11 @@ class FigureModularityControlled(ModularizerFigure):
         key = "panel_param_sweep"
         axs = self.gss[key]
 
+        ax_focus = axs[-1]
         template = self.params.get("nls_template_big")
         nl_inds = self.params.getlist("nls_big_ids")
         plot_keys = ("model_frac", "alignment_index")
+        axs = axs[:len(plot_keys)]
         labels = {
             "model_frac": "fraction of units",
             "alignment_index": "subspace specialization",
@@ -1378,12 +1408,27 @@ class FigureModularityControlled(ModularizerFigure):
             self.data[key] = out_arrs, n_parts, mixes
         out_arrs, n_parts, mixes = self.data[key]
 
+        nl_mask = mixes >= .5
+        t_mask = n_parts <= 10
         for i, pk in enumerate(plot_keys):
             arr = np.mean(out_arrs[pk], axis=2)
             img = gpl.pcolormesh(
                 n_parts, mixes, arr, ax=axs[i], cmap=cms[i], vmin=0, rasterized=True,
             )
             self.f.colorbar(img, ax=axs[i], label=labels[pk])
+
+            sub_arr = arr[nl_mask][:, t_mask]
+            mu = np.mean(sub_arr)
+            sig = np.std(sub_arr)
+            con_levels = np.linspace(mu - sig, mu + sig, 3)
+            ax_focus.contour(
+                n_parts[t_mask],
+                mixes[nl_mask],
+                sub_arr,
+                cmap=cms[i],
+                vmin=0,
+                levels=con_levels,
+            )
 
             axs[i].set_xlabel("number of tasks")
             axs[i].set_ylabel("input entanglement")
@@ -1393,6 +1438,9 @@ class FigureModularityControlled(ModularizerFigure):
             axs[i].tick_params(
                 top=True, labeltop=True, bottom=False, labelbottom=False
             )
+        ax_focus.set_xticks([n_parts[0], 10])
+        ax_focus.set_yticks([.5, 1])
+        ax_focus.invert_yaxis()
         
     def panel_param_sweep(self, reload_=False):
         key = "panel_param_sweep"
