@@ -21,6 +21,7 @@ def create_parser():
     parser.add_argument("--batch_size", default=20, type=int)
     parser.add_argument("--n_values", default=3, type=int)
     parser.add_argument("--reg_strength", default=0, type=float)
+    parser.add_argument("--weight_scale", default=None, type=float)
     return parser
 
 
@@ -40,6 +41,7 @@ if __name__ == '__main__':
             n_values=args.n_values,
             batch_size=args.batch_size,
             act_reg_weight=args.reg_strength,
+            kernel_init=args.weight_scale,
         )
         for sk in skip_keys:
             h_same.history.pop(sk)
