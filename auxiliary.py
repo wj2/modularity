@@ -10,6 +10,36 @@ import mne
 
 from modularity.mt_package.dataprep import Data_Prep as DP
 
+
+mt_run_pattern = "mt_rw(?P<rw>[0-9\.]+)_nms(?P<nms>[0-9\.]+)_{runind}\.pkl"
+def load_mt_run(
+        runind,
+        folder="modularity/mt_modularizers",
+        pattern=mt_run_pattern,
+        gd_func=None,
+):
+    if gd_func is None:
+        def gd_func(x): return x
+    fp = pattern.format(runind=runind)
+    rel_weights = []
+    nm_strengths = []
+    same_ds = []
+    flip_ds = []
+    for path, gd, run_data in u.load_folder_regex_generator(folder, fp):
+        rel_weights.append(gd_func(gd["rw"]))
+        nm_strengths.append(gd_func(gd["nms"]))
+        same, flip = run_data
+        same_ds.append(same)
+        flip_ds.append(flip)
+
+    inds = np.argsort(nm_strengths)
+    rel_weights = np.array(rel_weights)[inds]
+    nm_strengths = np.array(nm_strengths)[inds]
+    same_ds = u.merge_dict(same_ds, sort_order=inds)
+    flip_ds = u.merge_dict(flip_ds, sort_order=inds)
+    return rel_weights, nm_strengths, same_ds, flip_ds
+
+
 def process_ns_meg_data(
         sbjN="22",
         timing="combined test",
@@ -247,12 +277,11 @@ def _add_model(
     try:
         group_method = all_args.pop("group_method")
         group_overlap = (-1,)
-    except:
+    except KeyError:
         group_method = "overlap"
         group_overlap = all_args.pop("group_overlap")
     model_type = all_args.pop("model_type")
     n_groups = all_args.pop("n_groups")
-    n_tasks = n_groups * tasks_per_group
     out = _make_lists(group_size, tasks_per_group, group_method, model_type)
     group_size, tasks_per_group, group_method, model_type = out
     arg_dict = {}
@@ -260,12 +289,12 @@ def _add_model(
         arg_dict["args_" + key] = v
     arr_shape = list(md.values())[0].shape
     all_rows = []
-    for i, j, k, l, m, n in u.make_array_ind_iterator(arr_shape):
+    for i, j, k, l_, m, n in u.make_array_ind_iterator(arr_shape):
         row_dict = dict(
             group_size=group_size[i],
             tasks_per_group=tasks_per_group[j],
             group_method=group_method[k],
-            model_type=model_type[l],
+            model_type=model_type[l_],
             group_overlap=group_overlap[m],
             n_groups=n_groups,
         )
@@ -273,7 +302,7 @@ def _add_model(
         row_dict.update(arg_dict)
         for mk, vk in md.items():
             if mk != "args":
-                vk_ind = vk[i, j, k, l, m, n]
+                vk_ind = vk[i, j, k, l_, m, n]
             else:
                 vk_ind = None
             if mk in full_mat_keys:
@@ -373,19 +402,18 @@ def load_run(
     for fl in files:
         m = re.match(f_template, fl)
         if m is not None:
-            job = m.group(1)
             full_path = os.path.join(folder, fl, file_name)
             model_dict = pickle.load(open(full_path, "rb"))
             args = vars(model_dict["args"])
             ordering.append(ordering_func(model_dict))
             for k in take_keys:
-                l = out_dict.get(k, [])
+                l_ = out_dict.get(k, [])
                 if k in model_dict.keys() and model_dict[k] is not None:
                     md_k = np.squeeze(model_dict[k])
                     md_k = np.stack(list(md_k), axis=0)
 
-                    l.append(md_k)
-                    out_dict[k] = l
+                    l_.append(md_k)
+                    out_dict[k] = l_
     for k, func in add_keys.items():
         out_dict[k] = func(out_dict)
     return sort_dict(out_dict, ordering) + (args,)
@@ -430,8 +458,8 @@ def load_models(
             job = m.group(2)
             full_path = os.path.join(folder, fl, file_name)
             model_dict = pickle.load(open(full_path, "rb"))
-            l = _add_model(df, model_dict, arr_id=arr, job_id=job)
-            full_list.extend(l)
+            l_ = _add_model(df, model_dict, arr_id=arr, job_id=job)
+            full_list.extend(l_)
     df = pd.concat(full_list, ignore_index=True)
     return df
 
