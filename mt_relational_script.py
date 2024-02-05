@@ -11,7 +11,8 @@ def create_parser():
     parser = argparse.ArgumentParser(description='fit several MT modularizers')
     parser.add_argument('-o', '--output_folder', default='.', type=str,
                         help='folder to save the output in')
-    parser.add_argument("--output_template", default="mt_rw{r}_nms{m}_{jobid}.pkl")
+    parser.add_argument("--output_template", default="mt-{t}_rw{r}_nms{m}_{jobid}.pkl")
+    parser.add_argument("--tag", default="default")
     parser.add_argument("--jobid", default="0000")    
     parser.add_argument("--relational_weight", default=0, type=float)
     parser.add_argument("--mixing", default=0, type=float)
@@ -22,6 +23,8 @@ def create_parser():
     parser.add_argument("--n_values", default=3, type=int)
     parser.add_argument("--reg_strength", default=0, type=float)
     parser.add_argument("--weight_scale", default=None, type=float)
+    parser.add_argument("--n_train", default=500, type=int)
+    parser.add_argument("--include_history", default=0, type=int)
     return parser
 
 
@@ -74,7 +77,7 @@ if __name__ == '__main__':
                     out_flip[k][j][i] = np.array(v_flip[j])
 
     fname = args.output_template.format(
-        r=args.relational_weight, m=args.mixing, jobid=args.jobid,
+        r=args.relational_weight, m=args.mixing, jobid=args.jobid, t=args.tags,
     )
     path = os.path.join(args.output_folder, fname)
     pickle.dump((out_same, out_flip), open(path, "wb"))

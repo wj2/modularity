@@ -395,6 +395,7 @@ class Modularizer:
         n_common_tasks=0,
         n_common_dims=2,
         inp_noise=0.01,
+        include_history=0,
         **kwargs
     ):
         self.rng = np.random.default_rng()
@@ -459,6 +460,9 @@ class Modularizer:
             inp_net = inp_net
             out_dims = tasks_per_group
             inp_dims = inp_dims - n_groups
+        if include_history > 0:
+            inp_net = inp_net + inp_net*include_history + include_history
+        self.include_history = include_history
         self.integrate_context = integrate_context
         self.inp_net = inp_net
         self.n_tasks_per_group = tasks_per_group
@@ -582,6 +586,9 @@ class Modularizer:
         return enc, rep, rep_out
 
     def get_representation(self, stim, group=None, layer=None):
+        if self.include_history > 0 and stim.shape[1] != self.inp_net:
+            add = np.zeros((stim.shape[0], self.inp_net - stim.shape[1]))
+            stim = np.concatenate((stim, add), axis=1)
         if layer is None:
             rep = self.rep_model(stim)
         else:
@@ -769,6 +776,14 @@ class Modularizer:
                 set(np.arange(targ.shape[1])).difference(only_tasks)
             ))
             targ[:, nan_inds] = np.nan
+        if self.include_history > 0:
+            combined_x = [x]            
+            for i in range(self.include_history):
+                new_x = np.roll(x, i + 1, axis=0)
+                new_targ = np.roll(targ, i + 1, axis=0)
+                combined_x.append(new_x)
+                combined_x.append(new_targ)
+            x = np.concatenate(combined_x, axis=1)
         return x, true, targ
 
     def fit(
