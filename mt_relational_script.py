@@ -77,7 +77,7 @@ if __name__ == '__main__':
                     out_flip[k][j][i] = np.array(v_flip[j])
 
     fname = args.output_template.format(
-        r=args.relational_weight, m=args.mixing, jobid=args.jobid, t=args.tags,
+        r=args.relational_weight, m=args.mixing, jobid=args.jobid, t=args.tag,
     )
     path = os.path.join(args.output_folder, fname)
     pickle.dump((out_same, out_flip), open(path, "wb"))
