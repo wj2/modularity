@@ -37,7 +37,7 @@ if __name__ == '__main__':
     key_length = {"tracked_activity": 4}
     skip_keys = ("tracked_activity",)
 
-    relational = args.relation_weight > 0
+    relational = args.relational_weight > 0
     for i in range(args.n_reps):
         fdg, (m_same, h_same), (m_flip, h_flip) = ms.make_and_train_mt_model_set(
             args.mixing / args.mixing_denom,
