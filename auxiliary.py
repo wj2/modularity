@@ -11,7 +11,7 @@ import mne
 from modularity.mt_package.dataprep import Data_Prep as DP
 
 
-mt_run_pattern = "mt_rw(?P<rw>[0-9\.]+)_nms(?P<nms>[0-9\.]+)_{runind}\.pkl"
+mt_run_pattern = "mt(-[a-z]*)*_rw(?P<rw>[0-9\.]+)_nms(?P<nms>[0-9\.]+)_{runind}\.pkl"
 def load_mt_run(
         runind,
         folder="modularity/mt_modularizers",

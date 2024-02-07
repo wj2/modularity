@@ -36,15 +36,19 @@ if __name__ == '__main__':
 
     key_length = {"tracked_activity": 4}
     skip_keys = ("tracked_activity",)
-    
+
+    relational = args.relation_weight > 0
     for i in range(args.n_reps):
         fdg, (m_same, h_same), (m_flip, h_flip) = ms.make_and_train_mt_model_set(
             args.mixing / args.mixing_denom,
             relational_weight=args.relational_weight / args.relational_weight_denom,
             n_values=args.n_values,
+            relational=relational,
             batch_size=args.batch_size,
             act_reg_weight=args.reg_strength,
             kernel_init=args.weight_scale,
+            n_train=args.n_train,
+            include_history=args.include_history,
         )
         for sk in skip_keys:
             h_same.history.pop(sk)
