@@ -28,7 +28,8 @@ def load_mt_run(
     for path, gd, run_data in u.load_folder_regex_generator(folder, fp):
         rel_weights.append(gd_func(gd["rw"]))
         nm_strengths.append(gd_func(gd["nms"]))
-        same, flip = run_data
+        same, flip = run_data["same"], run_data["flip"]
+        args = run_data["args"]
         same_ds.append(same)
         flip_ds.append(flip)
 
@@ -37,7 +38,7 @@ def load_mt_run(
     nm_strengths = np.array(nm_strengths)[inds]
     same_ds = u.merge_dict(same_ds, sort_order=inds)
     flip_ds = u.merge_dict(flip_ds, sort_order=inds)
-    return rel_weights, nm_strengths, same_ds, flip_ds
+    return rel_weights, nm_strengths, args, same_ds, flip_ds
 
 
 def process_ns_meg_data(

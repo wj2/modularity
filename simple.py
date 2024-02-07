@@ -1353,6 +1353,7 @@ def make_and_train_mt_model_set(
         params=params,
         n_values=n_values,
         model_type=CentralModularizer,
+        use_early_stopping=False,
         **shared_params,
         **kwargs,
     )
@@ -1361,6 +1362,7 @@ def make_and_train_mt_model_set(
         params=params,
         n_values=n_values,
         flip_groups=(0,),
+        use_early_stopping=False,
         model_type=CentralModularizer,
         **shared_params,
         **kwargs,

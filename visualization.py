@@ -10,6 +10,17 @@ import general.plotting as gpl
 import modularity.analysis as ma
 import modularity.auxiliary as maux
 
+@gpl.ax_adder
+def plot_mt_learning(*outs, mixing=0, ax=None):
+    args_list = []
+    for out in outs:
+        rel_weights, nm_strs, args, same_ds, flip_ds = out
+        args_list.append(args)
+        nm_ind = np.argmin(np.abs(nm_strs - mixing))
+        epochs = np.arange(same_ds["val_loss"].shape[2])
+        gpl.plot_trace_werr(epochs, same_ds["val_loss"][nm_ind], ax=ax, label="same")
+        gpl.plot_trace_werr(epochs, flip_ds["val_loss"][nm_ind], ax=ax, label="flip")
+    return u.merge_dict(args_list)
 
 def _get_output_clusters(ws):
     idents = np.argmax(ws, axis=1)
