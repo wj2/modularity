@@ -84,4 +84,9 @@ if __name__ == '__main__':
         r=args.relational_weight, m=args.mixing, jobid=args.jobid, t=args.tag,
     )
     path = os.path.join(args.output_folder, fname)
-    pickle.dump((out_same, out_flip), open(path, "wb"))
+    out_dict = {
+        "args": vars(args),
+        "same": out_same,
+        "flip": out_flip,
+    }
+    pickle.dump(out_dict, open(path, "wb"))
