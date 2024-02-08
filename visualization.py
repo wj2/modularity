@@ -3,24 +3,27 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import sklearn.decomposition as skd
 import itertools as it
-import scipy.stats as sts
 
 import general.utility as u
 import general.plotting as gpl
 import modularity.analysis as ma
 import modularity.auxiliary as maux
 
+
 @gpl.ax_adder
-def plot_mt_learning(*outs, mixing=0, ax=None):
+def plot_mt_learning(*outs, mixing=0, ax=None, vis_key="val_loss"):
     args_list = []
+    mixing_list = []
     for out in outs:
         rel_weights, nm_strs, args, same_ds, flip_ds = out
         args_list.append(args)
         nm_ind = np.argmin(np.abs(nm_strs - mixing))
-        epochs = np.arange(same_ds["val_loss"].shape[2])
-        gpl.plot_trace_werr(epochs, same_ds["val_loss"][nm_ind], ax=ax, label="same")
-        gpl.plot_trace_werr(epochs, flip_ds["val_loss"][nm_ind], ax=ax, label="flip")
-    return u.merge_dict(args_list)
+        mixing_list.append(nm_strs[nm_ind])
+        epochs = np.arange(same_ds[vis_key].shape[2])
+        gpl.plot_trace_werr(epochs, same_ds[vis_key][nm_ind], ax=ax, label="same")
+        gpl.plot_trace_werr(epochs, flip_ds[vis_key][nm_ind], ax=ax, label="flip")
+    return u.merge_dict(args_list), mixing_list
+
 
 def _get_output_clusters(ws):
     idents = np.argmax(ws, axis=1)
@@ -127,8 +130,8 @@ def plot_zs_generalization(
         xs[i] = k
         mu = np.mean(v[key], axis=(2, 3))
         gen, dec = mu[:, 0], mu[:, 1]
-        l = ax.plot((k,)*len(dec), gen, 'o', color=gen_color)
-        gen_color = l[0].get_color()
+        l_ = ax.plot((k,)*len(dec), gen, 'o', color=gen_color)
+        gen_color = l_[0].get_color()
         vs_gen[i] = np.mean(gen)
         vs_dec[i] = np.mean(dec)
     inds = np.argsort(xs)
@@ -221,9 +224,9 @@ def plot_order_run(
             o_pk = np.where(row[pk] > thr)[0][0]
             o_l_j.append(orders[o_pk])
             order_list[pk] = o_l_j
-    for i, (pk, l) in enumerate(order_list.items()):
-        l = ax.plot(x_list, order_list[pk], label=labels[i])
-        ax.plot(x_list, order_list[pk], "o", color=l[0].get_color())
+    for i, (pk, l_) in enumerate(order_list.items()):
+        l_ = ax.plot(x_list, order_list[pk], label=labels[i])
+        ax.plot(x_list, order_list[pk], "o", color=l_[0].get_color())
     ax.legend(frameon=False)
     gpl.clean_plot(ax, 0)
     ax.set_xlabel(x_key)
@@ -247,7 +250,7 @@ def visualize_splitting_likelihood(
         colors = (None,) * len(n_latents)
 
     for i, lat in enumerate(n_latents):
-        l = gpl.plot_trace_werr(
+        l_ = gpl.plot_trace_werr(
             n_tasks,
             ests[:, i],
             label=label_templ.format(lat),
@@ -256,7 +259,7 @@ def visualize_splitting_likelihood(
             color=colors[i],
         )
         if probs is not None:
-            color = l[0].get_color()
+            color = l_[0].get_color()
             ax.plot(n_tasks, probs[i], color=color, ls=pred_ls)
     ax.set_xlabel("N tasks")
     ax.set_ylabel("alternate decomposition\nprobability")
@@ -315,9 +318,9 @@ def visualize_training_dimensionality(
             h.history["dimensionality"], label=label_templ + " {}".format(labels[i])
         )
         c = m.n_groups
-        l = m.group_size
-        targ_lin = c * l
-        targ_nl = (c**2) * l - c
+        l_ = m.group_size
+        targ_lin = c * l_
+        targ_nl = (c**2) * l_ - c
 
     x_e = ax.get_xlim()[-1]
     ax.plot(x_e, targ_lin, "o", color=lin_color, ms=ms)
@@ -344,7 +347,6 @@ def visualize_decoder_weights(
 
     ax.plot(x, y, "o", **kwargs)
     upper_lim = max(np.max(x), np.max(y))
-    kd_pdf = sts.gaussian_kde(np.stack((x, y), axis=0))
     pts_x, pts_y = np.meshgrid(
         np.linspace(0, upper_lim, n_pts), np.linspace(0, upper_lim, n_pts)
     )
@@ -603,12 +605,12 @@ def plot_linear_model(
                 axs[j, -1].set_xlabel("intercept")
             if i == 0:
                 axs[j, i].set_ylabel(targ_fields[j])
-            l = axs[j, i].plot(x_num, w_ij)
+            l_ = axs[j, i].plot(x_num, w_ij)
             if i == 0 and j == 0:
                 use_label = label
             else:
                 use_label = ""
-            axs[j, i].plot(x_num, w_ij, "o", color=l[0].get_color(), label=use_label)
+            axs[j, i].plot(x_num, w_ij, "o", color=l_[0].get_color(), label=use_label)
             if use_num:
                 axs[j, i].set_xticks(x_num)
                 axs[j, i].set_xticklabels(x_vals)
@@ -642,11 +644,11 @@ def plot_context_scatter(m, n_samps=1000, ax=None, fwid=3, from_layer=None,
         xy_labels = ('PC 1', 'PC 2')
 
     mean_diff = list(
-        np.mean(act[labels == l, 1] - act[labels == l, 0]) for l in u_labels
+        np.mean(act[labels == l_, 1] - act[labels == l_, 0]) for l_ in u_labels
     )
     u_labels = u_labels[np.argsort(mean_diff)]
-    for i, l in enumerate(u_labels):
-        mask = labels == l
+    for i, l_ in enumerate(u_labels):
+        mask = labels == l_
         ax.plot(act[mask, 0], act[mask, 1], "o", color=colors[i])
     ax.set_xlabel(xy_labels[0])
     ax.set_ylabel(xy_labels[1])
@@ -753,7 +755,6 @@ def plot_simple_tuning(m, xs, hist, ind=0, ax=None, thr=0.0001, xs_tr=None, ys=N
     reps = np.array(m(xs_tr))
     x_mask = reps[:, ind] > thr
     xs_in = xs[x_mask]
-    xs_tr_in = xs_tr[x_mask]
 
     final_weights = u.make_unit_vector(np.array(m.weights[0]).T)[ind]
     ax.plot([0, final_weights[0]], [0, final_weights[1]])
@@ -920,7 +921,7 @@ def plot_2context_activity_diff(
 
     plot_arr = np.concatenate((m_rep0[:, sort_inds], m_rep1[:, sort_inds]))
 
-    m_arr = np.mean(plot_arr, axis=0)
+    # m_arr = np.mean(plot_arr, axis=0)
     # ax_corr.plot(mr0 - m_arr, mr1 - m_arr, 'o')
     vmax = np.mean(plot_arr) + np.std(plot_arr)
     ax.imshow(plot_arr, aspect="auto", vmax=vmax)
@@ -995,8 +996,8 @@ def plot_param_sweep(
     dims = tuple(np.arange(len(mod_mat.shape), dtype=int))
     mean_mat = np.mean(mod_mat, axis=dims[2:])
     for i in range(mod_mat.shape[1]):
-        l = gpl.plot_trace_werr(x_values, mean_mat[:, i], label=line_labels[i], ax=ax)
-        col = l[0].get_color()
+        l_ = gpl.plot_trace_werr(x_values, mean_mat[:, i], label=line_labels[i], ax=ax)
+        col = l_[0].get_color()
         for ind in u.make_array_ind_iterator(mod_mat.shape[2:]):
             full_ind = (slice(None), i) + ind
             ax.plot(x_values, mod_mat[full_ind], "o", color=col)

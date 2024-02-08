@@ -26,6 +26,7 @@ def create_parser():
     parser.add_argument("--n_train", default=500, type=int)
     parser.add_argument("--include_history", default=0, type=int)
     parser.add_argument("--train_epochs", default=10, type=int)    
+    parser.add_argument("--use_relational_history", default=False, action="store_true")
     return parser
 
 
@@ -51,6 +52,7 @@ if __name__ == '__main__':
             n_train=args.n_train,
             include_history=args.include_history,
             train_epochs=args.train_epochs,
+            relational_history=args.use_relational_history,
         )
         for sk in skip_keys:
             h_same.history.pop(sk)

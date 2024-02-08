@@ -396,6 +396,7 @@ class Modularizer:
         n_common_dims=2,
         inp_noise=0.01,
         include_history=0,
+        relational_history=False,
         **kwargs
     ):
         self.rng = np.random.default_rng()
@@ -460,8 +461,11 @@ class Modularizer:
             inp_net = inp_net
             out_dims = tasks_per_group
             inp_dims = inp_dims - n_groups
-        if include_history > 0:
+        if include_history > 0 and not relational_history:
             inp_net = inp_net + inp_net*include_history + include_history
+        elif include_history > 0 and relational_history:
+            inp_net = inp_net + include_history*2
+        self.relational_history = relational_history
         self.include_history = include_history
         self.integrate_context = integrate_context
         self.inp_net = inp_net
@@ -780,6 +784,8 @@ class Modularizer:
             combined_x = [x]            
             for i in range(self.include_history):
                 new_x = np.roll(x, i + 1, axis=0)
+                if self.relational_history:
+                    new_x = np.sum(x * new_x, axis=1, keepdims=True)
                 new_targ = np.roll(targ, i + 1, axis=0)
                 combined_x.append(new_x)
                 combined_x.append(new_targ)
