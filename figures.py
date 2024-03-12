@@ -623,7 +623,7 @@ class FigureControlledInput(ModularizerFigure):
             mv.plot_context_clusters(
                 im_ident, ax=ax_clust, cmap=cmap, context_colors=(c1_color, c2_color)
             )
-            mv.plot_context_scatter(
+            mv.plot_optimal_context_scatter(
                 im_ident, ax=ax_scatt, colors=(c1_color, neutral_color, c2_color)
             )
             
@@ -1383,7 +1383,7 @@ class FigureModularityControlled(ModularizerFigure):
             mv.plot_context_clusters(
                 models[i, j], ax=axs[j, i * 2], context_colors=(c1_color, c2_color),
             )
-            mv.plot_context_scatter(
+            mv.plot_optimal_context_scatter(
                 models[i, j], ax=axs[j, i * 2 + 1], colors=colors,
             )
             print(ma.compute_alignment_index(models[i, j]))

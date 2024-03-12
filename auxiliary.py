@@ -12,6 +12,13 @@ from modularity.mt_package.dataprep import Data_Prep as DP
 
 
 mt_run_pattern = "mt(-[a-z]*)*_rw(?P<rw>[0-9\.]+)_nms(?P<nms>[0-9\.]+)_{runind}\.pkl"
+def make_mt_run_db(folder="modularity/mt_modularizers", pattern=mt_run_pattern):
+    runind = "(?P<runind>[0-9]+)"
+    pattern = pattern.format(runind=runind)
+    out = u.make_cluster_db(folder, pattern)
+    return out
+
+
 def load_mt_run(
         runind,
         folder="modularity/mt_modularizers",

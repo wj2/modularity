@@ -626,18 +626,38 @@ def plot_linear_model(
     return f, axs
 
 
-def plot_context_scatter(m, n_samps=1000, ax=None, fwid=3, from_layer=None,
-                         colors=None):
+def plot_optimal_context_scatter(
+        *args, **kwargs,
+):
+    out = plot_context_scatter(
+        *args, cluster_func=ma.infer_optimal_activity_clusters, **kwargs
+    )
+    return out
+
+
+def plot_context_scatter(
+        m,
+        n_samps=1000,
+        ax=None,
+        fwid=3,
+        from_layer=None,
+        colors=None,
+        cluster_func=ma.infer_activity_clusters,
+):
     if ax is None:
         f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
-    labels, act = ma.infer_activity_clusters(
+    labels, act = cluster_func(
         m, n_samps=n_samps, use_mean=True, ret_act=True, from_layer=from_layer
     )
     xy_labels = ('con 1 activity', 'con 2 activity')
     u_labels = np.unique(labels)
     if colors is None:
-        colors = (None,)*act.shape[1]
         colors = (None,)*len(u_labels)
+    if len(u_labels) == 1:
+        colors = (colors[1],)
+    if len(u_labels) == 2:
+        colors = (colors[0], colors[-1])
+        
     if act.shape[1] > 2:
         p = skd.PCA(2)
         act = p.fit_transform(act)

@@ -22,6 +22,7 @@ import modularity.auxiliary as maux
 import disentangled.data_generation as dg
 import composite_tangling.code_creation as cc
 import sklearn.metrics.pairwise as skmp
+import sklearn.metrics as skmet
 
 tfk = tf.keras
 
@@ -857,6 +858,34 @@ def context_separable_only_prob_est(T, L, fdg, C=2, n_samps=100):
     return n_splits
 
 
+def _fit_optimal_clusters(
+        act,
+        max_components,
+        model=skmx.GaussianMixture,
+        use_init=False,
+        demean=True,
+):
+    if demean:
+        act = act - np.mean(act, axis=0, keepdims=True)
+    n_components = range(1, max_components + 1)
+    scores = np.zeros(len(n_components))
+    models = np.zeros_like(scores, dtype=object)
+    labels = np.zeros((len(n_components), act.shape[1]))
+    for i, n_comp in enumerate(n_components):
+        if use_init and n_comp > 1:
+            means_init = np.identity(n_comp)[:, : n_comp - 1]
+        else:
+            means_init = None
+        m = model(n_comp, means_init=means_init)
+        labels[i] = m.fit_predict(act.T)
+        models[i] = m
+        scores[i] = m.bic(act.T)
+    ind = np.argmin(scores)
+    m = models[ind]
+    labels = labels[ind]
+    return m, labels    
+
+
 def _fit_clusters(
     act, n_components, model=skmx.GaussianMixture, use_init=False, demean=True
 ):
@@ -1572,6 +1601,38 @@ def new_context_training(
         **kwargs,
     )
     return (out_two[0], h_next), out_one
+
+
+def infer_optimal_activity_clusters(
+        m,
+        n_samps=1000,
+        use_mean=True,
+        ret_act=False,
+        model=skmx.GaussianMixture,
+        from_layer=None,
+        order=True,        
+):
+    activity = sample_all_contexts(
+        m, n_samps=n_samps, use_mean=use_mean, from_layer=from_layer
+    )
+    act_full = np.concatenate(activity, axis=0)
+    _, out = _fit_optimal_clusters(act_full, len(activity) + 1)
+    
+    if order:
+        u_clust = np.unique(out)
+        m_diff = np.mean(activity[0] - activity[1], axis=0)
+        diffs = np.zeros(len(u_clust))
+        for i, uc in enumerate(u_clust):
+            diffs[i] = np.mean(m_diff[uc == out])
+        inds = np.argsort(diffs)
+        ranks = np.argsort(inds)
+        new_out = np.zeros_like(out)
+        for i, uc in enumerate(u_clust):
+            new_out[out == uc] = ranks[i]
+        out = new_out
+    if ret_act:
+        out = (out, act_full.T)
+    return out    
 
 
 def infer_activity_clusters(

@@ -233,6 +233,7 @@ if __name__ == '__main__':
             n_train=args.ccgp_n_train,
             fix_features=fix_feats,
             eval_layers=args.eval_intermediate,
+            noise_cov=sigma,
         )
     else:
         out = (None, None, None)

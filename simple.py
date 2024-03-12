@@ -1014,6 +1014,7 @@ class IdentityModularizer(Modularizer):
         self.renorm_stim = False
         self.rng = np.random.default_rng()
         self.n_tasks_per_group = tasks_per_group
+        self.include_history = 0
 
     @classmethod
     def copy_groups(cls, model):
