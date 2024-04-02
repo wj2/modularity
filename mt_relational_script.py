@@ -21,6 +21,7 @@ def create_parser():
     parser.add_argument("--n_reps", default=10, type=int)
     parser.add_argument("--batch_size", default=20, type=int)
     parser.add_argument("--n_values", default=3, type=int)
+    parser.add_argument("--n_contexts", default=2, type=int)
     parser.add_argument("--reg_strength", default=0, type=float)
     parser.add_argument("--weight_scale", default=None, type=float)
     parser.add_argument("--n_train", default=500, type=int)
@@ -56,6 +57,7 @@ if __name__ == '__main__':
             train_epochs=args.train_epochs,
             relational_history=args.use_relational_history,
             use_nonexhaustive=args.use_nonexhaustive,
+            n_cons=args.n_contexts,
         )
         for sk in skip_keys:
             h_same.history.pop(sk)
