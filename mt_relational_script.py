@@ -27,6 +27,8 @@ def create_parser():
     parser.add_argument("--include_history", default=0, type=int)
     parser.add_argument("--train_epochs", default=10, type=int)    
     parser.add_argument("--use_relational_history", default=False, action="store_true")
+    parser.add_argument("--use_nonexhaustive", default=False, action="store_true")
+    
     return parser
 
 
@@ -53,6 +55,7 @@ if __name__ == '__main__':
             include_history=args.include_history,
             train_epochs=args.train_epochs,
             relational_history=args.use_relational_history,
+            use_nonexhaustive=args.use_nonexhaustive,
         )
         for sk in skip_keys:
             h_same.history.pop(sk)

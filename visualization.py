@@ -54,15 +54,15 @@ def _get_cluster_order(ws, n_groups=None, alg=None):
 
 
 def visualize_activity(
-        inputs,
-        activity,
-        targs,
-        con_inds=(-2, -1),
-        c_colors=("r", "g"),
-        r1_color="b",
-        r2_color="m",
-        trs=None,
-        ax=None,
+    inputs,
+    activity,
+    targs,
+    con_inds=(-2, -1),
+    c_colors=("r", "g"),
+    r1_color="b",
+    r2_color="m",
+    trs=None,
+    ax=None,
 ):
     if ax is None:
         f, ax = plt.subplots(1, 1, subplot_kw={"projection": "3d"})
@@ -73,14 +73,14 @@ def visualize_activity(
         ax=ax,
         p=trs,
         dim_red_mean=False,
-        colors=((.1, .1, .1),),
+        colors=((0.1, 0.1, 0.1),),
     )
     for i, c in enumerate(u_cons):
         c_mask = cons == c
         con_act = activity[c_mask]
         lvs = inputs[c_mask]
         for j, k in it.combinations(range(len(lvs)), 2):
-            if np.sum((lvs[j] - lvs[k])**2) == 1:
+            if np.sum((lvs[j] - lvs[k]) ** 2) == 1:
                 rel_points = con_act[np.array([j, k])]
                 gpl.plot_highdim_trace(
                     rel_points,
@@ -118,7 +118,7 @@ def plot_zs_generalization(
     key="zero shot",
     gen_color=None,
     dec_color=None,
-    x_denom=100
+    x_denom=100,
 ):
     if ax is None:
         f, ax = plt.subplots(1, 1)
@@ -126,11 +126,11 @@ def plot_zs_generalization(
     vs_gen = np.zeros_like(xs)
     vs_dec = np.zeros_like(xs)
     for i, (k, v) in enumerate(con_run.items()):
-        k = k/x_denom
+        k = k / x_denom
         xs[i] = k
         mu = np.mean(v[key], axis=(2, 3))
         gen, dec = mu[:, 0], mu[:, 1]
-        l_ = ax.plot((k,)*len(dec), gen, 'o', color=gen_color)
+        l_ = ax.plot((k,) * len(dec), gen, "o", color=gen_color)
         gen_color = l_[0].get_color()
         vs_gen[i] = np.mean(gen)
         vs_dec[i] = np.mean(dec)
@@ -141,7 +141,7 @@ def plot_zs_generalization(
     vs_dec = vs_dec[inds]
     # ax.plot(xs, vs_dec, color=dec_color, label="performance")
 
-    gpl.add_hlines(.5, ax)
+    gpl.add_hlines(0.5, ax)
     ax.set_ylabel("task performance")
     ax.set_xlabel("nonlinear mixing")
 
@@ -159,11 +159,11 @@ def plot_order_spectrum(spectrum_dict, axs=None, key_order=None, shares=None):
     if key_order is None:
         if "model_rep_dynamic" in spectrum_dict.keys():
             key_order = ("input", "model_rep_dynamic", "model_rep", "task")
-            shares = (.05, .8, .05, .05)
+            shares = (0.05, 0.8, 0.05, 0.05)
         else:
             key_order = ("input", "model_rep", "task")
     if shares is None:
-        shares = (1/len(key_order),)*len(key_order)
+        shares = (1 / len(key_order),) * len(key_order)
     if axs is None:
         f = plt.figure()
         gs = f.add_gridspec(100, 100)
@@ -171,7 +171,7 @@ def plot_order_spectrum(spectrum_dict, axs=None, key_order=None, shares=None):
         start = 0
         sharey = None
         for i, s in enumerate(shares):
-            end = int(np.round(s*100)) + start
+            end = int(np.round(s * 100)) + start
             axs.append(f.add_subplot(gs[:, start:end], sharey=sharey))
             start = end
             sharey = axs[i]
@@ -191,9 +191,7 @@ def plot_spectrum(x_spec, spectrum, ax=None, **kwargs):
         f, ax = plt.subplots(1, 1)
     ax.bar(x_spec, spectrum, **kwargs)
     gpl.clean_plot(ax, 0)
-    gpl.make_yaxis_scale_bar(
-        ax, .5, double=False, label=r"$r^{2}$", text_buff=.5
-    )
+    gpl.make_yaxis_scale_bar(ax, 0.5, double=False, label=r"$r^{2}$", text_buff=0.5)
     ax.set_xlabel("order")
     return ax
 
@@ -201,17 +199,15 @@ def plot_spectrum(x_spec, spectrum, ax=None, **kwargs):
 def plot_order_run(
     run_df,
     x_key="mixing_strength",
-    pks=("out_scores_input",
-         "out_scores_model_rep",
-         "out_scores_task"),
+    pks=("out_scores_input", "out_scores_model_rep", "out_scores_task"),
     labels=("input", "rep", "tasks"),
     fwid=2,
     ax=None,
-    thr=.99,
+    thr=0.99,
     set_labels=True,
 ):
     if not set_labels:
-        labels = ("",)*len(labels)
+        labels = ("",) * len(labels)
     if ax is None:
         f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
     run_df = run_df.sort_values(x_key)
@@ -296,8 +292,8 @@ def plot_training(hist, ax=None, training_key="val_loss", func=None, **kwargs):
     tc = np.array(hist.history[training_key])
     epochs = np.arange(tc.shape[-1])
     gpl.plot_trace_werr(epochs, tc, ax=ax, **kwargs)
-    return ax    
-    
+    return ax
+
 
 def visualize_training_dimensionality(
     mhs,
@@ -408,6 +404,27 @@ def plot_task_object(
             labelers[j]("F{}".format(an))
 
 
+def plot_sequential_loss(hists, axs=None, cmap="Blues", fwid=2, con_seq=None):
+    if axs is None:
+        f, axs = plt.subplots(
+            1, len(hists), figsize=(len(hists) * fwid, fwid), sharey=True
+        )
+    cm = plt.get_cmap(cmap)
+    colors = cm(np.linspace(0.3, 1, len(hists)))
+    if con_seq is None:
+        con_seq = list(range(len(hists)))
+    for i, hist in enumerate(hists):
+        for j in range(len(hists)):
+            hist_ij = hist.history["corr_tracking"][j]
+            epochs = np.arange(len(hist_ij))
+            if con_seq[i] == j:
+                axs[i].plot(epochs, hist_ij, color=colors[j])
+            else:
+                axs[i].plot(epochs, hist_ij, color=colors[j], linestyle="dashed")
+        gpl.add_hlines(0.5, axs[i])
+        gpl.clean_plot(axs[i], i)
+
+
 geometry_metrics = ("shattering", "within_ccgp", "across_ccgp")
 
 
@@ -476,15 +493,19 @@ def visualize_module_activity(
     p=None,
     fix_vars=None,
     fix_value=0,
-    **kwargs
+    linestyle="solid",
+    **kwargs,
 ):
     inp_rep, stim, targ = model.get_x_true(
-        n_train=n_samps, group_inds=context, fix_vars=fix_vars, fix_value=fix_value,
+        n_train=n_samps,
+        group_inds=context,
+        fix_vars=fix_vars,
+        fix_value=fix_value,
     )
     stim, ind = np.unique(stim, axis=0, return_index=True)
     targ = targ[ind]
     inp_rep = inp_rep[ind]
-    
+
     rep = model.get_representation(inp_rep)
     rel_stim = stim[:, model.groups[context]]
     centroids = np.unique(rel_stim, axis=0)
@@ -515,14 +536,20 @@ def visualize_module_activity(
         )
         rep_cents[tuple(c)] = rep_cent
     if line_colors is None:
-        line_colors = (line_color,)*centroids.shape[1]
+        line_colors = (line_color,) * centroids.shape[1]
     for c1, c2 in it.combinations(centroids, 2):
         if np.sum((c1 - c2) ** 2) == 1:
-            ind = np.argmax((c1 - c2)**2)
+            ind = np.argmax((c1 - c2) ** 2)
             rc1 = rep_cents[tuple(c1)]
             rc2 = rep_cents[tuple(c2)]
             comb = np.concatenate((rc1, rc2), axis=0)
-            gpl.plot_highdim_trace(comb, ax=ax, p=p, color=line_colors[ind])
+            gpl.plot_highdim_trace(
+                comb,
+                ax=ax,
+                p=p,
+                color=line_colors[ind],
+                linestyle=linestyle,
+            )
 
     if plot_resp_cats:
         cats = model.group_func[context](rel_stim)[:, task_ind]
@@ -571,7 +598,7 @@ def plot_clustering_metrics(
     clustering_names=clustering_metrics,
     axs=None,
     fwid=3,
-    **kwargs
+    **kwargs,
 ):
     if axs is None:
         n_plots = len(clustering_names)
@@ -627,7 +654,8 @@ def plot_linear_model(
 
 
 def plot_optimal_context_scatter(
-        *args, **kwargs,
+    *args,
+    **kwargs,
 ):
     out = plot_context_scatter(
         *args, cluster_func=ma.infer_optimal_activity_clusters, **kwargs
@@ -636,32 +664,32 @@ def plot_optimal_context_scatter(
 
 
 def plot_context_scatter(
-        m,
-        n_samps=1000,
-        ax=None,
-        fwid=3,
-        from_layer=None,
-        colors=None,
-        cluster_func=ma.infer_activity_clusters,
+    m,
+    n_samps=1000,
+    ax=None,
+    fwid=3,
+    from_layer=None,
+    colors=None,
+    cluster_func=ma.infer_activity_clusters,
 ):
     if ax is None:
         f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
     labels, act = cluster_func(
         m, n_samps=n_samps, use_mean=True, ret_act=True, from_layer=from_layer
     )
-    xy_labels = ('con 1 activity', 'con 2 activity')
+    xy_labels = ("con 1 activity", "con 2 activity")
     u_labels = np.unique(labels)
     if colors is None:
-        colors = (None,)*len(u_labels)
+        colors = (None,) * len(u_labels)
     if len(u_labels) == 1:
         colors = (colors[1],)
     if len(u_labels) == 2:
         colors = (colors[0], colors[-1])
-        
+
     if act.shape[1] > 2:
         p = skd.PCA(2)
         act = p.fit_transform(act)
-        xy_labels = ('PC 1', 'PC 2')
+        xy_labels = ("PC 1", "PC 2")
 
     mean_diff = list(
         np.mean(act[labels == l_, 1] - act[labels == l_, 0]) for l_ in u_labels
@@ -692,8 +720,7 @@ def accumulate_run_quants(
     dms = []
     quants = {}
     for ri in ri_list:
-        run = maux.load_run(ri, file_template=templ,
-                            **kwargs)
+        run = maux.load_run(ri, file_template=templ, **kwargs)
         dm = run[1]
         dms.append(dm)
         key = tuple(_remove_singleton(run[2][k]) for k in legend_keys)
@@ -712,8 +739,9 @@ def visualize_ri_list(
     if ax is None:
         f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
 
-    quants = accumulate_run_quants(ri_list, quant_key=quant_key,
-                                   templ=templ, legend_keys=legend_keys)
+    quants = accumulate_run_quants(
+        ri_list, quant_key=quant_key, templ=templ, legend_keys=legend_keys
+    )
     print(quant_key)
     for k, (xs, qs) in quants.items():
         l_text = list(
@@ -732,7 +760,7 @@ def plot_context_clusters(
     from_layer=None,
     cmap="Blues",
     context_colors=None,
-    gap=.05,
+    gap=0.05,
     fontsize="small",
 ):
     if ax is None:
@@ -744,10 +772,10 @@ def plot_context_clusters(
         m, n_samps=n_samps, use_mean=False, from_layer=from_layer
     )
     if context_colors is None:
-        context_colors = (None,)*len(activity)
+        context_colors = (None,) * len(activity)
     sort_inds = np.argsort(labels)
     a_full = np.concatenate(activity, axis=0)
-    gap = int(np.round(gap*n_samps))
+    gap = int(np.round(gap * n_samps))
     vmax = np.mean(a_full) + np.std(a_full)
     # gpl.pcolormesh(
     #     a_full[:, sort_inds], vmax=vmax, cmap=cmap, rasterized=True, ax=ax,
@@ -757,12 +785,16 @@ def plot_context_clusters(
     ax.imshow(a_full[:, sort_inds], aspect="auto", vmax=vmax, cmap=cmap)
     for i, a in enumerate(activity):
         n_samps = a.shape[0]
-        gpl.make_yaxis_scale_bar(ax, anchor=(n_samps/2) + n_samps*i,
-                                 magnitude=n_samps/2 - gap,
-                                 label='con {}'.format(i + 1),
-                                 color=context_colors[i], fontsize=fontsize)
+        gpl.make_yaxis_scale_bar(
+            ax,
+            anchor=(n_samps / 2) + n_samps * i,
+            magnitude=n_samps / 2 - gap,
+            label="con {}".format(i + 1),
+            color=context_colors[i],
+            fontsize=fontsize,
+        )
     gpl.clean_plot(ax, 1)
-    ax.set_xlabel('hidden units')
+    ax.set_xlabel("hidden units")
     return ax
 
 

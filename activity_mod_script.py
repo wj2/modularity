@@ -81,6 +81,7 @@ def create_parser():
     parser.add_argument('--reload_image_dataset', default=False, action='store_true')
     parser.add_argument('--no_geometry_analysis', default=False, action='store_true')
     parser.add_argument('--rescale_fdg', default=False, action='store_true')
+    parser.add_argument('--mixing_order', default=None, type=int)
     return parser
 
 
@@ -145,8 +146,12 @@ if __name__ == '__main__':
     print(args.rep_dim)
     if args.discrete_mixed_input:
         mix_strength = args.dm_input_mixing/args.dm_input_mixing_denom
-        fdg = dg.MixedDiscreteDataGenerator(inp_dim, n_units=args.rep_dim,
-                                            mix_strength=mix_strength)
+        fdg = dg.MixedDiscreteDataGenerator(
+            inp_dim,
+            n_units=args.rep_dim,
+            mix_strength=mix_strength,
+            mixing_order=args.mixing_order,
+        )
     elif args.twod_shape_input:
         twod_file = ('disentangled/datasets/'
                      'dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')

@@ -13,6 +13,7 @@ import disentangled.aux as da
 import disentangled.disentanglers as dd
 import disentangled.data_generation as dg
 import modularity.auxiliary as maux
+from general.tf.callbacks import CorrCallback
 
 tfk = tf.keras
 tfkl = tf.keras.layers
@@ -49,8 +50,14 @@ def xor(x):
     return parity
 
 
-def generate_linear_tasks(n_inp, n_tasks=1, intercept_var=0, axis_tasks=False,
-                          separate_tasks=None, split_inp=.5):
+def generate_linear_tasks(
+    n_inp,
+    n_tasks=1,
+    intercept_var=0,
+    axis_tasks=False,
+    separate_tasks=None,
+    split_inp=0.5,
+):
     rng = np.random.default_rng()
     if axis_tasks:
         inds = rng.choice(n_inp, size=(n_tasks,))
@@ -68,7 +75,7 @@ def generate_linear_tasks(n_inp, n_tasks=1, intercept_var=0, axis_tasks=False,
             separate_tasks = np.array(list(separate_tasks))
         other_tasks = set(np.arange(n_tasks, dtype=int)).difference(separate_tasks)
         other_tasks = np.array(list(other_tasks))
-        dim_split = int(np.ceil(split_inp*n_inp))
+        dim_split = int(np.ceil(split_inp * n_inp))
         task[other_tasks, dim_split:] = 0
         task[separate_tasks, :dim_split] = 0
         task = u.make_unit_vector(task)
@@ -174,7 +181,7 @@ class Mixer:
         noise=0.1,
         inp_noise=0.01,
         bias_const=0,
-        **out_params
+        **out_params,
     ):
         layer_list = []
         layer_list.append(tfkl.InputLayer(input_shape=inp))
@@ -255,31 +262,40 @@ class ImageDGWrapper(dg.DataGenerator):
         return self.use_dg.get_representation(o_samps)
 
 
-twod_file = ('disentangled/datasets/'
-             'dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
-twod_cache_file = 'disentangled/datasets/shape_dataset.pkl'
-default_pre_net = ('https://tfhub.dev/google/imagenet/'
-                   'mobilenet_v3_small_100_224/feature_vector/5')
+twod_file = "disentangled/datasets/" "dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz"
+twod_cache_file = "disentangled/datasets/shape_dataset.pkl"
+default_pre_net = (
+    "https://tfhub.dev/google/imagenet/" "mobilenet_v3_small_100_224/feature_vector/5"
+)
 
 
 def load_twod_dg(use_cache=True, cache_file=twod_cache_file, **kwargs):
     no_learn_lvs = np.array([True, False, True, False, False])
-    cache = pickle.load(open(cache_file, 'rb'))
+    cache = pickle.load(open(cache_file, "rb"))
     return load_image_dg(twod_file, no_learn_lvs, cache=cache, **kwargs)
 
 
 def load_chair_dg(**kwargs):
-    raise IOError('not implemented yet')
+    raise IOError("not implemented yet")
 
 
-def load_image_dg(full_data_file, no_learn_lvs, img_resize=(224, 224),
-                  img_pre_net=default_pre_net, cache=None):
-    dg_use = dg.TwoDShapeGenerator(twod_file, img_size=img_resize,
-                                   max_load=np.inf, convert_color=True,
-                                   pre_model=img_pre_net,
-                                   cached_data_table=cache)
+def load_image_dg(
+    full_data_file,
+    no_learn_lvs,
+    img_resize=(224, 224),
+    img_pre_net=default_pre_net,
+    cache=None,
+):
+    dg_use = dg.TwoDShapeGenerator(
+        twod_file,
+        img_size=img_resize,
+        max_load=np.inf,
+        convert_color=True,
+        pre_model=img_pre_net,
+        cached_data_table=cache,
+    )
 
-    dg_wrap = ImageDGWrapper(dg_use, ~no_learn_lvs, 'shape', 0)
+    dg_wrap = ImageDGWrapper(dg_use, ~no_learn_lvs, "shape", 0)
     return dg_wrap
 
 
@@ -299,8 +315,16 @@ class TrackWeights(tfk.callbacks.Callback):
 
 
 class TrackReps(tfk.callbacks.Callback):
-    def __init__(self, model, *args, n_rep_samps=10**4, mean_tasks=True,
-                 only_groups=None, sample_all=False, **kwargs):
+    def __init__(
+        self,
+        model,
+        *args,
+        n_rep_samps=10**4,
+        mean_tasks=True,
+        only_groups=None,
+        sample_all=False,
+        **kwargs,
+    ):
         self.modu_model = model
         super().__init__(*args, **kwargs)
 
@@ -321,8 +345,15 @@ class TrackReps(tfk.callbacks.Callback):
 
 
 class DimCorrCallback(tfk.callbacks.Callback):
-    def __init__(self, model, *args, dim_samps=10**4, mean_tasks=True,
-                 only_groups=None, **kwargs):
+    def __init__(
+        self,
+        model,
+        *args,
+        dim_samps=10**4,
+        mean_tasks=True,
+        only_groups=None,
+        **kwargs,
+    ):
         self.modu_model = model
         super().__init__(*args, **kwargs)
         self.dim = []
@@ -341,8 +372,9 @@ class DimCorrCallback(tfk.callbacks.Callback):
 
         _, _, reps_c0 = self.modu_model.sample_reps(self.dim_samps, context=0)
         dim_c0 = u.participation_ratio(reps)
-        corr = 1 - self.modu_model.get_ablated_loss(mean_tasks=self.mean_tasks,
-                                                    only_groups=self.only_groups)
+        corr = 1 - self.modu_model.get_ablated_loss(
+            mean_tasks=self.mean_tasks, only_groups=self.only_groups
+        )
 
         self.dim.append(dim)
         self.dim_c0.append(dim_c0)
@@ -355,8 +387,9 @@ class DimCorrCallback(tfk.callbacks.Callback):
         _, _, reps_c0 = self.modu_model.sample_reps(self.dim_samps, context=0)
         dim_c0 = u.participation_ratio(reps_c0)
 
-        corr = 1 - self.modu_model.get_ablated_loss(mean_tasks=self.mean_tasks,
-                                                    only_groups=self.only_groups)
+        corr = 1 - self.modu_model.get_ablated_loss(
+            mean_tasks=self.mean_tasks, only_groups=self.only_groups
+        )
         self.dim.append(dim)
         self.dim_c0.append(dim_c0)
         self.corr.append(corr)
@@ -365,6 +398,10 @@ class DimCorrCallback(tfk.callbacks.Callback):
         self.dim = np.array(self.dim)
         self.dim_c0 = np.array(self.dim_c0)
         self.corr = np.array(self.corr)
+
+
+def categorization_loss(y_true, y_pred):
+    return np.mean((y_pred > 0.5) == y_true, axis=0)
 
 
 class Modularizer:
@@ -397,7 +434,7 @@ class Modularizer:
         inp_noise=0.01,
         include_history=0,
         relational_history=False,
-        **kwargs
+        **kwargs,
     ):
         self.rng = np.random.default_rng()
         self.continuous = False
@@ -422,8 +459,9 @@ class Modularizer:
         if n_common_tasks > 0:
             all_dims = set(list(range(inp_dims_anc - sub_context)))
             potential_dims = all_dims.difference(np.unique(groups))
-            self.ct_group = self.rng.choice(potential_dims, size=n_common_dims,
-                                            replace=False)
+            self.ct_group = self.rng.choice(
+                potential_dims, size=n_common_dims, replace=False
+            )
         else:
             self.ct_group = None
         if common_augmented_inputs:
@@ -462,9 +500,9 @@ class Modularizer:
             out_dims = tasks_per_group
             inp_dims = inp_dims - n_groups
         if include_history > 0 and not relational_history:
-            inp_net = inp_net + inp_net*include_history + include_history
+            inp_net = inp_net + inp_net * include_history + include_history
         elif include_history > 0 and relational_history:
-            inp_net = inp_net + include_history*2
+            inp_net = inp_net + include_history * 2
         self.relational_history = relational_history
         self.include_history = include_history
         self.integrate_context = integrate_context
@@ -476,9 +514,7 @@ class Modularizer:
         self.out_dims = out_dims
         self.rel_vars = np.unique(groups)
         irrel_vars = set(np.arange(inp_dims))
-        self.irrel_vars = np.array(list(
-            irrel_vars.difference(self.rel_vars)
-        ))
+        self.irrel_vars = np.array(list(irrel_vars.difference(self.rel_vars)))
 
         self.hidden_dims = int(round(len(groups) * group_width))
         self.out_group_labels = np.concatenate(
@@ -520,7 +556,7 @@ class Modularizer:
         out_kernel_init=None,
         out_constant_init=None,
         use_bias=True,
-        **layer_params
+        **layer_params,
     ):
         layer_list = []
         layer_list.append(tfkl.InputLayer(input_shape=inp))
@@ -569,7 +605,7 @@ class Modularizer:
             activity_regularizer=act_reg,
             kernel_initializer=kernel_init,
             use_bias=use_bias,
-            **layer_params
+            **layer_params,
         )
         layer_list.append(lh)
         if noise > 0:
@@ -616,8 +652,7 @@ class Modularizer:
         rep = self.get_representation(x, layer=layer)
         return true, x, rep
 
-    def _compile(self, optimizer=None, loss=None, ignore_nan=True,
-                 lr=1e-3):
+    def _compile(self, optimizer=None, loss=None, ignore_nan=True, lr=1e-3):
         if optimizer is None:
             optimizer = tf.optimizers.Adam(learning_rate=lr)
         if loss is None:
@@ -697,8 +732,9 @@ class Modularizer:
     ):
         if not self.compiled:
             self._compile()
-        x, true, targ = self.get_x_true(n_train=n_samps, group_inds=group_ind,
-                                        only_groups=only_groups)
+        x, true, targ = self.get_x_true(
+            n_train=n_samps, group_inds=group_ind, only_groups=only_groups
+        )
         if layer is None:
             reps = self.get_representation(x)
             if ablation_mask is not None:
@@ -713,7 +749,7 @@ class Modularizer:
         if ret_err_rate:
             out_binary = out > 0.5
             corr = out_binary == targ
-            
+
             out = 1 - np.mean(corr, axis=0)
             if mean_tasks:
                 out = np.mean(out)
@@ -741,13 +777,13 @@ class Modularizer:
             true = self.sample_stim(n_train)
         if group_inds is None and self.single_output:
             if self.continuous:
-                group_inds = np.argmax(true[:, -self.n_groups:], axis=1)
+                group_inds = np.argmax(true[:, -self.n_groups :], axis=1)
             else:
                 group_inds = self.rng.choice(self.n_groups, n_train)
         elif group_inds is not None and self.continuous:
-            m_inds = np.argmax(true[:, -self.n_groups:], axis=1)
+            m_inds = np.argmax(true[:, -self.n_groups :], axis=1)
             if not u.check_list(group_inds):
-                group_inds = np.ones(true.shape[0], dtype=int)*group_inds
+                group_inds = np.ones(true.shape[0], dtype=int) * group_inds
             for i in range(true.shape[0]):
                 m_i = m_inds[i] - self.n_groups
                 g_i = group_inds[i] - self.n_groups
@@ -776,12 +812,12 @@ class Modularizer:
         else:
             targ = self.generate_target(true, group_inds=group_inds)
         if only_tasks is not None:
-            nan_inds = np.array(list(
-                set(np.arange(targ.shape[1])).difference(only_tasks)
-            ))
+            nan_inds = np.array(
+                list(set(np.arange(targ.shape[1])).difference(only_tasks))
+            )
             targ[:, nan_inds] = np.nan
         if self.include_history > 0:
-            combined_x = [x]            
+            combined_x = [x]
             for i in range(self.include_history):
                 new_x = np.roll(x, i + 1, axis=0)
                 if self.relational_history:
@@ -813,7 +849,8 @@ class Modularizer:
         track_reps=True,
         fix_vars=None,
         fix_value=0,
-        **kwargs
+        track_corr=None,
+        **kwargs,
     ):
         if val_only_groups is None:
             val_only_groups = only_groups
@@ -854,9 +891,18 @@ class Modularizer:
             kwargs["callbacks"] = curr_cb
         if track_dimensionality:
             cb = kwargs.get("callbacks", [])
-            d_callback = DimCorrCallback(self, mean_tasks=track_mean_tasks,
-                                         only_groups=val_only_groups)
+            d_callback = DimCorrCallback(
+                self, mean_tasks=track_mean_tasks, only_groups=val_only_groups
+            )
             cb.append(d_callback)
+            kwargs["callbacks"] = cb
+        if track_corr is not None:
+            cb = kwargs.get("callbacks", [])
+            corr_callbacks = {}
+            for k, (inp, targ) in track_corr.items():
+                callback_k = CorrCallback(self, inp, targ, k, loss=categorization_loss)
+                corr_callbacks[k] = callback_k
+                cb.append(callback_k)
             kwargs["callbacks"] = cb
         if track_reps:
             cb = kwargs.get("callbacks", [])
@@ -873,18 +919,22 @@ class Modularizer:
             epochs=epochs,
             validation_data=eval_set,
             batch_size=batch_size,
-            **kwargs
+            **kwargs,
         )
         if track_dimensionality:
             out.history["dimensionality"] = d_callback.dim
             out.history["dimensionality_c0"] = d_callback.dim_c0
             out.history["corr_rate"] = d_callback.corr
+        if track_corr is not None:
+            out.history["corr_tracking"] = {
+                k: v.losses for k, v in corr_callbacks.items()
+            }
         if track_reps:
             out.history["tracked_activity"] = (
                 rep_callback.stim,
                 rep_callback.inp_rep,
                 rep_callback.targ,
-                np.stack(rep_callback.reps, axis=0)
+                np.stack(rep_callback.reps, axis=0),
             )
         if return_training:
             out = (out, (train_x, train_true, train_targ))
@@ -901,22 +951,23 @@ class CentralModularizer(Modularizer):
     def _make_group_func(self, n_g, tasks_per_group=1, flip=False, n_values=2):
         funcs = []
         for i in range(tasks_per_group):
-            funcs.append(ft.partial(
-                apply_central_group, flip=flip, n_values=n_values
-            ))
+            funcs.append(ft.partial(apply_central_group, flip=flip, n_values=n_values))
         return lambda x: np.stack(list(f(x) for f in funcs), axis=1)
 
     def __init__(
-            self, *args,
-            share_pairs=None,
-            flip_groups=(),
-            tasks_per_group=1,
-            n_values=2,
-            **kwargs,
+        self,
+        *args,
+        share_pairs=None,
+        flip_groups=(),
+        tasks_per_group=1,
+        n_values=2,
+        **kwargs,
     ):
         tasks_per_group = 1
         super().__init__(
-            *args, tasks_per_group=tasks_per_group, **kwargs,
+            *args,
+            tasks_per_group=tasks_per_group,
+            **kwargs,
         )
         group_func = []
         for i, g in enumerate(self.groups):
@@ -929,12 +980,12 @@ class CentralModularizer(Modularizer):
                 )
             )
         if share_pairs is not None:
-            for (i, j) in share_pairs:
+            for i, j in share_pairs:
                 group_func[i] = group_func[j]
                 self.groups[i] = self.groups[j]
         self.group_func = tuple(group_func)
 
-        
+
 class ColoringModularizer(Modularizer):
     def _make_group_func(self, n_colorings, n_g, tasks_per_group=1, merger=np.sum):
         funcs = []
@@ -946,8 +997,13 @@ class ColoringModularizer(Modularizer):
         return lambda x: np.concatenate(list(f(x) for f in funcs), axis=1)
 
     def __init__(
-        self, *args, n_colorings=None, tasks_per_group=1, task_merger=np.sum,
-        share_pairs=None, **kwargs,
+        self,
+        *args,
+        n_colorings=None,
+        tasks_per_group=1,
+        task_merger=np.sum,
+        share_pairs=None,
+        **kwargs,
     ):
         super().__init__(*args, tasks_per_group=tasks_per_group, **kwargs)
         if n_colorings is None:
@@ -963,7 +1019,7 @@ class ColoringModularizer(Modularizer):
                 )
             )
         if share_pairs is not None:
-            for (i, j) in share_pairs:
+            for i, j in share_pairs:
                 group_func[i] = group_func[j]
                 self.groups[i] = self.groups[j]
         self.group_func = tuple(group_func)
@@ -984,7 +1040,7 @@ class IdentityModularizer(Modularizer):
         single_output=True,
         tasks_per_group=None,
         remove_last_inp=False,
-        **kwargs
+        **kwargs,
     ):
         if hidden_dims is None:
             if use_dg is not None:
@@ -1028,9 +1084,9 @@ class IdentityModularizer(Modularizer):
         return stim
 
     def model(self, stim):
-        return stim        
+        return stim
 
-    
+
 def make_linear_task_func(n_g, n_tasks=1, i_var=0, center=0.5, renorm=False, **kwargs):
     task, intercept = generate_linear_tasks(
         n_g, n_tasks=n_tasks, intercept_var=i_var, **kwargs
@@ -1041,7 +1097,7 @@ def make_linear_task_func(n_g, n_tasks=1, i_var=0, center=0.5, renorm=False, **k
 
 
 def make_contextual_task_func(
-        n_g, n_tasks, n_cons=2, task_func=make_linear_task_func, **kwargs
+    n_g, n_tasks, n_cons=2, task_func=make_linear_task_func, **kwargs
 ):
     if not u.check_list(n_g):
         n_g = np.arange(n_g)
@@ -1061,6 +1117,7 @@ def make_contextual_task_func(
             mask = con_inds == i
             out[mask] = task_outs[i][mask]
         return out
+
     return task_func
 
 
@@ -1077,7 +1134,7 @@ class LinearIdentityModularizer(IdentityModularizer):
         intercept_var=0,
         center=0.5,
         renorm_tasks=False,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(*args, tasks_per_group=tasks_per_group, **kwargs)
         group_func = []
@@ -1107,8 +1164,13 @@ class LinearModularizer(Modularizer):
         axis_tasks=False,
     ):
         return make_linear_task_func(
-            n_g, n_tasks=n_tasks, i_var=i_var, center=center, renorm=renorm,
-            separate_tasks=separate_tasks, axis_tasks=axis_tasks,
+            n_g,
+            n_tasks=n_tasks,
+            i_var=i_var,
+            center=center,
+            renorm=renorm,
+            separate_tasks=separate_tasks,
+            axis_tasks=axis_tasks,
         )
 
     def __init__(
@@ -1123,7 +1185,7 @@ class LinearModularizer(Modularizer):
         share_pairs=None,
         separate_tasks=None,
         axis_tasks=False,
-        **kwargs
+        **kwargs,
     ):
         # COMMON TASKS FOR EACH GROUP
         super().__init__(*args, tasks_per_group=tasks_per_group, **kwargs)
@@ -1141,7 +1203,7 @@ class LinearModularizer(Modularizer):
                 )
             )
         if share_pairs is not None:
-            for (i, j) in share_pairs:
+            for i, j in share_pairs:
                 group_func[i] = group_func[j]
                 self.groups[i] = self.groups[j]
         self.group_func = tuple(group_func)
@@ -1195,7 +1257,7 @@ def make_linear_network(
     use_relu=False,
     use_bias=False,
     track_weights=True,
-    **kwargs
+    **kwargs,
 ):
     if use_relu:
         act_func = tf.nn.relu
@@ -1337,23 +1399,40 @@ class GatedLinearModularizerShell:
 
 
 def make_and_train_mt_model_set(
-        mixing,
-        n_feats=4,
-        n_values=3,
-        n_cons=2,
-        params=None,
-        relational=True,
-        relational_weight=1,
-        **kwargs,
+    mixing,
+    n_feats=4,
+    n_values=3,
+    n_cons=2,
+    params=None,
+    relational=True,
+    relational_weight=1,
+    mixing_order=None,
+    use_nonexhaustive=False,
+    **kwargs,
 ):
-    fdg = dg.MixedDiscreteDataGenerator(
-        n_feats + n_cons, n_vals=n_values, mix_strength=mixing
-    )
+    if use_nonexhaustive:
+        fdg = dg.NonexhaustiveMixedDiscreteDataGenerator(
+            n_feats + n_cons,
+            n_vals=n_values,
+            mix_strength=mixing,
+            mixing_order=mixing_order,
+        )
+    else:
+        fdg = dg.MixedDiscreteDataGenerator(
+            n_feats + n_cons,
+            n_vals=n_values,
+            mix_strength=mixing,
+            mixing_order=mixing_order,
+        )
     if relational:
         fdg = dg.RelationalAugmentor(fdg, weight=relational_weight)
+    groups = np.array(
+        ((0, 1),) * int(n_cons / 2) + ((2, 3),) * int(n_cons / 2)
+    )
     shared_params = {
         "n_overlap": 0,
-        "n_groups": 2,
+        "n_groups": n_cons,
+        "groups": groups,
     }
     out_same = train_modularizer(
         fdg,
@@ -1368,7 +1447,7 @@ def make_and_train_mt_model_set(
         fdg,
         params=params,
         n_values=n_values,
-        flip_groups=(0,),
+        flip_groups=np.arange(n_cons / 2),
         use_early_stopping=False,
         model_type=CentralModularizer,
         **shared_params,
@@ -1376,7 +1455,15 @@ def make_and_train_mt_model_set(
     )
     return fdg, out_same, out_flip
 
-        
+
+def make_modularizer(
+    *args,
+    **kwargs,
+):
+    m, h = train_modularizer(*args, train_epochs=0, **kwargs)
+    return m
+
+
 def train_modularizer(
     fdg,
     verbose=False,
@@ -1394,7 +1481,7 @@ def train_modularizer(
     track_mean_tasks=True,
     fix_n_irrel_vars=0,
     fix_irrel_value=0,
-    **kwargs
+    **kwargs,
 ):
     if params is not None:
         group_size = params.getint("group_size")
@@ -1412,7 +1499,7 @@ def train_modularizer(
         if hiddens is None:
             hiddens = ()
         train_epochs = params.getint("train_epochs")
-        batch_size = params.getint('batch_size', batch_size)
+        batch_size = params.getint("batch_size", batch_size)
         single_output = params.getboolean("single_output")
         integrate_context = params.getboolean("integrate_context")
         model_type = model_type_dict[params.get("model_type")]

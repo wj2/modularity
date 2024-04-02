@@ -583,10 +583,13 @@ class FigureControlledInput(ModularizerFigure):
                 )
             self.data[key] = (dims, seps)
         dims, seps = self.data[key]
-        gpl.plot_trace_werr(nl_strengths, dims, ax=ax_dim, color=color)
-        gpl.plot_trace_werr(nl_strengths, seps.T, ax=ax_sep, color=color)
-        ax_dim.set_xlabel("nonlinear mixing")
-        ax_sep.set_xlabel("nonlinear mixing")
+        gpl.plot_trace_werr(1 - nl_strengths, dims, ax=ax_dim, color=color)
+        gpl.plot_trace_werr(1 - nl_strengths, seps.T, ax=ax_sep, color=color)
+        ax_dim.set_xlabel("input structure")
+        ax_sep.set_xlabel("input structure")
+        ax_sep.invert_xaxis()
+        ax_dim.invert_xaxis()
+        
         ax_dim.set_ylabel("dimensionality")
         ax_sep.set_ylabel("linear separability")
         gpl.add_hlines(.5, ax_sep)
@@ -866,15 +869,20 @@ class FigureControlledGeometry(ModularizerFigure):
         for i, pk in enumerate(plot_keys):
             arr = np.mean(out_arrs[pk], axis=2)
             img = gpl.pcolormesh(
-                n_parts, mixes, arr, ax=axs[i], cmap=cms[i], vmin=.5, rasterized=True,
+                n_parts,
+                1 - mixes,
+                arr,
+                ax=axs[i],
+                cmap=cms[i],
+                vmin=.5,
+                rasterized=True,
             )
             self.f.colorbar(img, ax=axs[i], label=labels[pk])
 
             axs[i].set_xlabel("number of tasks")
-            axs[i].set_ylabel("input entanglement")
+            axs[i].set_ylabel("input structure")
             axs[i].set_xticks([n_parts[0], 10, n_parts[-1]])
             axs[i].set_yticks([0, .5, 1])
-            axs[i].invert_yaxis()
             axs[i].tick_params(
                 top=True, labeltop=True, bottom=False, labelbottom=False
             )
@@ -899,7 +907,7 @@ class FigureControlledGeometry(ModularizerFigure):
         zs_ood = np.mean(zs_ood, axis=(-2, -1))
         m = gpl.pcolormesh(
             task_sort,
-            mix_sort,
+            1 - mix_sort,
             zs_ood,
             ax=ax,
             cmap=cm,
@@ -910,9 +918,8 @@ class FigureControlledGeometry(ModularizerFigure):
         self.f.colorbar(m, ax=ax, label="zero shot\ngeneralization")
         ax.set_xticks([task_sort[0], 10, task_sort[-1]])
         ax.set_yticks([mix_sort[0], .5, mix_sort[-1]])
-        ax.invert_yaxis()
         ax.set_xlabel("number of tasks")
-        ax.set_ylabel("input entanglement")
+        ax.set_ylabel("input structure")
         ax.tick_params(
             top=True, labeltop=True, bottom=False, labelbottom=False
         )
@@ -963,6 +970,7 @@ class FigureControlledGeometry(ModularizerFigure):
                 fix_vars=irrel,
                 fix_value=0,
                 p=p,
+                linestyle="dashed",
             )
             _, p = mv.visualize_module_activity(
                 m,
@@ -1290,7 +1298,7 @@ class FigureConsequences(ModularizerFigure):
             # bound = np.max(np.abs(diff))
             m = gpl.pcolormesh(
                 task_sort,
-                mix_sort,
+                1 - mix_sort,
                 diff,
                 ax=axs_map[i],
                 cmap=cm,
@@ -1310,7 +1318,7 @@ class FigureConsequences(ModularizerFigure):
                     epochs, pre_masked.T, color=trace_colors[j], alpha=.1
                 )
                 if i == 0:
-                    label = "mixing = {}".format(pm)
+                    label = "input structure = {}".format(pm)
                 else:
                     label = ""
                 gpl.plot_trace_werr(
@@ -1325,8 +1333,7 @@ class FigureConsequences(ModularizerFigure):
             axs_map[i].set_xticks([task_sort[0], 10, task_sort[-1]])
             axs_map[i].set_yticks([mix_sort[0], .5, mix_sort[-1]])
             axs_map[i].set_xlabel("number of tasks")
-            axs_map[i].set_ylabel("input entangling")
-            axs_map[i].invert_yaxis()
+            axs_map[i].set_ylabel("input structure")
     
 
 class FigureModularityControlled(ModularizerFigure):
@@ -1413,7 +1420,7 @@ class FigureModularityControlled(ModularizerFigure):
         for i, pk in enumerate(plot_keys):
             arr = np.mean(out_arrs[pk], axis=2)
             img = gpl.pcolormesh(
-                n_parts, mixes, arr, ax=axs[i], cmap=cms[i], vmin=0, rasterized=True,
+                n_parts, 1 - mixes, arr, ax=axs[i], cmap=cms[i], vmin=0, rasterized=True,
             )
             self.f.colorbar(img, ax=axs[i], label=labels[pk])
 
@@ -1423,7 +1430,7 @@ class FigureModularityControlled(ModularizerFigure):
             con_levels = np.linspace(mu - sig, mu + sig, 3)
             ax_focus.contour(
                 n_parts[t_mask],
-                mixes[nl_mask],
+                1 - mixes[nl_mask],
                 sub_arr,
                 cmap=cms[i],
                 vmin=0,
@@ -1431,16 +1438,15 @@ class FigureModularityControlled(ModularizerFigure):
             )
 
             axs[i].set_xlabel("number of tasks")
-            axs[i].set_ylabel("input entanglement")
+            axs[i].set_ylabel("input structure")
             axs[i].set_xticks([n_parts[0], 10, n_parts[-1]])
             axs[i].set_yticks([0, .5, 1])
-            axs[i].invert_yaxis()
             axs[i].tick_params(
                 top=True, labeltop=True, bottom=False, labelbottom=False
             )
         ax_focus.set_xticks([n_parts[0], 10])
         ax_focus.set_yticks([.5, 1])
-        ax_focus.invert_yaxis()
+        # ax_focus.invert_yaxis()
         
     def panel_param_sweep(self, reload_=False):
         key = "panel_param_sweep"
