@@ -184,7 +184,7 @@ class Mixer:
         **out_params,
     ):
         layer_list = []
-        layer_list.append(tfkl.InputLayer(input_shape=inp))
+        layer_list.append(tfkl.InputLayer(shape=(inp,)))
         if inp_noise > 0:
             layer_list.append(tfkl.GaussianNoise(inp_noise))
         bi = tfk.initializers.Constant(bias_const)
@@ -559,7 +559,7 @@ class Modularizer:
         **layer_params,
     ):
         layer_list = []
-        layer_list.append(tfkl.InputLayer(input_shape=inp))
+        layer_list.append(tfkl.InputLayer(shape=(inp,)))
         if kernel_init is not None:
             kernel_init = tfk.initializers.RandomNormal(stddev=kernel_init)
         elif constant_init is not None:

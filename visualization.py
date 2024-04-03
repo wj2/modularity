@@ -10,7 +10,7 @@ import modularity.analysis as ma
 import modularity.auxiliary as maux
 
 
-@gpl.ax_adder
+@gpl.ax_adder()
 def plot_mt_learning(*outs, mixing=0, ax=None, vis_key="val_loss"):
     args_list = []
     mixing_list = []
@@ -1031,7 +1031,7 @@ def plot_task_heat(
     return fax
 
 
-@gpl.ax_adder
+@gpl.ax_adder()
 def plot_param_sweep(
     mod_mat,
     x_values,
@@ -1086,7 +1086,7 @@ def plot_weight_maps(*ms, axs=None, fhei=10, fwid=3, **kwargs):
     return axs
 
 
-@gpl.ax_adder
+@gpl.ax_adder()
 def plot_weight_distribution(m, ax=None, **kwargs):
     ws = m.model.weights[2]
     for i in range(ws.shape[1]):
