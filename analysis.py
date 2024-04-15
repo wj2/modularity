@@ -22,7 +22,6 @@ import modularity.auxiliary as maux
 import disentangled.data_generation as dg
 import composite_tangling.code_creation as cc
 import sklearn.metrics.pairwise as skmp
-import sklearn.metrics as skmet
 
 tfk = tf.keras
 
@@ -118,10 +117,11 @@ class ModularizerCode(cc.Code):
         n_stim[mask] = stim[mask]
         return n_stim
 
-    def get_representation(self, stim, noise=False, ret_stim=False, ref_stim=None,
-                           layer=None):
+    def get_representation(
+        self, stim, noise=False, ret_stim=False, ref_stim=None, layer=None
+    ):
         if layer is not None:
-            print('the layer parameter is ignored')
+            print("the layer parameter is ignored")
         stim = np.array(stim)
         if len(stim.shape) == 1:
             stim = np.expand_dims(stim, 0)
@@ -218,7 +218,7 @@ class ModularizerCode(cc.Code):
         train_noise=False,
         n_train=10,
         balance_training=False,
-        **dec_kwargs
+        **dec_kwargs,
     ):
         if not u.check_list(gen_dim):
             gen_dim = (gen_dim,)
@@ -310,7 +310,7 @@ def train_variable_models(
     model_type,
     n_reps=2,
     n_overlap=(0,),
-    **kwargs
+    **kwargs,
 ):
     out_ms = np.zeros(
         (
@@ -573,7 +573,7 @@ def train_n_models(
     kernel_init=None,
     out_kernel_init=None,
     additional_hidden=(),
-    **training_kwargs
+    **training_kwargs,
 ):
     if fdg is None:
         use_mixer = False
@@ -611,15 +611,15 @@ def train_n_models(
 
 
 def contextual_performance(
-        mod,
-        context_ind=-1,
-        c1_ind=0,
-        c2_ind=1,
-        n_samps=200,
-        model=skm.LinearSVC,
-        n_folds=20,
-        rep_kwargs=None,
-        **kwargs,
+    mod,
+    context_ind=-1,
+    c1_ind=0,
+    c2_ind=1,
+    n_samps=200,
+    model=skm.LinearSVC,
+    n_folds=20,
+    rep_kwargs=None,
+    **kwargs,
 ):
     if rep_kwargs is None:
         rep_kwargs = {}
@@ -632,6 +632,7 @@ def contextual_performance(
     pipe = na.make_model_pipeline(model, dual="auto", **kwargs)
     out = skms.cross_validate(pipe, reps, targ, cv=n_folds)
     return out["test_score"]
+
 
 # def task_dimensionality(n_tasks, n_g, contexts, m_type, n_overlap=0,
 #                         group_maker=ms.overlap_groups, group_inds=None):
@@ -859,11 +860,11 @@ def context_separable_only_prob_est(T, L, fdg, C=2, n_samps=100):
 
 
 def _fit_optimal_clusters(
-        act,
-        max_components,
-        model=skmx.GaussianMixture,
-        use_init=False,
-        demean=True,
+    act,
+    max_components,
+    model=skmx.GaussianMixture,
+    use_init=False,
+    demean=True,
 ):
     if demean:
         act = act - np.mean(act, axis=0, keepdims=True)
@@ -883,7 +884,7 @@ def _fit_optimal_clusters(
     ind = np.argmin(scores)
     m = models[ind]
     labels = labels[ind]
-    return m, labels    
+    return m, labels
 
 
 def _fit_clusters(
@@ -998,7 +999,7 @@ def ablation_experiment(
     single_number=True,
     layer=None,
     cluster_funcs=None,
-    **kwargs
+    **kwargs,
 ):
     hidden_clusters = cluster_method(
         m,
@@ -1129,7 +1130,7 @@ def task_performance_learned(
     classifier_model=skm.LinearSVC,
     pca=0.95,
     post_norm=False,
-    **kwargs
+    **kwargs,
 ):
     pipe = na.make_model_pipeline(
         classifier_model, pca=pca, post_norm=post_norm, dual="auto", **kwargs
@@ -1187,31 +1188,36 @@ def new_task_training(
     kwargs["single_output"] = True
 
     out_two = ms.train_modularizer(
-        fdg, params=params, verbose=verbose,
-        train_epochs=len(pretrain_tasks)*train_epochs,
-        n_train=len(pretrain_tasks)*train_samps,
+        fdg,
+        params=params,
+        verbose=verbose,
+        train_epochs=len(pretrain_tasks) * train_epochs,
+        n_train=len(pretrain_tasks) * train_samps,
         tasks_per_group=n_tasks,
         only_tasks=pretrain_tasks,
-        **kwargs
+        **kwargs,
     )
-    
-    h_next = out_two[0].fit(track_dimensionality=True,
-                            epochs=train_epochs,
-                            n_train=train_samps,
-                            verbose=False,
-                            val_only_tasks=nov_task,
-                            track_mean_tasks=False,
-                            )
 
-    print('single task model')
+    h_next = out_two[0].fit(
+        track_dimensionality=True,
+        epochs=train_epochs,
+        n_train=train_samps,
+        verbose=False,
+        val_only_tasks=nov_task,
+        track_mean_tasks=False,
+    )
+
+    print("single task model")
     out_one = ms.train_modularizer(
-        fdg, params=params, verbose=verbose,
+        fdg,
+        params=params,
+        verbose=verbose,
         train_epochs=train_epochs,
         n_train=train_samps,
         tasks_per_group=n_tasks,
         only_tasks=nov_task,
         track_mean_tasks=False,
-        **kwargs
+        **kwargs,
     )
     if ret_other_hist:
         out = (out_two[0], out_two[1], h_next), out_one
@@ -1230,8 +1236,11 @@ def new_related_context_training(
     tg = range(total_groups - novel_groups)
     share_pairs = list(zip(ng, tg))
     return new_context_training(
-        *args, total_groups=total_groups, novel_groups=novel_groups,
-        share_pairs=share_pairs, **kwargs
+        *args,
+        total_groups=total_groups,
+        novel_groups=novel_groups,
+        share_pairs=share_pairs,
+        **kwargs,
     )
 
 
@@ -1251,7 +1260,7 @@ def train_controlled_model(
     if n_overlap is None:
         n_overlap = n_group
     if n_feats is None:
-        n_feats = n_group*n_cons - n_overlap*(n_cons - 1) + n_cons
+        n_feats = n_group * n_cons - n_overlap * (n_cons - 1) + n_cons
     mddg = dg.MixedDiscreteDataGenerator(
         n_feats, mix_strength=mixing_strength, n_units=n_units
     )
@@ -1293,44 +1302,44 @@ def analyze_model_orders(model, **kwargs):
 def order_dim_cij(k, o, n=2):
     all_avgs = np.zeros(o - 1)
     no = n**o
-    n2o = n**(2*o)
+    n2o = n ** (2 * o)
     for r in range(1, o):
-        a = ss.binom(o, r)*ss.binom(k - o, o - r)
+        a = ss.binom(o, r) * ss.binom(k - o, o - r)
         nr = n**r
-        r_out = a*(nr - 1)/(n2o*no)
+        r_out = a * (nr - 1) / (n2o * no)
 
         all_avgs[r - 1] = r_out
-    out = sum(all_avgs) + (no - 1)*(1/n2o)**2
+    out = sum(all_avgs) + (no - 1) * (1 / n2o) ** 2
     return out
 
 
 def order_dim(k, o, n=2):
     no = n**o
-    big_n = ss.binom(k, o)*no
+    big_n = ss.binom(k, o) * no
 
     c2_ij_sum = order_dim_cij(k, o, n=n)
-    c2_ij_mu = c2_ij_sum/(big_n - 1)
+    c2_ij_mu = c2_ij_sum / (big_n - 1)
 
-    c2_ii = (1/(no**2))*(1 - 1/no)**2
-    pr = big_n*c2_ii/(c2_ii + (big_n - 1)*c2_ij_mu)
+    c2_ii = (1 / (no**2)) * (1 - 1 / no) ** 2
+    pr = big_n * c2_ii / (c2_ii + (big_n - 1) * c2_ij_mu)
     return pr
 
 
 def order2_dim(k, n=2, o=2):
     no = n**o
-    nop = n**(o + 1)
-    no2p = n**(2*o + 1)
-    big_n = ss.binom(k, o)*no
-    o_terms = 2*(ss.binom(k - 1, o - 1) - 1)
+    nop = n ** (o + 1)
+    no2p = n ** (2 * o + 1)
+    big_n = ss.binom(k, o) * no
+    o_terms = 2 * (ss.binom(k - 1, o - 1) - 1)
     print(o_terms)
-    o_terms = ss.binom(o, 1)*ss.binom(k - o, o - 1)
+    o_terms = ss.binom(o, 1) * ss.binom(k - o, o - 1)
     print(o_terms)
 
-    a = (o_terms*(no - 2) + no - 1)*(1/no)**4
-    b = n*o_terms*((1/nop) - 4/no2p + (1/no)**2)**2
-    c2_ij_mu = (a + b)/(big_n - 1)
-    c2_ii = (1/no*(1 - 1/no)**2 + (1 - 1/no)*1/no**2)**2
-    pr = big_n*c2_ii/(c2_ii + (big_n - 1)*c2_ij_mu)
+    a = (o_terms * (no - 2) + no - 1) * (1 / no) ** 4
+    b = n * o_terms * ((1 / nop) - 4 / no2p + (1 / no) ** 2) ** 2
+    c2_ij_mu = (a + b) / (big_n - 1)
+    c2_ii = (1 / no * (1 - 1 / no) ** 2 + (1 - 1 / no) * 1 / no**2) ** 2
+    pr = big_n * c2_ii / (c2_ii + (big_n - 1) * c2_ij_mu)
     return pr
 
 
@@ -1350,7 +1359,11 @@ def order_regression(order, n_feats, n_vals=2, min_order=1, single_order=False):
 
 
 def explain_order_regression(
-    samps, targs, order, lm_model=sklm.Ridge, **kwargs,
+    samps,
+    targs,
+    order,
+    lm_model=sklm.Ridge,
+    **kwargs,
 ):
     n_feats = samps.shape[1]
     pipe, _ = order_regression(order, n_feats, **kwargs)
@@ -1363,7 +1376,11 @@ def explain_order_regression(
 
 
 def compute_order_spectrum(
-    stim, rep, max_order, lm_model=sklm.Ridge, **kwargs,
+    stim,
+    rep,
+    max_order,
+    lm_model=sklm.Ridge,
+    **kwargs,
 ):
     n_feats = stim.shape[1]
     spectrum = np.zeros(max_order)
@@ -1383,7 +1400,7 @@ def compute_order_spectrum(
         targ_coeffs = targ_pipe.transform(stim)
         m_targ = lm_model()
         m_targ.fit(targ_coeffs, residual)
-        spectrum[i - 1] = m_targ.score(targ_coeffs, residual)*remaining
+        spectrum[i - 1] = m_targ.score(targ_coeffs, residual) * remaining
     return spectrum
 
 
@@ -1419,20 +1436,16 @@ def compute_model_spectrum(
         dynamic_spectrum = np.zeros((len(rep_dynamic), max_order))
         for i, rd_i in enumerate(rep_dynamic):
             dynamic_spectrum[i] = compute_order_spectrum(
-                stim, rd_i, max_order, **kwargs,
+                stim,
+                rd_i,
+                max_order,
+                **kwargs,
             )
         out_dict["model_rep_dynamic"] = dynamic_spectrum
     return out_dict
 
 
-def analyze_model_order(
-    model,
-    order,
-    subset=True,
-    layer=None,
-    n_samps=1000,
-    **kwargs
-):
+def analyze_model_order(model, order, subset=True, layer=None, n_samps=1000, **kwargs):
     inp_rep, stim, targ = model.get_x_true(n_train=n_samps)
     rep = model.get_representation(inp_rep, layer=layer)
     if subset:
@@ -1468,7 +1481,7 @@ def task_order_regression(
 ):
     n_feats = group_size + n_cons
 
-    source = u.MultiBernoulli(.5, n_feats - 1)
+    source = u.MultiBernoulli(0.5, n_feats - 1)
     samps = source.rvs(n_samples)
     samps = np.concatenate((samps, np.expand_dims(1 - samps[:, -1], 1)), axis=1)
 
@@ -1478,7 +1491,10 @@ def task_order_regression(
     targs = task_func(samps)
 
     out = explain_order_regression(
-        samps, targs, order, **kwargs,
+        samps,
+        targs,
+        order,
+        **kwargs,
     )
     return out
 
@@ -1512,19 +1528,19 @@ def zero_shot_training(
         track_mean_tasks=False,
         fix_n_irrel_vars=fix_n_irrel_vars,
         fix_irrel_value=0,
-        **kwargs
+        **kwargs,
     )
     model, hist = out
 
     irrel = model.irrel_vars[:fix_n_irrel_vars]
     irep, true, targ = model.get_x_true(n_train=test_samps, fix_vars=irrel, fix_value=1)
     resps = model.out_model(model.get_representation(irep))
-    errs_ood = (resps > .5) == (targ > .5)
+    errs_ood = (resps > 0.5) == (targ > 0.5)
 
     irrel = model.irrel_vars[:fix_n_irrel_vars]
     irep, true, targ = model.get_x_true(n_train=test_samps, fix_vars=irrel, fix_value=0)
     resps = model.out_model(model.get_representation(irep))
-    errs_ind = (resps > .5) == (targ > .5)
+    errs_ind = (resps > 0.5) == (targ > 0.5)
 
     return errs_ood, errs_ind, (model, hist)
 
@@ -1551,7 +1567,7 @@ def new_context_training(
         separate_tasks = None
 
     all_groups = list(range(total_groups))
-    print('orig')
+    print("orig")
     print(verbose, params, total_groups, novel_groups, n_tasks)
     kwargs["single_output"] = True
     out_two = ms.train_modularizer(
@@ -1560,12 +1576,12 @@ def new_context_training(
         params=params,
         n_groups=total_groups,
         only_groups=all_groups[:-novel_groups],
-        train_epochs=(total_groups - novel_groups)*train_epochs,
-        n_train=(total_groups - novel_groups)*train_samps,
+        train_epochs=(total_groups - novel_groups) * train_epochs,
+        n_train=(total_groups - novel_groups) * train_samps,
         tasks_per_group=n_tasks,
         separate_tasks=separate_tasks,
         track_mean_tasks=False,
-        **kwargs
+        **kwargs,
     )
     print(n_tasks, out_two[0].get_x_true()[-1].shape)
     if untrained_tasks > 0:
@@ -1575,15 +1591,17 @@ def new_context_training(
         only_tasks = None
         val_only_tasks = None
     print("next", train_samps, only_tasks)
-    h_next = out_two[0].fit(track_dimensionality=True,
-                            epochs=train_epochs,
-                            n_train=train_samps,
-                            verbose=False,
-                            only_groups=all_groups[-novel_groups:],
-                            val_only_groups=all_groups[-novel_groups:],
-                            only_tasks=only_tasks,
-                            track_mean_tasks=False,
-                            val_only_tasks=val_only_tasks)
+    h_next = out_two[0].fit(
+        track_dimensionality=True,
+        epochs=train_epochs,
+        n_train=train_samps,
+        verbose=False,
+        only_groups=all_groups[-novel_groups:],
+        val_only_groups=all_groups[-novel_groups:],
+        only_tasks=only_tasks,
+        track_mean_tasks=False,
+        val_only_tasks=val_only_tasks,
+    )
 
     print("final")
     out_one = ms.train_modularizer(
@@ -1604,20 +1622,20 @@ def new_context_training(
 
 
 def infer_optimal_activity_clusters(
-        m,
-        n_samps=1000,
-        use_mean=True,
-        ret_act=False,
-        model=skmx.GaussianMixture,
-        from_layer=None,
-        order=True,        
+    m,
+    n_samps=1000,
+    use_mean=True,
+    ret_act=False,
+    model=skmx.GaussianMixture,
+    from_layer=None,
+    order=True,
 ):
     activity = sample_all_contexts(
         m, n_samps=n_samps, use_mean=use_mean, from_layer=from_layer
     )
     act_full = np.concatenate(activity, axis=0)
     _, out = _fit_optimal_clusters(act_full, len(activity) + 1)
-    
+
     if order:
         u_clust = np.unique(out)
         m_diff = np.mean(activity[0] - activity[1], axis=0)
@@ -1632,7 +1650,7 @@ def infer_optimal_activity_clusters(
         out = new_out
     if ret_act:
         out = (out, act_full.T)
-    return out    
+    return out
 
 
 def infer_activity_clusters(
@@ -1674,7 +1692,7 @@ def apply_geometry_model_list(
     fix_features=2,
     noise_cov=0.01**2,
     eval_layers=False,
-    **kwargs
+    **kwargs,
 ):
     ml = np.array(ml)
     if not u.check_list(noise_cov):
@@ -1798,7 +1816,7 @@ def _decompose_task_object_helper(
     depth=0,
     max_depth=None,
     mask_generator=_ind_generator,
-    **kwargs
+    **kwargs,
 ):
     condition = condition_func(stim, targs, mask_dims)
     if condition:
@@ -1921,7 +1939,7 @@ def make_target_funcs(
     n_contexts=2,
     renorm_targets=False,
     renorm_stim=False,
-    **kwargs
+    **kwargs,
 ):
     stim = np.array(list(it.product(range(n_vals), repeat=n_latents)))
     task_funcs = []
@@ -2075,13 +2093,13 @@ def noncontext_split_probability(l_, t):
 
 
 def _make_metric_mat(
-        stim,
-        groups,
-        con_inds=(-2, -1),
-        flip_groups=None,
-        merger=ft.partial(np.concatenate, axis=1),
-        metric=skmp.euclidean_distances,
-        collapse_dim=None
+    stim,
+    groups,
+    con_inds=(-2, -1),
+    flip_groups=None,
+    merger=ft.partial(np.concatenate, axis=1),
+    metric=skmp.euclidean_distances,
+    collapse_dim=None,
 ):
     c_masks = list(stim[:, ci] == 1 for ci in con_inds)
 
@@ -2090,11 +2108,11 @@ def _make_metric_mat(
     for i, cm in enumerate(c_masks):
         g = stim[cm][:, groups[i]]
         group_stim[i, cm] = g
-        
+
     if flip_groups is not None:
         for fg in flip_groups:
             group_stim[fg, c_masks[fg], 0] = 1 - group_stim[fg, c_masks[fg], 0]
-    
+
     if collapse_dim is not None:
         for i in range(len(c_masks)):
             cd = np.reshape(collapse_dim, (group_size, 1))
@@ -2103,19 +2121,19 @@ def _make_metric_mat(
 
     dists = metric(group_stim)
     return dists
-    
+
 
 def make_shared_metric(
-        *args,
-        **kwargs,
+    *args,
+    **kwargs,
 ):
     merger = ft.partial(np.sum, axis=0)
     return _make_metric_mat(*args, merger=merger, **kwargs)
 
 
 def make_orthog_metric(
-        *args,
-        **kwargs,
+    *args,
+    **kwargs,
 ):
     merger = ft.partial(np.concatenate, axis=1)
     return _make_metric_mat(*args, merger=merger, **kwargs)
@@ -2128,13 +2146,14 @@ default_hypoth_makers = {
     "orthog_collapse": ft.partial(make_orthog_metric, collapse_dim=(1, -1)),
 }
 
+
 def rsa_correlation(
-        model,
-        time_reps=None,
-        hypoth_makers=default_hypoth_makers,
-        flip_groups=None,
-        metric=skmp.linear_kernel,
-        **kwargs,
+    model,
+    time_reps=None,
+    hypoth_makers=default_hypoth_makers,
+    flip_groups=None,
+    metric=skmp.linear_kernel,
+    **kwargs,
 ):
     stim, inp_rep, targs = model.get_all_stim()
     con_inds = np.arange(-model.n_groups, 0)
@@ -2157,8 +2176,8 @@ def rsa_correlation(
                 tr_flat = metric(tr).flatten()
                 t_corr[i] = np.corrcoef(tr_flat, hm_flat)
         else:
-             t_corr = None   
-            
+            t_corr = None
+
         corrs[k] = (end_corr, t_corr, hypoth_mat)
     return corrs
 
@@ -2606,13 +2625,13 @@ def compute_frac_contextual(mod, **kwargs):
 
 
 def _get_unit_std(
-        mod,
-        n_samps=1000,
-        use_abs=True,
-        layer=None,
-        rescale=True,
-        use_fdg=False,
-        use_rotation=False,
+    mod,
+    n_samps=1000,
+    use_abs=True,
+    layer=None,
+    rescale=True,
+    use_fdg=False,
+    use_rotation=False,
 ):
     n_g = mod.n_groups
     if use_fdg:
@@ -2620,8 +2639,9 @@ def _get_unit_std(
     else:
         use_ind = 2
 
-    mod_reps = list(mod.sample_reps(n_samps, context=i, layer=layer)[use_ind]
-                    for i in range(n_g))
+    mod_reps = list(
+        mod.sample_reps(n_samps, context=i, layer=layer)[use_ind] for i in range(n_g)
+    )
     mod_rep = np.stack(mod_reps, axis=0)
     if use_rotation:
         trs = sts.ortho_group.rvs(mod_rep.shape[2])
@@ -2634,7 +2654,7 @@ def _get_unit_std(
     unit_std = np.zeros((n_g, mod_rep.shape[2]))
     for i in range(n_g):
         mr_i = mod_rep[i]
-        unit_std[i] = np.std(mr_i, axis=0) 
+        unit_std[i] = np.std(mr_i, axis=0)
     return unit_std
 
 
@@ -2643,7 +2663,7 @@ def compute_variance_specialization(mod, **kwargs):
     n_cons = unit_stds.shape[0]
     f = np.zeros((n_cons, n_cons, unit_stds.shape[1]))
     for i, j in it.combinations(range(n_cons), 2):
-        denom = (unit_stds[i] + unit_stds[j])
+        denom = unit_stds[i] + unit_stds[j]
         f[i, j] = (unit_stds[i] - unit_stds[j]) / denom
         f[j, i] = (unit_stds[j] - unit_stds[i]) / denom
     return f
@@ -2655,29 +2675,29 @@ def compute_null_variance_specialization(mod, n_reps=100, **kwargs):
     null_matrix = np.zeros((n_reps, n_groups, n_groups, n_units))
     for i in range(n_reps):
         null_matrix[i] = compute_variance_specialization(
-            mod, use_rotation=True, **kwargs,
+            mod,
+            use_rotation=True,
+            **kwargs,
         )
     return null_matrix
 
 
-def compute_variance_specialization_signif(
-        mod, n_reps=100, p_thr=.01, **kwargs
-):
+def compute_variance_specialization_signif(mod, n_reps=100, p_thr=0.01, **kwargs):
     tv = compute_variance_specialization(mod, **kwargs)
     null = compute_null_variance_specialization(mod, n_reps=n_reps, **kwargs)
     tv_exp = np.expand_dims(tv, 0)
     cond_high = (tv_exp - null) > 0
     cond_low = (null - tv_exp) > 0
-    sig_high = np.mean(cond_high[:, 0, 1], axis=0) > (1 - p_thr/2)
-    sig_low = np.mean(cond_low[:, 0, 1], axis=0) > (1 - p_thr/2)
+    sig_high = np.mean(cond_high[:, 0, 1], axis=0) > (1 - p_thr / 2)
+    sig_low = np.mean(cond_low[:, 0, 1], axis=0) > (1 - p_thr / 2)
     frac = np.sum(np.logical_or(sig_high, sig_low)) / cond_low.shape[3]
     return frac
 
 
 def compute_variance_threshold_frac(
-        mod,
-        thr=1e-2,
-        **kwargs,
+    mod,
+    thr=1e-2,
+    **kwargs,
 ):
     active_units = _get_unit_std(mod, **kwargs)
     active_units = active_units > thr
@@ -2692,13 +2712,13 @@ def compute_alignment_index(mod, n_samps=1000, **kwargs):
     cons = np.argmax(stim[:, con_inds], axis=1)
     stim_cons = np.arange(mod.n_groups)
     con_ais = []
-    for (i, j) in it.combinations(stim_cons, 2):
+    for i, j in it.combinations(stim_cons, 2):
         m1 = cons == i
         m2 = cons == j
         ai_ij = u.alignment_index(rep[m1], rep[m2])
         con_ais.append(ai_ij)
     con_ais = np.array(con_ais)
-    
+
     rel_vars = np.unique(mod.groups)
     rv_ais = np.zeros(len(rel_vars))
     for i, rv in enumerate(rel_vars):
