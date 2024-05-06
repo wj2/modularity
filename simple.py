@@ -13,6 +13,7 @@ import disentangled.aux as da
 import disentangled.disentanglers as dd
 import disentangled.data_generation as dg
 import modularity.auxiliary as maux
+import sklearn.metrics.pairwise as skmp
 from general.tf.callbacks import CorrCallback
 
 tfk = tf.keras
@@ -343,6 +344,80 @@ class TrackReps(tfk.callbacks.Callback):
     def on_epoch_end(self, epoch, logs=None):
         self.reps.append(self.modu_model.get_representation(self.inp_rep))
 
+
+def analyze_correlation(model, stim=None, n_samps=1000, layer=None):
+    if stim is None:
+        stim = model.sample_stim(n_samps)
+    x1, true1, targ1 = model.get_x_true(true=stim, group_inds=0)
+    x2, true2, targ2 = model.get_x_true(true=stim, group_inds=1)
+    gis = model.groups
+    if len(np.unique(gis)) > gis.shape[1]:
+        rel_vars = true1[:, gis[0]]
+        irrel_vars = true1[:, gis[1]]
+        t2_use = np.copy(true2)
+        t2_use[:, gis[1]] = rel_vars
+        t2_use[:, gis[0]] = irrel_vars
+        x2, _, _ = model.get_x_true(true=t2_use[:, :-len(gis)], group_inds=1)
+        true2 = t2_use
+    rep1 = model.get_representation(x1, layer=layer)
+    rep2 = model.get_representation(x2, layer=layer)
+    dist_mat_rep = skmp.euclidean_distances(rep1, rep2)
+
+    xs = (true1[:, gis[0]], true2[:, gis[1]])
+    buffer = np.zeros((true1.shape[0], len(gis[0])))
+    
+    orth_true1 = np.concatenate((true1[:, gis[0]], buffer), axis=1)
+    orth_true2 = np.concatenate((buffer, true2[:, gis[1]]), axis=1)
+    dist_mat_same = skmp.euclidean_distances(*xs)
+    dist_mat_orth = skmp.euclidean_distances(orth_true1, orth_true2)
+    mask = np.identity(dist_mat_same.shape[0], dtype=bool)
+    dist_mat_same[mask] = np.nan
+    dist_mat_orth[mask] = np.nan
+    dist_mat_rep[mask] = np.nan
+    
+    dms = dist_mat_same.flatten()
+    dms = dms[~np.isnan(dms)]
+    dmo = dist_mat_orth.flatten()
+    dmo = dmo[~np.isnan(dmo)]
+    dmr = dist_mat_rep.flatten()
+    dmr = dmr[~np.isnan(dmr)]
+    cc_sr = np.corrcoef(dms, dmr)[1, 0]
+    cc_or = np.corrcoef(dmo, dmr)[1, 0]
+    return cc_sr, cc_or    
+
+
+class RepSimCallback(tfk.callbacks.Callback):
+    def __init__(self, model, *args, n_samps=100, layer=None, **kwargs):
+        self.modu_model = model
+        self.n_samps = n_samps
+        self.layer = layer
+        super().__init__(*args, **kwargs)
+
+    def on_train_begin(self, logs=None):
+        self.sim_same_rep = []
+        self.sim_orth_rep = []
+
+        self.stim = self.modu_model.sample_stim(self.n_samps)
+        sim_sr, sim_or = analyze_correlation(
+            self.modu_model, self.stim, layer=self.layer
+        )
+
+        self.sim_same_rep.append(sim_sr)
+        self.sim_orth_rep.append(sim_or)
+
+    def on_epoch_end(self, epoch, logs=None):
+        sim_sr, sim_or = analyze_correlation(
+            self.modu_model, self.stim, layer=self.layer
+        )
+
+        self.sim_same_rep.append(sim_sr)
+        self.sim_orth_rep.append(sim_or)
+
+    def on_train_end(self, logs=None):
+        self.sim_same_rep = np.array(self.sim_same_rep)
+        self.sim_orth_rep = np.array(self.sim_orth_rep)
+
+        
 
 class DimCorrCallback(tfk.callbacks.Callback):
     def __init__(
@@ -775,6 +850,8 @@ class Modularizer:
             raise IOError("need ground truth x")
         if true is None:
             true = self.sample_stim(n_train)
+        else:
+            n_train = true.shape[0]
         if group_inds is None and self.single_output:
             if self.continuous:
                 group_inds = np.argmax(true[:, -self.n_groups :], axis=1)
@@ -790,7 +867,6 @@ class Modularizer:
                 s = true[i, m_i]
                 true[i, m_i] = true[i, g_i]
                 true[i, g_i] = s
-
         if self.single_output:
             to_add = np.zeros((n_train, self.n_groups))
             trl_inds = np.arange(n_train)
@@ -850,6 +926,7 @@ class Modularizer:
         fix_vars=None,
         fix_value=0,
         track_corr=None,
+        track_rep_sim=False,
         **kwargs,
     ):
         if val_only_groups is None:
@@ -896,6 +973,12 @@ class Modularizer:
             )
             cb.append(d_callback)
             kwargs["callbacks"] = cb
+        if track_rep_sim:
+            cb = kwargs.get("callbacks", [])
+            rs_callback = RepSimCallback(self)
+            cb.append(rs_callback)
+            kwargs["callbacks"] = cb
+            
         if track_corr is not None:
             cb = kwargs.get("callbacks", [])
             corr_callbacks = {}
@@ -921,6 +1004,9 @@ class Modularizer:
             batch_size=batch_size,
             **kwargs,
         )
+        if track_rep_sim:
+            out.history["sim_same_rep"] = rs_callback.sim_same_rep
+            out.history["sim_orth_rep"] = rs_callback.sim_orth_rep
         if track_dimensionality:
             out.history["dimensionality"] = d_callback.dim
             out.history["dimensionality_c0"] = d_callback.dim_c0
@@ -961,8 +1047,11 @@ class CentralModularizer(Modularizer):
         flip_groups=(),
         tasks_per_group=1,
         n_values=2,
+        n_overlap=0,
         **kwargs,
     ):
+        if n_overlap > 0:
+            kwargs["group_maker"] = overlap_groups
         tasks_per_group = 1
         super().__init__(
             *args,
@@ -1408,7 +1497,7 @@ def make_and_train_mt_model_set(
     relational_weight=1,
     mixing_order=None,
     use_nonexhaustive=False,
-    n_overlap=0,
+    overlapping_variables=True,
     **kwargs,
 ):
     if use_nonexhaustive:
@@ -1427,11 +1516,16 @@ def make_and_train_mt_model_set(
         )
     if relational:
         fdg = dg.RelationalAugmentor(fdg, weight=relational_weight)
-    groups = np.array(
-        ((0, 1),) * int(n_cons / 2) + ((2, 3),) * int(n_cons / 2)
-    )
+    if overlapping_variables:
+        groups = np.array(
+            ((0, 1),) * n_cons
+        )
+    else:
+        groups = np.array(
+            ((0, 1),) * int(n_cons / 2) + ((2, 3),) * int(n_cons / 2)
+        )
     shared_params = {
-        "n_overlap": n_overlap,
+        "n_overlap": 0,
         "n_groups": n_cons,
         "groups": groups,
     }
@@ -1482,6 +1576,7 @@ def train_modularizer(
     track_mean_tasks=True,
     fix_n_irrel_vars=0,
     fix_irrel_value=0,
+    track_rep_sim=False,
     **kwargs,
 ):
     if params is not None:
@@ -1563,6 +1658,7 @@ def train_modularizer(
             track_mean_tasks=track_mean_tasks,
             fix_vars=fix_irrel_vars,
             fix_value=fix_irrel_value,
+            track_rep_sim=track_rep_sim,
         )
     else:
         h = None

@@ -62,6 +62,7 @@ if __name__ == '__main__':
             n_cons=args.n_contexts,
             mixing_order=args.mixing_order,
             additional_hidden=args.additional_hidden,
+            track_rep_sim=True,
         )
         for sk in skip_keys:
             h_same.history.pop(sk)
