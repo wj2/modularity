@@ -1408,6 +1408,7 @@ def make_and_train_mt_model_set(
     relational_weight=1,
     mixing_order=None,
     use_nonexhaustive=False,
+    n_overlap=0,
     **kwargs,
 ):
     if use_nonexhaustive:
@@ -1430,7 +1431,7 @@ def make_and_train_mt_model_set(
         ((0, 1),) * int(n_cons / 2) + ((2, 3),) * int(n_cons / 2)
     )
     shared_params = {
-        "n_overlap": 0,
+        "n_overlap": n_overlap,
         "n_groups": n_cons,
         "groups": groups,
     }

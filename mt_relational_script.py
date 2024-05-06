@@ -31,7 +31,7 @@ def create_parser():
     parser.add_argument("--use_nonexhaustive", default=False, action="store_true")
     parser.add_argument("--mixing_order", default=None, type=int)
     parser.add_argument("--additional_hidden", default=(), nargs="+", type=int)
-    
+    parser.add_argument("--n_overlap", default=0, type=int)    
     return parser
 
 
