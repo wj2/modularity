@@ -8,12 +8,17 @@ import modularity.simple as ms
 
 
 def create_parser():
-    parser = argparse.ArgumentParser(description='fit several MT modularizers')
-    parser.add_argument('-o', '--output_folder', default='.', type=str,
-                        help='folder to save the output in')
+    parser = argparse.ArgumentParser(description="fit several MT modularizers")
+    parser.add_argument(
+        "-o",
+        "--output_folder",
+        default=".",
+        type=str,
+        help="folder to save the output in",
+    )
     parser.add_argument("--output_template", default="mt-{t}_rw{r}_nms{m}_{jobid}.pkl")
     parser.add_argument("--tag", default="default")
-    parser.add_argument("--jobid", default="0000")    
+    parser.add_argument("--jobid", default="0000")
     parser.add_argument("--relational_weight", default=0, type=float)
     parser.add_argument("--mixing", default=0, type=float)
     parser.add_argument("--relational_weight_denom", default=100, type=float)
@@ -26,17 +31,18 @@ def create_parser():
     parser.add_argument("--weight_scale", default=None, type=float)
     parser.add_argument("--n_train", default=500, type=int)
     parser.add_argument("--include_history", default=0, type=int)
-    parser.add_argument("--train_epochs", default=10, type=int)    
+    parser.add_argument("--train_epochs", default=10, type=int)
     parser.add_argument("--use_relational_history", default=False, action="store_true")
     parser.add_argument("--use_nonexhaustive", default=False, action="store_true")
     parser.add_argument("--mixing_order", default=None, type=int)
     parser.add_argument("--additional_hidden", default=(), nargs="+", type=int)
-    parser.add_argument("--n_overlap", default=0, type=int)    
+    parser.add_argument("--n_overlap", default=0, type=int)
     parser.add_argument("--corr", default=0, type=float)
+    parser.add_argument("--corr_denom", default=100, type=float)
     return parser
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = create_parser()
     args = parser.parse_args()
 
@@ -45,7 +51,10 @@ if __name__ == '__main__':
     key_length = {"tracked_activity": 4}
     skip_keys = ("tracked_activity",)
     if args.corr > 0 and args.n_overlap == 0:
-        corr_groups = {(0, 2): args.corr, (1, 3): args.corr}
+        corr_groups = {
+            (0, 2): args.corr / args.corr_denom,
+            (1, 3): args.corr / args.corr_denom,
+        }
     else:
         corr_groups = None
 
@@ -101,7 +110,10 @@ if __name__ == '__main__':
                     out_flip[k][j][i] = np.array(v_flip[j])
 
     fname = args.output_template.format(
-        r=args.relational_weight, m=args.mixing, jobid=args.jobid, t=args.tag,
+        r=args.relational_weight,
+        m=args.mixing,
+        jobid=args.jobid,
+        t=args.tag,
     )
     path = os.path.join(args.output_folder, fname)
     out_dict = {
