@@ -32,6 +32,7 @@ def create_parser():
     parser.add_argument("--mixing_order", default=None, type=int)
     parser.add_argument("--additional_hidden", default=(), nargs="+", type=int)
     parser.add_argument("--n_overlap", default=0, type=int)    
+    parser.add_argument("--corr", default=0, type=float)
     return parser
 
 
@@ -43,6 +44,10 @@ if __name__ == '__main__':
 
     key_length = {"tracked_activity": 4}
     skip_keys = ("tracked_activity",)
+    if args.corr > 0 and args.n_overlap == 0:
+        corr_groups = {(0, 2): args.corr, (1, 3): args.corr}
+    else:
+        corr_groups = None
 
     relational = args.relational_weight > 0
     for i in range(args.n_reps):
@@ -63,6 +68,7 @@ if __name__ == '__main__':
             mixing_order=args.mixing_order,
             additional_hidden=args.additional_hidden,
             track_rep_sim=True,
+            corr_groups=corr_groups,
         )
         for sk in skip_keys:
             h_same.history.pop(sk)

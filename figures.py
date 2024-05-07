@@ -353,9 +353,12 @@ class NichoSimoneFigure(ModularizerFigure):
 
         ri = self.params.get("standard_runind")
         mix = self.params.getint("standard_mix")
-        
+
         out = maux.load_mt_run(ri, gd_func=np.float64)
-        merge_args = mv.plot_mt_learning(*outs, mixing=mix)
+        merge_args = mv.plot_mt_learning(out, mixing=mix, ax=ax)
+        ax.set_xlabel("training epoch")
+        ax.set_ylabel("loss")
+        
 
     def panel_aligned(self):
         key = "panel_aligned"

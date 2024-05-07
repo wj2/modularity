@@ -357,23 +357,31 @@ def analyze_correlation(model, stim=None, n_samps=1000, layer=None):
         t2_use = np.copy(true2)
         t2_use[:, gis[1]] = rel_vars
         t2_use[:, gis[0]] = irrel_vars
-        x2, _, _ = model.get_x_true(true=t2_use[:, :-len(gis)], group_inds=1)
+        x2, _, targ2 = model.get_x_true(true=t2_use[:, :-len(gis)], group_inds=1)
         true2 = t2_use
     rep1 = model.get_representation(x1, layer=layer)
     rep2 = model.get_representation(x2, layer=layer)
     dist_mat_rep = skmp.euclidean_distances(rep1, rep2)
 
     xs = (true1[:, gis[0]], true2[:, gis[1]])
-    buffer = np.zeros((true1.shape[0], len(gis[0])))
-    
-    orth_true1 = np.concatenate((true1[:, gis[0]], buffer), axis=1)
-    orth_true2 = np.concatenate((buffer, true2[:, gis[1]]), axis=1)
     dist_mat_same = skmp.euclidean_distances(*xs)
+    
+    buffer = np.zeros((true1.shape[0], len(gis[0])))    
+    orth_true1 = np.concatenate((true1[:, gis[0]], buffer), axis=1)
+    orth_true2 = np.concatenate((buffer, true2[:, gis[1]]), axis=1)    
     dist_mat_orth = skmp.euclidean_distances(orth_true1, orth_true2)
-    mask = np.identity(dist_mat_same.shape[0], dtype=bool)
-    dist_mat_same[mask] = np.nan
-    dist_mat_orth[mask] = np.nan
-    dist_mat_rep[mask] = np.nan
+
+    targ_buffer = np.zeros((true1.shape[0], 1))
+    orth_targ1 = np.concatenate((targ1, targ_buffer), axis=1)
+    orth_targ2 = np.concatenate((targ_buffer, targ2), axis=1)
+    dist_mat_targ_orth = skmp.euclidean_distances(orth_targ1, orth_targ2)
+
+    dist_mat_targ_same = skmp.euclidean_distances(targ1, targ2)
+
+    # mask = np.identity(dist_mat_same.shape[0], dtype=bool)
+    # dist_mat_same[mask] = np.nan
+    # dist_mat_orth[mask] = np.nan
+    # dist_mat_rep[mask] = np.nan
     
     dms = dist_mat_same.flatten()
     dms = dms[~np.isnan(dms)]
@@ -381,13 +389,18 @@ def analyze_correlation(model, stim=None, n_samps=1000, layer=None):
     dmo = dmo[~np.isnan(dmo)]
     dmr = dist_mat_rep.flatten()
     dmr = dmr[~np.isnan(dmr)]
+
+    dmto = dist_mat_targ_orth.flatten()
+    dmts = dist_mat_targ_same.flatten()
     cc_sr = np.corrcoef(dms, dmr)[1, 0]
     cc_or = np.corrcoef(dmo, dmr)[1, 0]
-    return cc_sr, cc_or    
+    cc_tsr = np.corrcoef(dmts, dmr)[1, 0]
+    cc_tor = np.corrcoef(dmto, dmr)[1, 0]
+    return cc_sr, cc_or, cc_tsr, cc_tor
 
 
 class RepSimCallback(tfk.callbacks.Callback):
-    def __init__(self, model, *args, n_samps=100, layer=None, **kwargs):
+    def __init__(self, model, *args, n_samps=1000, layer=None, **kwargs):
         self.modu_model = model
         self.n_samps = n_samps
         self.layer = layer
@@ -396,27 +409,34 @@ class RepSimCallback(tfk.callbacks.Callback):
     def on_train_begin(self, logs=None):
         self.sim_same_rep = []
         self.sim_orth_rep = []
+        self.sim_targ_same_rep = []
+        self.sim_targ_orth_rep = []
 
         self.stim = self.modu_model.sample_stim(self.n_samps)
-        sim_sr, sim_or = analyze_correlation(
+        sim_sr, sim_or, sim_tsr, sim_tor = analyze_correlation(
             self.modu_model, self.stim, layer=self.layer
         )
 
         self.sim_same_rep.append(sim_sr)
         self.sim_orth_rep.append(sim_or)
+        self.sim_targ_same_rep.append(sim_tsr)
+        self.sim_targ_orth_rep.append(sim_tor)
 
     def on_epoch_end(self, epoch, logs=None):
-        sim_sr, sim_or = analyze_correlation(
+        sim_sr, sim_or, sim_tsr, sim_tor = analyze_correlation(
             self.modu_model, self.stim, layer=self.layer
         )
 
         self.sim_same_rep.append(sim_sr)
         self.sim_orth_rep.append(sim_or)
+        self.sim_targ_same_rep.append(sim_tsr)
+        self.sim_targ_orth_rep.append(sim_tor)
 
     def on_train_end(self, logs=None):
         self.sim_same_rep = np.array(self.sim_same_rep)
         self.sim_orth_rep = np.array(self.sim_orth_rep)
-
+        self.sim_targ_same_rep = np.array(self.sim_targ_same_rep)
+        self.sim_targ_orth_rep = np.array(self.sim_targ_orth_rep)
         
 
 class DimCorrCallback(tfk.callbacks.Callback):
@@ -1007,6 +1027,8 @@ class Modularizer:
         if track_rep_sim:
             out.history["sim_same_rep"] = rs_callback.sim_same_rep
             out.history["sim_orth_rep"] = rs_callback.sim_orth_rep
+            out.history["sim_targ_same_rep"] = rs_callback.sim_targ_same_rep
+            out.history["sim_targ_orth_rep"] = rs_callback.sim_targ_orth_rep
         if track_dimensionality:
             out.history["dimensionality"] = d_callback.dim
             out.history["dimensionality_c0"] = d_callback.dim_c0
@@ -1496,8 +1518,9 @@ def make_and_train_mt_model_set(
     relational=True,
     relational_weight=1,
     mixing_order=None,
-    use_nonexhaustive=False,
+    use_nonexhaustive=True,
     overlapping_variables=True,
+    corr_groups=None,
     **kwargs,
 ):
     if use_nonexhaustive:
@@ -1506,6 +1529,7 @@ def make_and_train_mt_model_set(
             n_vals=n_values,
             mix_strength=mixing,
             mixing_order=mixing_order,
+            corr_groups=corr_groups,
         )
     else:
         fdg = dg.MixedDiscreteDataGenerator(
