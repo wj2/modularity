@@ -11,7 +11,7 @@ import mne
 from modularity.mt_package.dataprep import Data_Prep as DP
 
 
-mt_run_pattern = "mt(-[a-z]*)*_rw(?P<rw>[0-9\.]+)_nms(?P<nms>[0-9\.]+)_{runind}\.pkl"
+mt_run_pattern = "mt(-.*)*_rw(?P<rw>[0-9\\.]+)_nms(?P<nms>[0-9\\.]+)_{runind}\\.pkl"
 def make_mt_run_db(folder="modularity/mt_modularizers", pattern=mt_run_pattern):
     runind = "(?P<runind>[0-9]+)"
     pattern = pattern.format(runind=runind)
@@ -24,28 +24,29 @@ def load_mt_run(
         folder="modularity/mt_modularizers",
         pattern=mt_run_pattern,
         gd_func=None,
+        sort_key="nms",
 ):
     if gd_func is None:
         def gd_func(x): return x
     fp = pattern.format(runind=runind)
     rel_weights = []
-    nm_strengths = []
+    sort_list = []
     same_ds = []
     flip_ds = []
     for path, gd, run_data in u.load_folder_regex_generator(folder, fp):
         rel_weights.append(gd_func(gd["rw"]))
-        nm_strengths.append(gd_func(gd["nms"]))
         same, flip = run_data["same"], run_data["flip"]
         args = run_data["args"]
+        sort_list.append(args[sort_key])
         same_ds.append(same)
         flip_ds.append(flip)
 
-    inds = np.argsort(nm_strengths)
+    inds = np.argsort(sort_list)
     rel_weights = np.array(rel_weights)[inds]
-    nm_strengths = np.array(nm_strengths)[inds]
+    sort_list = np.array(sort_list)[inds]
     same_ds = u.merge_dict(same_ds, sort_order=inds)
     flip_ds = u.merge_dict(flip_ds, sort_order=inds)
-    return rel_weights, nm_strengths, args, same_ds, flip_ds
+    return rel_weights, sort_list, args, same_ds, flip_ds
 
 
 def process_ns_meg_data(
@@ -184,7 +185,7 @@ def save_model_information(models, folder, file_name="model_results.pkl", **kwar
 
 def load_order_runs(
     folder="modularity/order_modularizers/",
-    pattern="order_(?P<arr>[0-9]+)_(?P<runind>[0-9]+)\.pkl",
+    pattern="order_(?P<arr>[0-9]+)_(?P<runind>[0-9]+)\\.pkl",
     merge_keys=("args", "metrics"),
     format_keys=("out_models", "out_scores"),
 ):

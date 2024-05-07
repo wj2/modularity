@@ -11,17 +11,17 @@ import modularity.auxiliary as maux
 
 
 @gpl.ax_adder()
-def plot_mt_learning(*outs, mixing=0, ax=None, vis_key="val_loss"):
+def plot_mt_learning(*outs, key_targ=0, ax=None, vis_key="val_loss"):
     args_list = []
     mixing_list = []
     for out in outs:
         rel_weights, nm_strs, args, same_ds, flip_ds = out
         args_list.append(args)
-        nm_ind = np.argmin(np.abs(nm_strs - mixing))
-        mixing_list.append(nm_strs[nm_ind])
+        key_ind = np.argmin(np.abs(nm_strs - key_targ))
+        mixing_list.append(nm_strs[key_ind])
         epochs = np.arange(same_ds[vis_key].shape[2])
-        gpl.plot_trace_werr(epochs, same_ds[vis_key][nm_ind], ax=ax, label="same")
-        gpl.plot_trace_werr(epochs, flip_ds[vis_key][nm_ind], ax=ax, label="flip")
+        gpl.plot_trace_werr(epochs, same_ds[vis_key][key_ind], ax=ax, label="same")
+        gpl.plot_trace_werr(epochs, flip_ds[vis_key][key_ind], ax=ax, label="flip")
     return u.merge_dict(args_list), mixing_list
 
 

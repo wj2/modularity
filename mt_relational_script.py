@@ -39,6 +39,9 @@ def create_parser():
     parser.add_argument("--n_overlap", default=0, type=int)
     parser.add_argument("--corr", default=0, type=float)
     parser.add_argument("--corr_denom", default=100, type=float)
+    parser.add_argument(
+        "--use_overlapping_variables", default=False, action="store_true"
+    )
     return parser
 
 
@@ -50,7 +53,7 @@ if __name__ == "__main__":
 
     key_length = {"tracked_activity": 4}
     skip_keys = ("tracked_activity",)
-    if args.corr > 0 and args.n_overlap == 0:
+    if args.corr > 0 and not args.use_overlapping_variables:
         corr_groups = {
             (0, 2): args.corr / args.corr_denom,
             (1, 3): args.corr / args.corr_denom,
@@ -76,6 +79,7 @@ if __name__ == "__main__":
             n_cons=args.n_contexts,
             mixing_order=args.mixing_order,
             additional_hidden=args.additional_hidden,
+            overlapping_variables=args.use_overlapping_variables,
             track_rep_sim=True,
             corr_groups=corr_groups,
         )
