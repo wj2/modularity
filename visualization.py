@@ -11,7 +11,16 @@ import modularity.auxiliary as maux
 
 
 @gpl.ax_adder()
-def plot_mt_learning(*outs, key_targ=0, ax=None, vis_key="val_loss"):
+def plot_mt_learning(
+    *outs,
+    key_targ=0,
+    ax=None,
+    vis_key="val_loss",
+    same_color=None,
+    flip_color=None,
+    same_label="same",
+    flip_label="different",
+):
     args_list = []
     mixing_list = []
     for out in outs:
@@ -20,9 +29,34 @@ def plot_mt_learning(*outs, key_targ=0, ax=None, vis_key="val_loss"):
         key_ind = np.argmin(np.abs(nm_strs - key_targ))
         mixing_list.append(nm_strs[key_ind])
         epochs = np.arange(same_ds[vis_key].shape[2])
-        gpl.plot_trace_werr(epochs, same_ds[vis_key][key_ind], ax=ax, label="same")
-        gpl.plot_trace_werr(epochs, flip_ds[vis_key][key_ind], ax=ax, label="flip")
+        gpl.plot_trace_werr(
+            epochs, same_ds[vis_key][key_ind], ax=ax, label=same_label, color=same_color
+        )
+        gpl.plot_trace_werr(
+            epochs,
+            flip_ds[vis_key][key_ind],
+            ax=ax,
+            label=flip_label,
+            color=flip_color,
+        )
     return u.merge_dict(args_list), mixing_list
+
+
+@gpl.ax_adder()
+def plot_mt_diff(out, key_targ=None, ax=None, diff_key="val_loss", denom=100, **kwargs):
+    rel_weights, nm_strs, args, same_ds, flip_ds = out
+    if key_targ is not None:
+        key_ind = np.argmin(np.abs(nm_strs - key_targ))
+        sd_use = same_ds[diff_key][key_ind:key_ind + 1]
+        fd_use = flip_ds[diff_key][key_ind:key_ind + 1]
+        nm_strs = nm_strs[key_ind:key_ind + 1]
+    else:
+        sd_use = same_ds[diff_key]
+        fd_use = flip_ds[diff_key]
+    diff = np.sum(sd_use - fd_use, axis=2)
+    gpl.plot_trace_werr(nm_strs / denom, diff.T, ax=ax, **kwargs)
+    gpl.add_hlines(0, ax)
+        
 
 
 def _get_output_clusters(ws):

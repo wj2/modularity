@@ -327,44 +327,97 @@ class NichoSimoneFigure(ModularizerFigure):
 
         params = cf[fig_key]
         self.fig_key = fig_key
-        self.panel_keys = (
-            "panel_minimal_order",
-            "panel_input_spectrum",
-            "panel_generalization",
-        )
         super().__init__(fsize, params, colors=colors, **kwargs)
 
     def make_gss(self):
         gss = {}
-        ps_grid = pu.make_mxn_gridspec(self.gs, 2, 1, 0, 100, 60, 100, 8, 2)
-        standard_perf_grid = self.gs[:40, 60:]
-        standard_perf_ax = self.get_axs((standard_perf_grid,))[0, 0]
-        gss["panel_standard"] = standard_perf_ax
+        ps_grid = pu.make_mxn_gridspec(self.gs, 1, 3, 0, 45, 0, 100, 8, 2)
+        perf_axs = self.get_axs(ps_grid, sharey="all", squeeze=True)
 
-        aligned_perf_grid = self.gs[60:, 60:]
-        aligned_perf_ax = self.get_axs((aligned_perf_grid,))[0, 0]
-        gss["panel_aligned"] = aligned_perf_ax
+        g11 = self.gs[60:90, :20]
+        g12 = self.gs[60:90, 25:75]
+        g13 = self.gs[60:90, 80:]
+        g21 = self.gs[93:, :20]
+        g22 = self.gs[93:, 25:75]
+        g23 = self.gs[93:, 80:]
+        gs_arr = np.array([(g11, g12, g13), (g21, g22, g23)])
+        diff_axs = self.get_axs(gs_arr, sharey="horizontal")
 
+        gss["panel_performance"] = (perf_axs, diff_axs)
         self.gss = gss
-    
-    def panel_standard(self):
-        key = "panel_standard"
-        ax = self.gss[key]
 
-        ri = self.params.get("standard_runind")
-        mix = self.params.getint("standard_mix")
+    def panel_performance(self):
+        key = "panel_performance"
+        perf_axs, diff_axs = self.gss[key]
 
-        out = maux.load_mt_run(ri, gd_func=np.float64)
-        merge_args = mv.plot_mt_learning(out, mixing=mix, ax=ax)
-        ax.set_xlabel("training epoch")
-        ax.set_ylabel("loss")
-        
+        aligned_ri = self.params.get("aligned_runind")
+        same_ri = self.params.get("same_runind")
+        align = self.params.getint("eg_align")
+        s_color = self.params.getcolor("same_color")
+        d_color = self.params.getcolor("different_color")
+        diff_color = self.params.getcolor("diff_color")
 
-    def panel_aligned(self):
-        key = "panel_aligned"
-        ax = self.gss[key]
+        aligned_out = maux.load_mt_run(aligned_ri, gd_func=np.float64, sort_key="corr")
+        same_out = maux.load_mt_run(same_ri, gd_func=np.float64, sort_key="corr")
+        _ = mv.plot_mt_learning(
+            aligned_out,
+            key_targ=0,
+            ax=perf_axs[0],
+            vis_key="corr_rate",
+            same_color=s_color,
+            flip_color=d_color,
+        )
+        _ = mv.plot_mt_learning(
+            aligned_out,
+            key_targ=align,
+            ax=perf_axs[1],
+            vis_key="corr_rate",
+            same_color=s_color,
+            flip_color=d_color,
+            same_label="",
+            flip_label="",
+        )
+        _ = mv.plot_mt_learning(
+            same_out,
+            key_targ=0,
+            ax=perf_axs[2],
+            vis_key="corr_rate",
+            same_color=s_color,
+            flip_color=d_color,
+            same_label="",
+            flip_label="",
+        )
+        list(pa.set_xlabel("training epoch") for pa in perf_axs)
+        list(gpl.add_hlines(0.5, pa) for pa in perf_axs)
+        list(gpl.clean_plot(ax, i) for i, ax in enumerate(perf_axs))
+        perf_axs[0].set_ylabel("fraction correct")
 
-        
+        mv.plot_mt_diff(
+            aligned_out, key_targ=0, color=diff_color, ax=diff_axs[0, 0], points=True
+        )
+        mv.plot_mt_diff(aligned_out, color=diff_color, ax=diff_axs[0, 1])
+        mv.plot_mt_diff(
+            same_out, key_targ=0, color=diff_color, ax=diff_axs[0, 2], points=True
+        )
+        list(gpl.clean_plot_bottom(da) for da in diff_axs[0])
+        diff_axs[0, 0].set_ylim([-0.1, 0.6])
+        mv.plot_mt_diff(
+            aligned_out, key_targ=0, color=diff_color, ax=diff_axs[1, 0], points=True
+        )
+        mv.plot_mt_diff(aligned_out, color=diff_color, ax=diff_axs[1, 1])
+        mv.plot_mt_diff(
+            same_out, key_targ=0, color=diff_color, ax=diff_axs[1, 2], points=True
+        )
+        diff_axs[1, 0].set_ylim([-5, -4])
+        diff_axs[0, 0].set_ylabel("learning speed difference\n(different - same)")
+        diff_axs[1, 0].set_xticks([0])
+        diff_axs[1, 0].set_xticklabels(["orthogonal"])
+        diff_axs[1, 2].set_xticks([0])
+        diff_axs[1, 2].set_xticklabels(["same"])
+        diff_axs[1, 1].set_xlabel("feature similarity")
+
+        for i, j in u.make_array_ind_iterator(diff_axs.shape):
+            gpl.clean_plot(diff_axs[i, j], j)
 
 
 class FigureWorldIntro(ModularizerFigure):
@@ -1351,7 +1404,10 @@ class FigureConsequences(ModularizerFigure):
 
         task_fix = 1
         plot_mix = (0, 1)
-        trace_colors = ("r", "g")
+        trace_colors = (
+            self.params.getcolor("disentangled_color"),
+            self.params.getcolor("unstructured_color"),
+        )
         cm = plt.get_cmap(self.params.get("diverge_cmap"))
         labels = ("novel task", "related context", "unrelated context")
 
@@ -1382,7 +1438,7 @@ class FigureConsequences(ModularizerFigure):
                     epochs, pre_masked.T, color=trace_colors[j], alpha=0.1
                 )
                 if i == 0:
-                    label = "input structure = {}".format(pm)
+                    label = "input structure = {}".format(1 - pm)
                 else:
                     label = ""
                 gpl.plot_trace_werr(
@@ -1392,6 +1448,7 @@ class FigureConsequences(ModularizerFigure):
                     color=trace_colors[j],
                     label=label,
                 )
+            gpl.add_hlines(.5, axs_trace[i])
             axs_trace[i].set_xlabel("training epoch")
             axs_trace[i].set_ylabel("task performance")
             axs_map[i].set_xticks([task_sort[0], 10, task_sort[-1]])
@@ -1475,6 +1532,7 @@ class FigureModularityControlled(ModularizerFigure):
         ax_focus = axs[-1]
         template = self.params.get("nls_template_big")
         nl_inds = self.params.getlist("nls_big_ids")
+        print(nl_inds, template)
         plot_keys = ("model_frac", "alignment_index")
         axs = axs[: len(plot_keys)]
         labels = {
@@ -1507,7 +1565,7 @@ class FigureModularityControlled(ModularizerFigure):
 
             sub_arr = arr[nl_mask][:, t_mask]
             binary_arrs.append(sub_arr > plot_thresh[pk])
-            arr_colors.append(plt.get_cmap(cms[i])(.7))
+            arr_colors.append(plt.get_cmap(cms[i])(0.7))
             axs[i].set_xlabel("number of tasks")
             axs[i].set_ylabel("input structure")
             axs[i].set_xticks([n_parts[0], 10, n_parts[-1]])
@@ -1521,9 +1579,10 @@ class FigureModularityControlled(ModularizerFigure):
             cmap=cm_comb,
             vmin=0,
             ax=ax_focus,
+            rasterized=True,
         )
         ax_focus.set_xticks([n_parts[0], 10])
-        ax_focus.set_yticks([0, .5])
+        ax_focus.set_yticks([0, 0.5])
         ax_focus.set_xlabel("number of tasks")
         ax_focus.set_ylabel("input structure")
         ax_focus.tick_params(top=True, labeltop=True, bottom=False, labelbottom=False)

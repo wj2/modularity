@@ -222,8 +222,14 @@ class ModularizerCode(cc.Code):
     ):
         if not u.check_list(gen_dim):
             gen_dim = (gen_dim,)
+        gen_dim = np.array(gen_dim)
         all_dim = np.concatenate(((train_dim,), gen_dim))
-        if ref_stim is None and train_dim in self.group and gen_dim in self.group:
+        cond = (
+            ref_stim is None
+            and train_dim in self.group
+            and np.all(np.isin(gen_dim, self.group))
+        )
+        if cond:
             ref_stim = self.get_random_full_stim(non_nan=all_dim)
         elif ref_stim is None:
             ref_stim = self.get_random_full_stim(non_nan=all_dim)
@@ -1721,13 +1727,13 @@ def apply_geometry_model_list(
             noise_cov=noise_cov[noise_ind],
             use_layer=layer,
         )
-        shattering[ind] = m_code.compute_shattering(**kwargs)[-1]
         within_ccgp[ind] = m_code.compute_within_group_ccgp(
             n_train=n_train, fix_features=fix_features, **kwargs
         )
         across_ccgp[ind] = m_code.compute_across_group_ccgp(
             fix_features=fix_features, n_train=n_train, **kwargs
         )
+        shattering[ind] = m_code.compute_shattering(**kwargs)[-1]
     return shattering, within_ccgp, across_ccgp
 
 
