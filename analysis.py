@@ -1608,7 +1608,7 @@ def new_context_training(
         track_mean_tasks=False,
         val_only_tasks=val_only_tasks,
     )
-    out_dict["trained_hist"] = out_two[1]
+    out_dict["trained_hist"] = h_next
     out_dict["trained_modularity"] = compute_frac_contextual(out_two[0])
     out_dict["trained_subspace"] = compute_alignment_index(out_two[0])
 
