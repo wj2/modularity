@@ -1016,15 +1016,15 @@ class FigureControlledGeometry(ModularizerFigure):
             axs[i].set_yticks([0, 0.5, 1])
             axs[i].tick_params(top=True, labeltop=True, bottom=False, labelbottom=False)
 
-    def panel_zs(self, recompute=False):
+    def panel_zs(self, reload_=False):
         key = "panel_zs"
         ax = self.gss[key]
 
         plot_key = "zero shot"
-        if self.data.get(key) is None or recompute:
+        if self.data.get(key) is None or reload_:
             self.data[key] = self.load_and_organize_con_sweep(
                 (plot_key,),
-                reload=recompute,
+                reload=reload_,
                 folder_key="sim_folder",
                 run_key="zs_run_inds",
                 load_num=1,
@@ -1402,7 +1402,7 @@ class FigureConsequences(ModularizerFigure):
             )
         mix_sort, task_sort, metric_dict = self.data[key]
 
-        task_fix = 1
+        task_fix = 2
         plot_mix = (0, 1)
         trace_colors = (
             self.params.getcolor("disentangled_color"),

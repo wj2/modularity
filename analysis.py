@@ -1573,8 +1573,6 @@ def new_context_training(
         separate_tasks = None
 
     all_groups = list(range(total_groups))
-    print("orig")
-    print(verbose, params, total_groups, novel_groups, n_tasks)
     kwargs["single_output"] = True
     out_two = ms.train_modularizer(
         fdg,
@@ -1589,14 +1587,16 @@ def new_context_training(
         track_mean_tasks=False,
         **kwargs,
     )
-    print(n_tasks, out_two[0].get_x_true()[-1].shape)
+    out_dict = {}
+    out_dict["initial_hist"] = out_two[1]
+    out_dict["initial_modularity"] = compute_frac_contextual(out_two[0])
+    out_dict["initial_subspace"] = compute_alignment_index(out_two[0])
     if untrained_tasks > 0:
         only_tasks = train_tasks
         val_only_tasks = untrained_task
     else:
         only_tasks = None
         val_only_tasks = None
-    print("next", train_samps, only_tasks)
     h_next = out_two[0].fit(
         track_dimensionality=True,
         epochs=train_epochs,
@@ -1608,8 +1608,10 @@ def new_context_training(
         track_mean_tasks=False,
         val_only_tasks=val_only_tasks,
     )
+    out_dict["trained_hist"] = out_two[1]
+    out_dict["trained_modularity"] = compute_frac_contextual(out_two[0])
+    out_dict["trained_subspace"] = compute_alignment_index(out_two[0])
 
-    print("final")
     out_one = ms.train_modularizer(
         fdg,
         verbose=verbose,
@@ -1624,7 +1626,12 @@ def new_context_training(
         track_mean_tasks=False,
         **kwargs,
     )
-    return (out_two[0], h_next), out_one
+    out_dict["seq_model"] = out_two[0]
+    out_dict["null_model"] = out_one[0]
+    out_dict["null_hist"] = out_one[1]
+    out_dict["null_modularity"] = compute_frac_contextual(out_one[0])
+    out_dict["null_subspace"] = compute_alignment_index(out_one[0])
+    return out_dict
 
 
 def infer_optimal_activity_clusters(
