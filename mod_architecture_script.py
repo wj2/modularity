@@ -330,8 +330,8 @@ if __name__ == "__main__":
         new_task[i] = hist.history["val_loss"]
         new_task_null[i] = hist_null.history["val_loss"]
         cr_null = np.array(hist_null.history["corr_rate"])
-        new_task_modularity[i] = hist["initial_modularity"]
-        new_task_subspace[i] = hist["initial_subspace"]
+        new_task_modularity[i] = out_new_task["initial_modularity"]
+        new_task_subspace[i] = out_new_task["initial_subspace"]
         print("c")
 
         if len(cr_null.shape) == 1:
