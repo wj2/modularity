@@ -1185,7 +1185,6 @@ def new_task_training(
     novel_tasks=1,
     train_epochs=10,
     train_samps=5000,
-    ret_other_hist=False,
     **kwargs,
 ):
     all_tasks = set(range(n_tasks))
@@ -1203,6 +1202,10 @@ def new_task_training(
         only_tasks=pretrain_tasks,
         **kwargs,
     )
+    out_dict = {}
+    out_dict["initial_hist"] = out_two[1]
+    out_dict["initial_modularity"] = compute_frac_contextual(out_two[0])
+    out_dict["initial_subspace"] = compute_alignment_index(out_two[0])
 
     h_next = out_two[0].fit(
         track_dimensionality=True,
@@ -1212,6 +1215,9 @@ def new_task_training(
         val_only_tasks=nov_task,
         track_mean_tasks=False,
     )
+    out_dict["trained_hist"] = h_next
+    out_dict["trained_modularity"] = compute_frac_contextual(out_two[0])
+    out_dict["trained_subspace"] = compute_alignment_index(out_two[0])
 
     print("single task model")
     out_one = ms.train_modularizer(
@@ -1225,11 +1231,10 @@ def new_task_training(
         track_mean_tasks=False,
         **kwargs,
     )
-    if ret_other_hist:
-        out = (out_two[0], out_two[1], h_next), out_one
-    else:
-        out = (out_two[0], h_next), out_one
-    return out
+    out_dict["null_hist"] = out_one[1]
+    out_dict["null_modularity"] = compute_frac_contextual(out_one[0])
+    out_dict["null_subspace"] = compute_alignment_index(out_one[0])
+    return out_dict
 
 
 def new_related_context_training(
