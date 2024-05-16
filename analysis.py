@@ -1579,6 +1579,19 @@ def new_context_training(
 
     all_groups = list(range(total_groups))
     kwargs["single_output"] = True
+    print(
+        "arguments",
+        fdg,
+        verbose,
+        params,
+        total_groups,
+        all_groups[:-novel_groups],
+        (total_groups - novel_groups) * train_epochs,
+        (total_groups - novel_groups) * train_samps,
+        n_tasks,
+        separate_tasks,
+    )
+    print(kwargs)
     out_two = ms.train_modularizer(
         fdg,
         verbose=verbose,

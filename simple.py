@@ -942,7 +942,7 @@ class Modularizer:
         val_only_groups=None,
         val_only_tasks=None,
         track_mean_tasks=True,
-        track_reps=True,
+        track_reps=False,
         fix_vars=None,
         fix_value=0,
         track_corr=None,
