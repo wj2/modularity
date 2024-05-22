@@ -947,6 +947,7 @@ class Modularizer:
         fix_value=0,
         track_corr=None,
         track_rep_sim=False,
+        profile_training=None,
         **kwargs,
     ):
         if val_only_groups is None:
@@ -1014,6 +1015,13 @@ class Modularizer:
             except AttributeError:
                 rep_callback = TrackReps(self, n_rep_samps=2000)
             cb.append(rep_callback)
+            kwargs["callbacks"] = cb
+        if profile_training is not None:
+            tb_callback = tf.keras.callbacks.TensorBoard(
+                log_dir=profile_training, profile_batch=(1, 1000),
+            )
+            cb = kwargs.get("callbacks", [])
+            cb.append(tb_callback)
             kwargs["callbacks"] = cb
 
         out = self.model.fit(

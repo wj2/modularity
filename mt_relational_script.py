@@ -84,8 +84,8 @@ if __name__ == "__main__":
             corr_groups=corr_groups,
         )
         for sk in skip_keys:
-            h_same.history.pop(sk)
-            h_flip.history.pop(sk)
+            h_same.history.pop(sk, None)
+            h_flip.history.pop(sk, None)
         if i == 0:
             out_same = {}
             out_flip = {}
