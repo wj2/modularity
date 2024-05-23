@@ -1255,6 +1255,27 @@ def new_related_context_training(
     )
 
 
+
+def train_separate_models(
+    mixing_strength, n_group=3, dg_pwr=1, n_train=300, **kwargs,    
+):
+    _, model_null, hist_null = train_controlled_model(
+        n_group, mixing_strength, total_power=dg_pwr, n_train=n_train, **kwargs,
+    )
+    _, model_lin, hist_lin = train_controlled_model(
+        n_group, 0, total_power=1 - mixing_strength, n_train=n_train, **kwargs,
+    )
+    _, model_nl, hist_nl = train_controlled_model(
+        n_group, 1, total_power=mixing_strength, n_train=n_train, **kwargs,
+    )
+    out = {
+        "null": (model_null, hist_null),
+        "lin": (model_lin, hist_lin),
+        "nonlin": (model_nl, hist_nl),
+    }
+    return out
+
+
 def train_controlled_model(
     n_group,
     mixing_strength,
@@ -1266,14 +1287,16 @@ def train_controlled_model(
     tasks_per_group=20,
     n_overlap=None,
     group_width=50,
+    total_power=None,
+    irrel_vars=2,
     **kwargs,
 ):
     if n_overlap is None:
         n_overlap = n_group
     if n_feats is None:
-        n_feats = n_group * n_cons - n_overlap * (n_cons - 1) + n_cons
+        n_feats = n_group * n_cons - n_overlap * (n_cons - 1) + irrel_vars + n_cons
     mddg = dg.MixedDiscreteDataGenerator(
-        n_feats, mix_strength=mixing_strength, n_units=n_units
+        n_feats, mix_strength=mixing_strength, n_units=n_units, total_power=total_power,
     )
     model, hist = ms.train_modularizer(
         mddg,

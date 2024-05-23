@@ -82,6 +82,8 @@ def create_parser():
     parser.add_argument('--no_geometry_analysis', default=False, action='store_true')
     parser.add_argument('--rescale_fdg', default=False, action='store_true')
     parser.add_argument('--mixing_order', default=None, type=int)
+    parser.add_argument("--only_nonlinear", default=False, action="store_true")
+    parser.add_argument("--only_linear", default=False, action="store_true")
     return parser
 
 
@@ -144,13 +146,24 @@ if __name__ == '__main__':
         kernel_init = None
 
     print(args.rep_dim)
+    
     if args.discrete_mixed_input:
         mix_strength = args.dm_input_mixing/args.dm_input_mixing_denom
+        total_power = None
+        if args.only_linear and args.only_nonlinear:
+            raise IOError("both only_linear and only_nonlinear cannot be true")
+        elif args.only_linear:
+            total_power = mix_strength
+            mix_strength = 0
+        elif args.only_nonlinear:
+            total_power = mix_strength
+            mix_strength = 1
         fdg = dg.MixedDiscreteDataGenerator(
             inp_dim,
             n_units=args.rep_dim,
             mix_strength=mix_strength,
             mixing_order=args.mixing_order,
+            total_power=total_power,
         )
     elif args.twod_shape_input:
         twod_file = ('disentangled/datasets/'
