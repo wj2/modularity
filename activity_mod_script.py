@@ -84,6 +84,7 @@ def create_parser():
     parser.add_argument('--mixing_order', default=None, type=int)
     parser.add_argument("--only_nonlinear", default=False, action="store_true")
     parser.add_argument("--only_linear", default=False, action="store_true")
+    parser.add_argument("--no_early_stopping", default=False, action="store_true")
     return parser
 
 
@@ -218,6 +219,7 @@ if __name__ == '__main__':
         out_kernel_init=kernel_init,
         additional_hidden=args.model_layers,
         n_train=args.n_model_train,
+        use_early_stopping=not args.no_early_stopping,
     )
     models, histories = out
 
