@@ -153,7 +153,7 @@ if __name__ == '__main__':
         if args.only_linear and args.only_nonlinear:
             raise IOError("both only_linear and only_nonlinear cannot be true")
         elif args.only_linear:
-            total_power = mix_strength
+            total_power = 1 - mix_strength
             mix_strength = 0
         elif args.only_nonlinear:
             total_power = mix_strength

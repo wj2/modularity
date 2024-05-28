@@ -12,6 +12,8 @@ from modularity.mt_package.dataprep import Data_Prep as DP
 
 
 mt_run_pattern = "mt(-.*)*_rw(?P<rw>[0-9\\.]+)_nms(?P<nms>[0-9\\.]+)_{runind}\\.pkl"
+
+
 def make_mt_run_db(folder="modularity/mt_modularizers", pattern=mt_run_pattern):
     runind = "(?P<runind>[0-9]+)"
     pattern = pattern.format(runind=runind)
@@ -20,14 +22,17 @@ def make_mt_run_db(folder="modularity/mt_modularizers", pattern=mt_run_pattern):
 
 
 def load_mt_run(
-        runind,
-        folder="modularity/mt_modularizers",
-        pattern=mt_run_pattern,
-        gd_func=None,
-        sort_key="nms",
+    runind,
+    folder="modularity/mt_modularizers",
+    pattern=mt_run_pattern,
+    gd_func=None,
+    sort_key="nms",
 ):
     if gd_func is None:
-        def gd_func(x): return x
+
+        def gd_func(x):
+            return x
+
     fp = pattern.format(runind=runind)
     rel_weights = []
     sort_list = []
@@ -50,12 +55,12 @@ def load_mt_run(
 
 
 def process_ns_meg_data(
-        sbjN="22",
-        timing="combined test",
-        trigger=103,
-        ch_pick="grad",
-        local=0,
-        res_freq=250,
+    sbjN="22",
+    timing="combined test",
+    trigger=103,
+    ch_pick="grad",
+    local=0,
+    res_freq=250,
 ):
     ch_n_dict = {"mag": 102, "grad": 204}
     ch_n = ch_n_dict.get(ch_pick)
@@ -69,7 +74,7 @@ def process_ns_meg_data(
         raise IOError(
             "timing must be on of {}, not {}".format(timing_dict.keys(), timing)
         )
-        
+
     if test == 0:
         epochs_cleaned, data, events_n, events = DP.Load_Data(
             local=local, sbjN=sbjN, training=1, test=0
@@ -77,7 +82,7 @@ def process_ns_meg_data(
         data, epochs_selected = DP.Trial_Selection(
             data, trigger, events_n, epochs_cleaned
         )
-    elif test <=2:
+    elif test <= 2:
         epochs_cleaned_post, data, events_n, events = DP.Load_Data(
             local=local, sbjN=sbjN, training=0, test=test
         )
@@ -91,33 +96,33 @@ def process_ns_meg_data(
         data_pre, epochs_selected_pre = DP.Trial_Selection(
             data_pre, trigger, events_n, epochs_cleaned_pre
         )
-       
+
         epochs_cleaned_post, data_post, events_n, events = DP.Load_Data(
             local=local, sbjN=sbjN, training=0, test=2
         )
         data_post, epochs_selected_post = DP.Trial_Selection(
             data_post, trigger, events_n, epochs_cleaned_post
         )
-       
+
         epochs_selected = mne.concatenate_epochs(
-            [epochs_selected_pre,epochs_selected_post]
+            [epochs_selected_pre, epochs_selected_post]
         )
         data = data_pre.append(data_post)
-    
-    epochs_selected.apply_baseline() # baseline correction
-    epochs_selected.pick_types(ch_pick) # pick sensors
-    epochs_selected.filter(None,30) # low-pass filter the data before analyses
-    epochs_selected.resample(res_freq) # Resample
 
-    MEG_data = epochs_selected.get_data() # Matrix with trialsXsensorsXtime
+    epochs_selected.apply_baseline()  # baseline correction
+    epochs_selected.pick_types(ch_pick)  # pick sensors
+    epochs_selected.filter(None, 30)  # low-pass filter the data before analyses
+    epochs_selected.resample(res_freq)  # Resample
+
+    MEG_data = epochs_selected.get_data()  # Matrix with trialsXsensorsXtime
     # The behavioural data file is called "data"
-    
-        
-    ch_pos = np.vstack([epochs_selected.info['chs'][ch]['loc'][0:3]
-                        for ch in range(0,ch_n)])
+
+    ch_pos = np.vstack(
+        [epochs_selected.info["chs"][ch]["loc"][0:3] for ch in range(0, ch_n)]
+    )
     # matrix with the position of each sensor in the helmet
-    
-    time = epochs_selected.times # time of the epochs
+
+    time = epochs_selected.times  # time of the epochs
     kwargs = dict(
         timing=timing,
         trigger=trigger,
@@ -139,7 +144,9 @@ def process_ns_meg_data(
 
 
 def save_mt_subject_data(
-        d_dict, folder="modularity/mt_processed_data/", template="p{}_{}_{}.pkl",
+    d_dict,
+    folder="modularity/mt_processed_data/",
+    template="p{}_{}_{}.pkl",
 ):
     fname = template.format(d_dict["subject"], d_dict["period"], d_dict["ch_pick"])
     path = os.path.join(folder, fname)
@@ -147,9 +154,7 @@ def save_mt_subject_data(
     return path
 
 
-def process_and_save_subject(
-        *args, save_folder=".", **kwargs
-):
+def process_and_save_subject(*args, save_folder=".", **kwargs):
     data_dict = process_ns_meg_data(*args, **kwargs)
     return save_mt_subject_data(data_dict, folder=save_folder)
 
@@ -208,10 +213,10 @@ def find_key_runs(data, constraint_dict, ret_key="runind", filt_counts=1):
 
 def load_consequence_runs(
     run_ind,
-    folder='modularity/mod_cons/',
-    template='mod-cons_[0-9]+-{run_ind}',
-    file_name='model_results.pkl',
-    ref_key='tasks_per_group'
+    folder="modularity/mod_cons/",
+    template="mod-cons_[0-9]+-{run_ind}",
+    file_name="model_results.pkl",
+    ref_key="tasks_per_group",
 ):
     fls = os.listdir(folder)
     use_templ = template.format(run_ind=run_ind)
@@ -220,9 +225,9 @@ def load_consequence_runs(
         m = re.match(use_templ, fl)
         if m is not None:
             fp = os.path.join(folder, fl, file_name)
-            data_fl = pickle.load(open(fp, 'rb'))
-            data_fl['args'] = vars(data_fl['args'])
-            ki = data_fl['args'][ref_key]
+            data_fl = pickle.load(open(fp, "rb"))
+            data_fl["args"] = vars(data_fl["args"])
+            ki = data_fl["args"][ref_key]
             data_dict[ki] = data_fl
     return data_dict
 
@@ -278,7 +283,7 @@ def _add_model(
     group_key="groups",
     geometry_keys=default_geometry_keys,
     loss_keys=default_loss_keys,
-    **kwargs
+    **kwargs,
 ):
     all_args = vars(md["args"])
     group_size = all_args.pop("group_size")
@@ -339,7 +344,13 @@ def get_nl_strength(run_dict):
     return run_dict["args"].dm_input_mixing
 
 
-def sort_dict(sd, ordering, squeeze=True, stack_ax=0, no_mean=("dimensionality",)):
+def sort_dict(
+    sd,
+    ordering,
+    squeeze=True,
+    stack_ax=0,
+    no_mean=("dimensionality", "corr_rate", "val_loss"),
+):
     ordering = np.squeeze(np.array(ordering))
     order_inds = np.argsort(ordering)
     ordering = ordering[order_inds]
@@ -392,6 +403,7 @@ def load_run(
         "max_corr",
         "dimensionality",
         "corr_rate",
+        "val_loss",
         "model_frac",
         "fdg_frac",
         "alignment_index",
@@ -442,12 +454,17 @@ def load_nls_param_sweep(template, nl_inds, plot_keys, **kwargs):
         for pk in plot_keys:
             nl_loaded[pk][mix] = sd[pk]
     arr_shape = (len(nl_inds), len(n_tasks), n_reps)
+    arr_tc_shape = (len(nl_inds), len(n_tasks), n_reps, args["model_epochs"] + 1)
     out_arrs = {}
     for pk in plot_keys:
         mix_keys = np.array(list(nl_loaded[pk].keys()))
         inds = np.argsort(mix_keys)
         mix_sorted = mix_keys[inds]
-        arr = np.zeros(arr_shape)
+        if len(nl_loaded[pk][mix_sorted[0]].shape) == 2:
+            use_shape = arr_shape
+        else:
+            use_shape = arr_tc_shape
+        arr = np.zeros(use_shape)
         for i, mix_s in enumerate(mix_sorted):
             arr[i] = nl_loaded[pk][mix_s]
         out_arrs[pk] = arr
