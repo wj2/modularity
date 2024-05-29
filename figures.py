@@ -1524,7 +1524,7 @@ class FigureModularityIsolated(ModularizerFigure):
         n_parts, mixes, out_arrs_lin, out_arrs_nonlin, out_arrs_full = self.data[key]
         mix_inds = (1, 10, 19)
         part_ind = 5
-        tr_key = "val_loss"
+        tr_key = "loss"
         mod_key = "model_frac"
         for i, mi in enumerate(mix_inds):
             tr_lin = out_arrs_lin[tr_key][mi, part_ind]

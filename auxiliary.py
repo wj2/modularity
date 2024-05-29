@@ -349,7 +349,7 @@ def sort_dict(
     ordering,
     squeeze=True,
     stack_ax=0,
-    no_mean=("dimensionality", "corr_rate", "val_loss"),
+    no_mean=("dimensionality", "corr_rate", "val_loss", "loss",),
 ):
     ordering = np.squeeze(np.array(ordering))
     order_inds = np.argsort(ordering)
@@ -404,6 +404,7 @@ def load_run(
         "dimensionality",
         "corr_rate",
         "val_loss",
+        "loss",
         "model_frac",
         "fdg_frac",
         "alignment_index",

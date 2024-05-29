@@ -579,6 +579,7 @@ def train_n_models(
     kernel_init=None,
     out_kernel_init=None,
     additional_hidden=(),
+    use_early_stopping=True,
     **training_kwargs,
 ):
     if fdg is None:
@@ -609,6 +610,7 @@ def train_n_models(
             kernel_init=kernel_init,
             out_kernel_init=out_kernel_init,
             additional_hidden=additional_hidden,
+            use_early_stopping=use_early_stopping,
         )
         h_i = m_i.fit(epochs=epochs, verbose=verbose, **training_kwargs)
         out_ms.append(m_i)
