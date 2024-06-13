@@ -442,6 +442,48 @@ def explain_clustering(df, target_fields=target_fields, explainer_fields=exp_fie
     return out_coefs, inter_all, target_fields
 
 
+def task_dim_analytic(d, n_tasks, n_cons=2):
+    a = 1 / (n_cons * d)
+    dim = n_tasks / (1 + (n_tasks - 1) * a)
+    return dim
+
+
+def prob_eliminate(d, n_tasks, n_cons=2):
+    dm1d = (d - 1) / d
+    p = 1 - dm1d ** 2 + dm1d * (1 / (2 * d))
+    1 - p # is prob of elimination
+    
+    elim = 1 - p ** n_tasks
+    return elim
+
+
+def estimate_prob_eliminate(targs, lvs):
+    perf = np.zeros((lvs.shape[1], targs.shape[1]))
+    for i in range(lvs.shape[1]):
+        m1 = lvs[:, i] == 1
+        m2 = lvs[:, i] == -1
+        for j in range(targs.shape[1]):
+            m = skm.LinearSVC(dual="auto")
+            lv_m1 = lvs[m1]
+            tj1 = targs[m1, j]
+            if np.var(tj1) == 0:
+                p1 = 1
+            else:
+                m_j1 = m.fit(lv_m1, tj1)
+                p1 = m_j1.score(lv_m1, tj1)
+
+            m = skm.LinearSVC(dual="auto")
+            lv_m2 = lvs[m2]
+            tj2 = targs[m2, j]
+            if np.var(tj2) == 0:
+                p2 = 1
+            else:
+                m_j2 = m.fit(lv_m2, tj2)
+                p2 = m_j2.score(lv_m2, tj2)
+            perf[i, j] = np.mean([p1, p2])
+    return perf
+
+
 def _task_dim(
     m, group_dim=False, noncon_dim=False, use_group=0, n_samps=1000, diff_break=False
 ):
@@ -915,6 +957,30 @@ def _sort_ablate_inds(losses):
     losses[np.isnan(losses)] = 0
     _, sort_inds = spo.linear_sum_assignment(losses.T, maximize=True)
     return sort_inds
+
+
+def _kfunc(x):
+    x[x > 1] = 1
+    x[x < -1] = -1
+    main = np.sqrt(1 - x ** 2) + (np.pi - np.arccos(x)) * x
+    return main / (2 * np.pi)
+
+
+def _compute_kernel(x):
+    """ x is N x D array of stimulus representations """
+    xw = np.sqrt(np.sum(x ** 2, axis=1, keepdims=True))
+    kernel = (xw ** 2) * _kfunc((x / xw) @ (x / xw).T)
+    return kernel
+
+
+def kernel_theory(fdg, tasks=None, n_cons=2, weight_var=1):
+    if tasks is None:
+        tasks = ms.make_non_overlapping_contextual_task_func(1, 1, n_cons)
+    stim, inp_rep = fdg.get_all_stim(con_dims=np.arange(-n_cons, 0))
+    targ = tasks(stim)
+    kernel = weight_var * _compute_kernel(inp_rep)
+    v = kernel @ targ
+    return v.T @ v
 
 
 def ablate_label_sets(

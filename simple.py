@@ -1215,6 +1215,29 @@ def make_linear_task_func(n_g, n_tasks=1, i_var=0, center=0.5, renorm=False, **k
     )
 
 
+def make_non_overlapping_contextual_task_func(
+        n_g, n_tasks, n_cons, task_func=make_linear_task_func, **kwargs,
+):
+    con_inds = np.arange(-n_cons, 0)
+    rel_inds = list(np.arange(n_g * i, n_g * (i + 1)) for i in range(n_cons))
+
+    task_groups = []
+    for i in range(n_cons):
+        task_groups.append(task_func(n_g, n_tasks, **kwargs))
+
+    def task_func(samps):
+        out = np.zeros((samps.shape[0], n_tasks))
+        con_inds_s = np.argmax(samps[:, con_inds], axis=1)
+        for i in range(n_cons):
+            rel_vars = samps[:, rel_inds[i]]
+            mask = con_inds_s == i
+            task_outs = task_groups[i](rel_vars)
+            out[mask] = task_outs[mask]
+        return out
+
+    return task_func
+    
+
 def make_contextual_task_func(
     n_g, n_tasks, n_cons=2, task_func=make_linear_task_func, **kwargs
 ):

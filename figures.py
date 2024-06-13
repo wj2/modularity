@@ -86,6 +86,13 @@ class ModularizerFigure(pu.Figure):
         )
         return mddg
 
+    @property
+    def structured_unstructured_cmap(self):
+        disent_color = self.params.getcolor("disentangled_color")
+        unstruct_color = self.params.getcolor("unstructured_color")
+        cm = gpl.make_linear_cmap(disent_color, unstruct_color)
+        return cm
+
     def _load_consequences_sweep(
         self,
         key="consequences_simulations",
@@ -1468,7 +1475,8 @@ def _combine_binary_arrs(binary_arrs, colors):
 
 class FigureModularityIsolated(ModularizerFigure):
     def __init__(self, fig_key="isolated_rep", colors=colors, **kwargs):
-        fsize = (6, 4.4)
+        fsize = (5, 4)
+        plt.figure
         cf = u.ConfigParserColor()
         cf.read(config_path)
         params = cf[fig_key]
@@ -1482,27 +1490,29 @@ class FigureModularityIsolated(ModularizerFigure):
     def make_gss(self):
         gss = {}
 
-        eg_grid = pu.make_mxn_gridspec(self.gs, 1, 3, 0, 30, 0, 100, 10, 10)
+        eg_grid = pu.make_mxn_gridspec(self.gs, 3, 1, 0, 100, 0, 25, 4, 2)
         eg_axs = self.get_axs(eg_grid, squeeze=True)
-        tr_grid = pu.make_mxn_gridspec(self.gs, 1, 1, 35, 65, 0, 50, 10, 10)
-        tr_axs = self.get_axs(tr_grid)[0, 0]
-        ps_grid = pu.make_mxn_gridspec(self.gs, 1, 3, 70, 100, 0, 100, 10, 10)
-        sweep_axs = self.get_axs(
-            ps_grid,
-            squeeze=True,
-        )
-        gss["panel_traces_sweep"] = (eg_axs, tr_axs, sweep_axs)
+        sum_grid = pu.make_mxn_gridspec(self.gs, 3, 1, 0, 100, 40, 45, 4, 2)
+        sum_axs = self.get_axs(sum_grid, squeeze=True, sharey="all", sharex="all")
+        tr_grid = pu.make_mxn_gridspec(self.gs, 2, 1, 15, 85, 60, 100, 4, 5)
+        tr_axs = self.get_axs(tr_grid, squeeze=True, sharex="all")
+        # ps_grid = pu.make_mxn_gridspec(self.gs, 1, 3, 70, 100, 0, 100, 10, 10)
+        # sweep_axs = self.get_axs(
+        #     ps_grid,
+        #     squeeze=True,
+        # )
+        gss["panel_traces_sweep"] = (eg_axs, sum_axs, tr_axs)
 
         self.gss = gss
 
     def panel_traces_sweep(self, reload_=False):
         key = "panel_traces_sweep"
-        axs_eg, ax_tr, axs_sweep = self.gss[key]
+        axs_eg, axs_sum, axs_tr = self.gss[key]
         template = self.params.get("nls_template_big")
         inds_lin = self.params.getlist("run_inds_linear")
         inds_nonlin = self.params.getlist("run_inds_nonlinear")
         inds_full = self.params.getlist("run_inds_full")
-        plot_keys = ("corr_rate", "model_frac", "val_loss")
+        plot_keys = ("corr_rate", "model_frac", "val_loss", "loss")
 
         if self.data.get(key) is None or reload_:
             out_arrs_lin, n_parts, mixes = self.load_nls_runs(
@@ -1522,29 +1532,174 @@ class FigureModularityIsolated(ModularizerFigure):
                 out_arrs_full,
             )
         n_parts, mixes, out_arrs_lin, out_arrs_nonlin, out_arrs_full = self.data[key]
-        mix_inds = (1, 10, 19)
+        struct = 1 - mixes
+        mix_inds = (1, 15, 19)
         part_ind = 5
         tr_key = "loss"
         mod_key = "model_frac"
-        for i, mi in enumerate(mix_inds):
-            tr_lin = out_arrs_lin[tr_key][mi, part_ind]
-            tr_nonlin = out_arrs_nonlin[tr_key][mi, part_ind]
-            epochs = np.arange(tr_lin.shape[1])
-            gpl.plot_trace_werr(epochs, tr_lin, ax=axs_eg[i], log_y=True)
-            gpl.plot_trace_werr(epochs, tr_nonlin, ax=axs_eg[i], log_y=True)
+        disent_color = self.params.getcolor("disentangled_color")
+        unstruct_color = self.params.getcolor("unstructured_color")
+        lin_label = "linear component"
+        nonlin_label = "nonlinear component"
+        cm = self.structured_unstructured_cmap
 
-        first_n_epochs = 3
+        first_n_epochs = 100
+        g_col = (0.8,) * 3
         tr_diff = (
             out_arrs_lin[tr_key][..., :first_n_epochs]
             - out_arrs_nonlin[tr_key][..., :first_n_epochs]
         )
+        axs_eg[1].set_ylabel("training loss")
+        axs_eg[-1].set_xlabel("training epoch")
         tr_mu_diff = np.nanmean(tr_diff, axis=-1)
-        print(mixes.shape, n_parts.shape)
-        gpl.plot_trace_werr(mixes, tr_mu_diff[:, part_ind].T, ax=ax_tr)
+
+        gpl.plot_trace_werr(
+            struct, tr_mu_diff[:, part_ind].T, ax=axs_tr[0], color=g_col
+        )
+        gpl.plot_colored_line(
+            struct,
+            np.mean(tr_mu_diff[:, part_ind].T, axis=0),
+            ax=axs_tr[0],
+            cmap=cm,
+            col_inds=mixes,
+        )
+        gpl.add_hlines(0, axs_tr[0], zorder=-1)
+        tr_mu = np.mean(tr_mu_diff[:, part_ind].T, axis=0)
+        ind = np.argmin(np.abs(tr_mu))
+        gpl.add_vlines(struct[ind], axs_tr[0], zorder=-1)
         mods = out_arrs_full[mod_key][:, part_ind].T
-        # gpl.plot_trace_werr(mixes, mods, ax=ax_tr)
-        gpl.add_hlines(0, ax_tr)
+        gpl.plot_trace_werr(struct, mods, ax=axs_tr[1], color=g_col)
+        gpl.plot_colored_line(
+            struct,
+            np.mean(mods, axis=0),
+            ax=axs_tr[1],
+            cmap=cm,
+            col_inds=mixes,
+        )
+        gpl.add_hlines(0, axs_tr[1], zorder=-1)
+        gpl.add_vlines(struct[ind], axs_tr[1], zorder=-1)
+        gpl.clean_plot_bottom(axs_tr[0])
+        axs_tr[0].set_ylabel(
+            r"$\Delta$ learning" + " \n(nonlinear - linear)"
+        )
+        axs_tr[1].set_ylabel("fraction of units\n(modularity)")
+        axs_tr[1].set_xlabel("input structure")
+        axs_tr[1].invert_xaxis()
+        for i, mi in enumerate(mix_inds):
+            tr_lin = out_arrs_lin[tr_key][mi, part_ind]
+            tr_nonlin = out_arrs_nonlin[tr_key][mi, part_ind]
+            sum_lin = np.nanmean(tr_lin, axis=1)
+            sum_nonlin = np.nanmean(tr_nonlin, axis=1)
+            col_i = cm(mixes[mi])
+            gpl.violinplot([sum_lin - sum_nonlin], [0], ax=axs_sum[i], color=[col_i])
+            gpl.clean_plot(axs_sum[i], 0)
+            gpl.clean_plot_bottom(axs_sum[i])
+            gpl.add_hlines(0, axs_sum[i])
+            epochs = np.arange(tr_lin.shape[1])
+            gpl.plot_trace_werr(
+                epochs,
+                tr_lin,
+                ax=axs_eg[i],
+                log_y=True,
+                color=disent_color,
+                label=lin_label,
+            )
+            gpl.plot_trace_werr(
+                epochs,
+                tr_nonlin,
+                ax=axs_eg[i],
+                log_y=True,
+                color=unstruct_color,
+                label=nonlin_label,
+            )
+            axs_tr[0].plot(
+                struct[mi],
+                np.mean(tr_mu_diff[:, part_ind].T, axis=0)[mi],
+                "o",
+                color=col_i,
+                ms=5,
+            )
+            axs_tr[1].plot(
+                struct[mi],
+                np.mean(mods, axis=0)[mi],
+                "o",
+                color=col_i,
+                ms=5,
+            )
+            lin_label = ""
+            nonlin_label = ""
+            axs_eg[i].set_title("input structure = {:.2f}".format(struct[mi]))
+            if i < len(mix_inds) - 1:
+                gpl.clean_plot_bottom(axs_eg[i])
+        axs_sum[1].set_ylabel(
+            r"$\Delta$ learning" + " \n(nonlinear - linear)"
+        )
+
+
+class FigureTasks(ModularizerFigure):
+    def __init__(self, fig_key="task_figure", colors=colors, **kwargs):
+        fsize = (2, 3)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = (
+            "panel_eg_networks",
+            "panel_param_sweep",
+        )
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        grid = pu.make_mxn_gridspec(self.gs, 2, 1, 0, 100, 0, 100, 10, 10)
+        axs = self.get_axs(grid, squeeze=True, sharex="all")
+        gss["panel_task_dim"] = axs[0]
+        gss["panel_task_elim"] = axs[1]
+
+        self.gss = gss
+
+    def panel_task_dim(self):
+        key = "panel_task_dim"
+        ax = self.gss[key]
+
+        group_sizes = self.params.getlist("group_sizes", typefunc=int)
+        cm = self.params.getcmap("groups_cmap")
+        colors = cm(np.linspace(.2, .8, len(group_sizes)))
+        task_range = self.params.getlist("task_range", typefunc=int)
+        n_task_range_pts = self.params.getint("n_task_range_pts")
+        n_tasks = np.linspace(*task_range, n_task_range_pts)
         
+        for i, g in enumerate(group_sizes):
+            dims = ma.task_dim_analytic(g, n_tasks)
+            ax.plot(n_tasks, dims, color=colors[i], label="D = {}".format(g))
+        g_color = (.8,) * 3
+        ax.plot(n_tasks, n_tasks, color=g_color, label="task dimensions")
+        gpl.clean_plot(ax, 0)
+        ax.set_ylabel("dimensionality")
+        ax.set_xlabel("number of tasks")
+        ax.legend(frameon=False)
+
+    def panel_task_elim(self):
+        key = "panel_task_elim"
+        ax = self.gss[key]
+        
+        group_sizes = self.params.getlist("group_sizes", typefunc=int)
+        cm = self.params.getcmap("groups_cmap")
+        colors = cm(np.linspace(.2, .8, len(group_sizes)))
+        task_range = self.params.getlist("task_range", typefunc=int)
+        n_task_range_pts = self.params.getint("n_task_range_pts")
+        n_tasks = np.linspace(*task_range, n_task_range_pts)
+        
+        for i, g in enumerate(group_sizes):
+            elims = ma.prob_eliminate(g, n_tasks)
+            ax.plot(n_tasks, g * (1 - elims), color=colors[i], label="D = {}".format(g))
+        gpl.clean_plot(ax, 0)
+        ax.set_xticks([n_tasks[0], 10, n_tasks[-1]])
+        ax.legend(frameon=False)
+        ax.set_xlabel("number of tasks")
+        ax.set_ylabel("expected alternate\ndecompositions")
 
 
 class FigureModularityControlled(ModularizerFigure):
