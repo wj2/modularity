@@ -169,7 +169,7 @@ class ModularizerCode(cc.Code):
     ):
         if fix_features < 0:
             fix_features = len(self.group) + fix_features
-        combos = it.combinations(self.group, fix_features)
+        combos = list(it.combinations(self.group, fix_features))
         n_possible_combos = int(ss.comb(len(self.group), fix_features))
         if n_possible_combos > max_combos:
             comb_inds = np.random.choice(
@@ -177,7 +177,7 @@ class ModularizerCode(cc.Code):
             )
             combos = np.array(list(combos))[comb_inds]
             n_possible_combos = max_combos
-        out = np.zeros((n_possible_combos, n_reps))
+        out = np.zeros((len(combos), n_reps))
         for i, combo in enumerate(combos):
             options = list(set(self.group).difference(combo))
             td = np.random.choice(options, 1)[0]
@@ -194,7 +194,7 @@ class ModularizerCode(cc.Code):
         non_group_inds = set(all_inds).difference(self.group)
 
         ngi_iter = it.combinations(non_group_inds, fix_features)
-        combos = it.product(self.group, ngi_iter)
+        combos = list(it.product(self.group, ngi_iter))
         n_possible_combos = len(self.group) * len(non_group_inds)
         if n_possible_combos > max_combos:
             comb_inds = np.random.choice(
@@ -202,7 +202,7 @@ class ModularizerCode(cc.Code):
             )
             combos = np.array(list(combos), dtype=object)[comb_inds]
             n_possible_combos = max_combos
-        out = np.zeros((n_possible_combos, n_reps))
+        out = np.zeros((len(combos), n_reps))
         for i, (td, gd) in enumerate(combos):
             out[i] = self.compute_specific_ccgp(td, gd, n_reps=n_reps, **kwargs)
         return out

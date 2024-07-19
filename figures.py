@@ -718,8 +718,26 @@ class FigureControlledInput(ModularizerFigure):
                 )
             self.data[key] = (dims, seps)
         dims, seps = self.data[key]
-        gpl.plot_trace_werr(1 - nl_strengths, dims, ax=ax_dim, color=color)
-        gpl.plot_trace_werr(1 - nl_strengths, seps.T, ax=ax_sep, color=color)
+        cmap = self.structured_unstructured_cmap
+        gpl.plot_colored_line(
+            1 - nl_strengths,
+            dims,
+            ax=ax_dim,
+            cmap=cmap,
+            col_inds=nl_strengths,
+        )
+        gpl.clean_plot(ax_dim, 0)
+
+        g_col = (0.8,) * 3
+        gpl.plot_trace_werr(1 - nl_strengths, seps.T, ax=ax_sep, color=g_col)
+        gpl.plot_colored_line(
+            1 - nl_strengths,
+            np.mean(seps.T, axis=0),
+            ax=ax_sep,
+            cmap=cmap,
+            col_inds=nl_strengths,
+        )
+
         ax_dim.set_xlabel("input structure")
         ax_sep.set_xlabel("input structure")
         ax_sep.invert_xaxis()
@@ -1496,11 +1514,6 @@ class FigureModularityIsolated(ModularizerFigure):
         sum_axs = self.get_axs(sum_grid, squeeze=True, sharey="all", sharex="all")
         tr_grid = pu.make_mxn_gridspec(self.gs, 2, 1, 15, 85, 60, 100, 4, 5)
         tr_axs = self.get_axs(tr_grid, squeeze=True, sharex="all")
-        # ps_grid = pu.make_mxn_gridspec(self.gs, 1, 3, 70, 100, 0, 100, 10, 10)
-        # sweep_axs = self.get_axs(
-        #     ps_grid,
-        #     squeeze=True,
-        # )
         gss["panel_traces_sweep"] = (eg_axs, sum_axs, tr_axs)
 
         self.gss = gss
@@ -1512,7 +1525,7 @@ class FigureModularityIsolated(ModularizerFigure):
         inds_lin = self.params.getlist("run_inds_linear")
         inds_nonlin = self.params.getlist("run_inds_nonlinear")
         inds_full = self.params.getlist("run_inds_full")
-        plot_keys = ("corr_rate", "model_frac", "val_loss", "loss")
+        plot_keys = ("corr_rate", "model_frac", "val_loss", "loss", "dimensionality")
 
         if self.data.get(key) is None or reload_:
             out_arrs_lin, n_parts, mixes = self.load_nls_runs(
@@ -1579,9 +1592,7 @@ class FigureModularityIsolated(ModularizerFigure):
         gpl.add_hlines(0, axs_tr[1], zorder=-1)
         gpl.add_vlines(struct[ind], axs_tr[1], zorder=-1)
         gpl.clean_plot_bottom(axs_tr[0])
-        axs_tr[0].set_ylabel(
-            r"$\Delta$ learning" + " \n(nonlinear - linear)"
-        )
+        axs_tr[0].set_ylabel(r"$\Delta$ learning" + " \n(nonlinear - linear)")
         axs_tr[1].set_ylabel("fraction of units\n(modularity)")
         axs_tr[1].set_xlabel("input structure")
         axs_tr[1].invert_xaxis()
@@ -1631,9 +1642,7 @@ class FigureModularityIsolated(ModularizerFigure):
             axs_eg[i].set_title("input structure = {:.2f}".format(struct[mi]))
             if i < len(mix_inds) - 1:
                 gpl.clean_plot_bottom(axs_eg[i])
-        axs_sum[1].set_ylabel(
-            r"$\Delta$ learning" + " \n(nonlinear - linear)"
-        )
+        axs_sum[1].set_ylabel(r"$\Delta$ learning" + " \n(nonlinear - linear)")
 
 
 class FigureTasks(ModularizerFigure):
@@ -1666,15 +1675,15 @@ class FigureTasks(ModularizerFigure):
 
         group_sizes = self.params.getlist("group_sizes", typefunc=int)
         cm = self.params.getcmap("groups_cmap")
-        colors = cm(np.linspace(.2, .8, len(group_sizes)))
+        colors = cm(np.linspace(0.2, 0.8, len(group_sizes)))
         task_range = self.params.getlist("task_range", typefunc=int)
         n_task_range_pts = self.params.getint("n_task_range_pts")
         n_tasks = np.linspace(*task_range, n_task_range_pts)
-        
+
         for i, g in enumerate(group_sizes):
             dims = ma.task_dim_analytic(g, n_tasks)
             ax.plot(n_tasks, dims, color=colors[i], label="D = {}".format(g))
-        g_color = (.8,) * 3
+        g_color = (0.8,) * 3
         ax.plot(n_tasks, n_tasks, color=g_color, label="task dimensions")
         gpl.clean_plot(ax, 0)
         ax.set_ylabel("dimensionality")
@@ -1684,14 +1693,14 @@ class FigureTasks(ModularizerFigure):
     def panel_task_elim(self):
         key = "panel_task_elim"
         ax = self.gss[key]
-        
+
         group_sizes = self.params.getlist("group_sizes", typefunc=int)
         cm = self.params.getcmap("groups_cmap")
-        colors = cm(np.linspace(.2, .8, len(group_sizes)))
+        colors = cm(np.linspace(0.2, 0.8, len(group_sizes)))
         task_range = self.params.getlist("task_range", typefunc=int)
         n_task_range_pts = self.params.getint("n_task_range_pts")
         n_tasks = np.linspace(*task_range, n_task_range_pts)
-        
+
         for i, g in enumerate(group_sizes):
             elims = ma.prob_eliminate(g, n_tasks)
             ax.plot(n_tasks, g * (1 - elims), color=colors[i], label="D = {}".format(g))
@@ -1700,6 +1709,110 @@ class FigureTasks(ModularizerFigure):
         ax.legend(frameon=False)
         ax.set_xlabel("number of tasks")
         ax.set_ylabel("expected alternate\ndecompositions")
+
+
+class FigureModularityWeights(ModularizerFigure):
+    def __init__(self, fig_key="controlled_weight_init", colors=colors, **kwargs):
+        fsize = (6, 4.4)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = ("panel_sweep_metrics",)
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        ps_grid = pu.make_mxn_gridspec(self.gs, 3, 3, 0, 100, 0, 100, 10, 10)
+        gss["panel_sweep_metrics"] = self.get_axs(
+            ps_grid,
+            squeeze=True,
+        )
+
+        self.gss = gss
+
+    def panel_sweep_metrics(self, reload_=False):
+        key = "panel_sweep_metrics"
+
+        axs = self.gss[key]
+
+        ax_focus = axs[-1]
+        template = self.params.get("nls_template_big")
+        inds_rich = self.params.getlist("run_inds_rich")
+        inds_lazy = self.params.getlist("run_inds_lazy")
+        inds_lazier = self.params.getlist("run_inds_lazier")
+
+        plot_keys = ("model_frac", "alignment_index")
+        axs = axs[: len(plot_keys)]
+        labels = {
+            "model_frac": "fraction of units",
+            "alignment_index": "subspace specialization",
+        }
+        cms = ("Blues", "Oranges")
+        if self.data.get(key) is None or reload_:
+            out_arrs_rich, n_parts, mixes = self.load_nls_runs(
+                template, inds_rich, plot_keys
+            )
+            out_arrs_lazy, n_parts, mixes = self.load_nls_runs(
+                template, inds_rich, plot_keys
+            )
+            out_arrs_lazier, n_parts, mixes = self.load_nls_runs(
+                template, inds_rich, plot_keys
+            )
+            self.data[key] = (
+                n_parts,
+                mixes,
+                out_arrs_rich,
+                out_arrs_lazy,
+                out_arrs_lazier,
+            )
+        n_parts, mixes = self.data[key][:2]
+        out_arrs = self.data[key][2:]
+
+        nl_mask = mixes >= 0.5
+        t_mask = n_parts <= 10
+        plot_thresh = {"model_frac": 0.05, "alignment_index": 0.05}
+        binary_arrs = []
+        arr_colors = []
+        for i, pk in enumerate(plot_keys):
+            for j, out_arr in enumerate(out_arrs):
+                arr = np.mean(out_arr[pk], axis=2)
+                img = gpl.pcolormesh(
+                    n_parts,
+                    1 - mixes,
+                    arr,
+                    ax=axs[j, i],
+                    cmap=cms[i],
+                    vmin=0,
+                    rasterized=True,
+                )
+                self.f.colorbar(img, ax=axs[j, i], label=labels[pk])
+
+                sub_arr = arr[nl_mask][:, t_mask]
+                binary_arrs.append(sub_arr > plot_thresh[pk])
+                arr_colors.append(plt.get_cmap(cms[i])(0.7))
+                axs[j, i].set_xlabel("number of tasks")
+                axs[j, i].set_ylabel("input structure")
+                axs[j, i].set_xticks([n_parts[0], 10, n_parts[-1]])
+                axs[j, i].set_yticks([0, 0.5, 1])
+                axs[j, i].tick_params(top=True, labeltop=True, bottom=False, labelbottom=False)
+        # combined_arr, cm_comb = _combine_binary_arrs(binary_arrs, arr_colors)
+        # gpl.pcolormesh(
+        #     n_parts[t_mask],
+        #     1 - mixes[nl_mask],
+        #     combined_arr,
+        #     cmap=cm_comb,
+        #     vmin=0,
+        #     ax=ax_focus,
+        #     rasterized=True,
+        # )
+        # ax_focus.set_xticks([n_parts[0], 10])
+        # ax_focus.set_yticks([0, 0.5])
+        # ax_focus.set_xlabel("number of tasks")
+        # ax_focus.set_ylabel("input structure")
+        # ax_focus.tick_params(top=True, labeltop=True, bottom=False, labelbottom=False)
 
 
 class FigureModularityControlled(ModularizerFigure):
