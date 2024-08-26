@@ -510,13 +510,13 @@ def visualize_stable_gates(
         ax.plot(*stim[mask].T, "o", ms=pt_ms)
     # ax.view_init(0, 0)
     return ax
-
+    
 
 def visualize_module_activity(
     model,
     context,
-    ax=None,
     n_samps=1000,
+    ax=None,
     line_color=None,
     line_colors=None,
     pt_color=None,

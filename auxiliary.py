@@ -349,13 +349,19 @@ def sort_dict(
     ordering,
     squeeze=True,
     stack_ax=0,
-    no_mean=("dimensionality", "corr_rate", "val_loss", "loss",),
+    no_mean=(
+        "dimensionality",
+        "corr_rate",
+        "val_loss",
+        "loss",
+    ),
 ):
     ordering = np.squeeze(np.array(ordering))
     order_inds = np.argsort(ordering)
     ordering = ordering[order_inds]
     sorted_dict = {}
     for k, v in sd.items():
+        print(k)
         v = np.squeeze(np.stack(list(v), axis=stack_ax))
         v_sort = v[order_inds]
         if k not in no_mean:
@@ -381,13 +387,7 @@ def _diff_max_corr_ablation(d):
     return _diff_ablation(d, "within_max_corr_ablation", "across_max_corr_ablation")
 
 
-def load_run(
-    run_ind,
-    folder="modularity/simulation_data/",
-    file_template="modularizer_([0-9]+)-{run_ind}",
-    file_name="model_results.pkl",
-    ordering_func=_get_n_tasks,
-    take_keys=(
+default_take_keys = (
         "within_ccgp",
         "across_ccgp",
         "shattering",
@@ -408,7 +408,26 @@ def load_run(
         "model_frac",
         "fdg_frac",
         "alignment_index",
-    ),
+        "weights",
+        "group_members",
+        "groups",
+        "related context",
+        "related context tasks",
+        "related context inference",
+        "related context inference tasks",
+        "new context",
+        "new context tasks",
+        "new task",
+        "new task tasks",
+        "zero shot",
+)
+def load_run(
+    run_ind,
+    folder="modularity/simulation_data/",
+    file_template="modularizer_([0-9]+)-{run_ind}",
+    file_name="model_results.pkl",
+    ordering_func=_get_n_tasks,
+    take_keys=default_take_keys,
     add_keys=None,
 ):
     if add_keys is None:
@@ -441,35 +460,47 @@ def load_run(
     return sort_dict(out_dict, ordering) + (args,)
 
 
+def make_runind_str(start, end):
+    out_s = ", ".join(list(str(x) for x in range(start, end + 1)))
+    return out_s
+
+
 def load_nls_param_sweep(template, nl_inds, plot_keys, **kwargs):
-    nl_loaded = {k: {} for k in plot_keys}
+    ij_pk_dict = {pk: {} for pk in plot_keys}
+    mixes = []
+    nts = []
     for i, ind in enumerate(nl_inds):
+        print(ind, template, kwargs)
         out = load_run(
             ind,
             file_template=template,
             **kwargs,
         )
         sd, n_tasks, args = out
+
         n_reps = args["n_reps"]
         mix = args["dm_input_mixing"] / args["dm_input_mixing_denom"]
+        mixes.append(mix)
         for pk in plot_keys:
-            nl_loaded[pk][mix] = sd[pk]
-    arr_shape = (len(nl_inds), len(n_tasks), n_reps)
-    arr_tc_shape = (len(nl_inds), len(n_tasks), n_reps, args["model_epochs"] + 1)
+            for j, nt in enumerate(n_tasks):
+                ij_pk_dict[pk][(mix, nt)] = sd[pk][j]
+                nts.append(nt)
+    mix_sorted = np.unique(mixes)
+    nt_sorted = np.unique(nts)
+    arr_shape = (len(mix_sorted), len(nt_sorted), n_reps)
+    arr_tc_shape = (len(mix_sorted), len(nt_sorted), n_reps, args["model_epochs"] + 1)
     out_arrs = {}
     for pk in plot_keys:
-        mix_keys = np.array(list(nl_loaded[pk].keys()))
-        inds = np.argsort(mix_keys)
-        mix_sorted = mix_keys[inds]
-        if len(nl_loaded[pk][mix_sorted[0]].shape) == 2:
+        if len(ij_pk_dict[pk][(mix_sorted[0], nt_sorted[0])].shape) == 1:
             use_shape = arr_shape
         else:
             use_shape = arr_tc_shape
         arr = np.zeros(use_shape)
-        for i, mix_s in enumerate(mix_sorted):
-            arr[i] = nl_loaded[pk][mix_s]
+        arr[:] = np.nan
+        for i, j in u.make_array_ind_iterator((len(mix_sorted), len(nt_sorted))):
+            arr[i, j] = ij_pk_dict[pk].get((mix_sorted[i], nt_sorted[j]), np.nan)
         out_arrs[pk] = arr
-    return out_arrs, n_tasks, mix_keys
+    return out_arrs, nt_sorted, mix_sorted
 
 
 def load_models(

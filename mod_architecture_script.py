@@ -61,6 +61,8 @@ def create_parser():
     )
     parser.add_argument("--n_reps", default=5, type=int, help="number of repeats")
     parser.add_argument("--n_model_train", default=1000, type=int)
+    parser.add_argument("--n_new_train", default=None, type=int)
+    
 
     parser.add_argument("--kernel_init_std", default=None, type=float)
     parser.add_argument("--group_overlap", default=0, type=int)
@@ -221,8 +223,11 @@ if __name__ == "__main__":
         additional_hidden=args.model_layers,
     )
 
+    if args.n_new_train is None:
+        args.n_new_train = args.n_model_train
     train_kwargs = dict(
         train_samps=args.n_model_train,
+        new_samps=args.n_new_train,
         batch_size=args.model_batch_size,
         train_epochs=args.model_epochs,
         use_early_stopping=False,

@@ -1253,6 +1253,7 @@ def new_task_training(
     novel_tasks=1,
     train_epochs=10,
     train_samps=5000,
+    new_samps=1000,
     **kwargs,
 ):
     all_tasks = set(range(n_tasks))
@@ -1278,7 +1279,7 @@ def new_task_training(
     h_next = out_two[0].fit(
         track_dimensionality=True,
         epochs=train_epochs,
-        n_train=train_samps,
+        n_train=new_samps * len(nov_task),
         verbose=False,
         val_only_tasks=nov_task,
         track_mean_tasks=False,
@@ -1293,7 +1294,7 @@ def new_task_training(
         params=params,
         verbose=verbose,
         train_epochs=train_epochs,
-        n_train=train_samps,
+        n_train=new_samps * len(nov_task),
         tasks_per_group=n_tasks,
         only_tasks=nov_task,
         track_mean_tasks=False,
@@ -1656,8 +1657,10 @@ def new_context_training(
     n_tasks=10,
     train_epochs=10,
     train_samps=5000,
+    new_samps=1000,
     untrained_tasks=0,
     separate_untrained=False,
+    track_reps=False,
     **kwargs,
 ):
     all_tasks = set(range(n_tasks))
@@ -1670,19 +1673,19 @@ def new_context_training(
 
     all_groups = list(range(total_groups))
     kwargs["single_output"] = True
-    print(
-        "arguments",
-        fdg,
-        verbose,
-        params,
-        total_groups,
-        all_groups[:-novel_groups],
-        (total_groups - novel_groups) * train_epochs,
-        (total_groups - novel_groups) * train_samps,
-        n_tasks,
-        separate_tasks,
-    )
-    print(kwargs)
+    # print(
+    #     "arguments",
+    #     fdg,
+    #     verbose,
+    #     params,
+    #     total_groups,
+    #     all_groups[:-novel_groups],
+    #     (total_groups - novel_groups) * train_epochs,
+    #     (total_groups - novel_groups) * train_samps,
+    #     n_tasks,
+    #     separate_tasks,
+    # )
+    # print(kwargs)
     out_two = ms.train_modularizer(
         fdg,
         verbose=verbose,
@@ -1694,6 +1697,7 @@ def new_context_training(
         tasks_per_group=n_tasks,
         separate_tasks=separate_tasks,
         track_mean_tasks=False,
+        track_reps=track_reps,
         **kwargs,
     )
     out_dict = {}
@@ -1709,13 +1713,14 @@ def new_context_training(
     h_next = out_two[0].fit(
         track_dimensionality=True,
         epochs=train_epochs,
-        n_train=train_samps,
+        n_train=new_samps * novel_groups,
         verbose=False,
         only_groups=all_groups[-novel_groups:],
         val_only_groups=all_groups[-novel_groups:],
         only_tasks=only_tasks,
         track_mean_tasks=False,
         val_only_tasks=val_only_tasks,
+        track_reps=track_reps,
     )
     out_dict["trained_hist"] = h_next
     out_dict["trained_modularity"] = compute_frac_contextual(out_two[0])
@@ -1728,7 +1733,7 @@ def new_context_training(
         n_groups=total_groups,
         only_groups=all_groups[:novel_groups],
         train_epochs=train_epochs,
-        n_train=train_samps,
+        n_train=new_samps * novel_groups,
         tasks_per_group=n_tasks,
         only_tasks=only_tasks,
         val_only_tasks=val_only_tasks,

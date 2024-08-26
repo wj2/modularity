@@ -1623,6 +1623,7 @@ def train_modularizer(
     act_func_dict=act_func_dict,
     model_type_dict=model_type_dict,
     track_dimensionality=True,
+    track_reps=False,
     only_groups=None,
     only_tasks=None,
     val_only_groups=None,
@@ -1714,6 +1715,7 @@ def train_modularizer(
             fix_vars=fix_irrel_vars,
             fix_value=fix_irrel_value,
             track_rep_sim=track_rep_sim,
+            track_reps=track_reps,
         )
     else:
         h = None
