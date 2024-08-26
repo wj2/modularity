@@ -1617,6 +1617,7 @@ def zero_shot_training(
     train_samps=5000,
     test_samps=1000,
     fix_n_irrel_vars=1,
+    new_samps=0,
     **kwargs,
 ):
     kwargs["single_output"] = True
