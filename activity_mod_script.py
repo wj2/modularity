@@ -85,6 +85,7 @@ def create_parser():
     parser.add_argument("--only_nonlinear", default=False, action="store_true")
     parser.add_argument("--only_linear", default=False, action="store_true")
     parser.add_argument("--no_early_stopping", default=False, action="store_true")
+    parser.add_argument("--ret_dprime", default=False, action="store_true")
     return parser
 
 
@@ -254,6 +255,7 @@ if __name__ == '__main__':
             fix_features=fix_feats,
             eval_layers=args.eval_intermediate,
             noise_cov=sigma ** 2,
+            ret_dprime=args.ret_dprime,
         )
     else:
         out = (None, None, None)

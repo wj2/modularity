@@ -361,7 +361,6 @@ def sort_dict(
     ordering = ordering[order_inds]
     sorted_dict = {}
     for k, v in sd.items():
-        print(k)
         v = np.squeeze(np.stack(list(v), axis=stack_ax))
         v_sort = v[order_inds]
         if k not in no_mean:
@@ -408,8 +407,8 @@ default_take_keys = (
         "model_frac",
         "fdg_frac",
         "alignment_index",
-        "weights",
-        "group_members",
+    # "weights",
+    # "group_members",
         "groups",
         "related context",
         "related context tasks",
@@ -440,21 +439,19 @@ def load_run(
     f_template = file_template.format(run_ind=run_ind)
     out_dict = {}
     ordering = []
-    for fl in files:
-        m = re.match(f_template, fl)
-        if m is not None:
-            full_path = os.path.join(folder, fl, file_name)
-            model_dict = pickle.load(open(full_path, "rb"))
-            args = vars(model_dict["args"])
-            ordering.append(ordering_func(model_dict))
-            for k in take_keys:
-                l_ = out_dict.get(k, [])
-                if k in model_dict.keys() and model_dict[k] is not None:
-                    md_k = np.squeeze(model_dict[k])
-                    md_k = np.stack(list(md_k), axis=0)
+    gen = u.load_folder_regex_generator(folder, f_template, file_target=file_name)
+    for fp, gd, model_dict in gen:
+        model_dict = pickle.load(open(fp, "rb"))
+        args = vars(model_dict["args"])
+        ordering.append(ordering_func(model_dict))
+        for k in take_keys:
+            l_ = out_dict.get(k, [])
+            if k in model_dict.keys() and model_dict[k] is not None:
+                md_k = np.squeeze(model_dict[k])
+                md_k = np.stack(list(md_k), axis=0)
 
-                    l_.append(md_k)
-                    out_dict[k] = l_
+                l_.append(md_k)
+                out_dict[k] = l_
     for k, func in add_keys.items():
         out_dict[k] = func(out_dict)
     return sort_dict(out_dict, ordering) + (args,)
@@ -470,7 +467,6 @@ def load_nls_param_sweep(template, nl_inds, plot_keys, **kwargs):
     mixes = []
     nts = []
     for i, ind in enumerate(nl_inds):
-        print(ind, template, kwargs)
         out = load_run(
             ind,
             file_template=template,

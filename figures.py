@@ -1927,7 +1927,7 @@ class FigureModularityControlled(ModularizerFigure):
         eg_axs = self.get_axs(eg_grid, squeeze=True)
         gss["panel_eg_networks"] = eg_axs
 
-        ps_grid = pu.make_mxn_gridspec(self.gs, 1, 3, 70, 100, 0, 100, 10, 10)
+        ps_grid = pu.make_mxn_gridspec(self.gs, 1, 3, 75, 100, 0, 100, 10, 17)
         gss["panel_param_sweep"] = self.get_axs(
             ps_grid,
             squeeze=True,
