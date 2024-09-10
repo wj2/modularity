@@ -450,10 +450,10 @@ def task_dim_analytic(d, n_tasks, n_cons=2):
 
 def prob_eliminate(d, n_tasks, n_cons=2):
     dm1d = (d - 1) / d
-    p = 1 - dm1d ** 2 + dm1d * (1 / (2 * d))
-    1 - p # is prob of elimination
-    
-    elim = 1 - p ** n_tasks
+    p = 1 - dm1d**2 + dm1d * (1 / (2 * d))
+    1 - p  # is prob of elimination
+
+    elim = 1 - p**n_tasks
     return elim
 
 
@@ -962,14 +962,14 @@ def _sort_ablate_inds(losses):
 def _kfunc(x):
     x[x > 1] = 1
     x[x < -1] = -1
-    main = np.sqrt(1 - x ** 2) + (np.pi - np.arccos(x)) * x
+    main = np.sqrt(1 - x**2) + (np.pi - np.arccos(x)) * x
     return main / (2 * np.pi)
 
 
 def _compute_kernel(x):
-    """ x is N x D array of stimulus representations """
-    xw = np.sqrt(np.sum(x ** 2, axis=1, keepdims=True))
-    kernel = (xw ** 2) * _kfunc((x / xw) @ (x / xw).T)
+    """x is N x D array of stimulus representations"""
+    xw = np.sqrt(np.sum(x**2, axis=1, keepdims=True))
+    kernel = (xw**2) * _kfunc((x / xw) @ (x / xw).T)
     return kernel
 
 
@@ -1324,18 +1324,33 @@ def new_related_context_training(
     )
 
 
-
 def train_separate_models(
-    mixing_strength, n_group=3, dg_pwr=1, n_train=300, **kwargs,    
+    mixing_strength,
+    n_group=3,
+    dg_pwr=1,
+    n_train=300,
+    **kwargs,
 ):
     _, model_null, hist_null = train_controlled_model(
-        n_group, mixing_strength, total_power=dg_pwr, n_train=n_train, **kwargs,
+        n_group,
+        mixing_strength,
+        total_power=dg_pwr,
+        n_train=n_train,
+        **kwargs,
     )
     _, model_lin, hist_lin = train_controlled_model(
-        n_group, 0, total_power=1 - mixing_strength, n_train=n_train, **kwargs,
+        n_group,
+        0,
+        total_power=1 - mixing_strength,
+        n_train=n_train,
+        **kwargs,
     )
     _, model_nl, hist_nl = train_controlled_model(
-        n_group, 1, total_power=mixing_strength, n_train=n_train, **kwargs,
+        n_group,
+        1,
+        total_power=mixing_strength,
+        n_train=n_train,
+        **kwargs,
     )
     out = {
         "null": (model_null, hist_null),
@@ -1365,7 +1380,10 @@ def train_controlled_model(
     if n_feats is None:
         n_feats = n_group * n_cons - n_overlap * (n_cons - 1) + irrel_vars + n_cons
     mddg = dg.MixedDiscreteDataGenerator(
-        n_feats, mix_strength=mixing_strength, n_units=n_units, total_power=total_power,
+        n_feats,
+        mix_strength=mixing_strength,
+        n_units=n_units,
+        total_power=total_power,
     )
     model, hist = ms.train_modularizer(
         mddg,
@@ -1701,10 +1719,17 @@ def new_context_training(
         track_reps=track_reps,
         **kwargs,
     )
+    con_inds = all_groups[:-novel_groups]
     out_dict = {}
     out_dict["initial_hist"] = out_two[1]
-    out_dict["initial_modularity"] = compute_frac_contextual(out_two[0])
-    out_dict["initial_subspace"] = compute_alignment_index(out_two[0])
+    out_dict["initial_modularity"] = compute_frac_contextual(
+        out_two[0],
+        con_inds=con_inds,
+    )
+    out_dict["initial_subspace"] = compute_alignment_index(
+        out_two[0],
+        con_inds=con_inds,
+    )
     if untrained_tasks > 0:
         only_tasks = train_tasks
         val_only_tasks = untrained_task
@@ -2834,13 +2859,22 @@ def compute_variance_threshold_frac(
     return frac
 
 
-def compute_alignment_index(mod, n_samps=1000, **kwargs):
-    con_inds = np.arange(-mod.n_groups, 0)
-    stim, _, rep = mod.sample_reps(n_samps)
-    cons = np.argmax(stim[:, con_inds], axis=1)
-    stim_cons = np.arange(mod.n_groups)
+def compute_alignment_index(mod, n_samps=1000, con_inds=None, **kwargs):
+    if con_inds is None:
+        con_inds = np.arange(mod.n_groups)
+    stim_all = []
+    rep_all = []
+    cons_all = []
+    for ci in con_inds:
+        stim, _, rep = mod.sample_reps(n_samps, context=ci)
+        stim_all.append(stim)
+        rep_all.append(rep)
+        cons_all.append((ci,) * n_samps)
+    stim = np.concatenate(stim_all, axis=0)
+    rep = np.concatenate(rep_all, axis=0)
+    cons = np.concatenate(cons_all, axis=0)
     con_ais = []
-    for i, j in it.combinations(stim_cons, 2):
+    for i, j in it.combinations(con_inds, 2):
         m1 = cons == i
         m2 = cons == j
         ai_ij = u.alignment_index(rep[m1], rep[m2])
@@ -2857,11 +2891,19 @@ def compute_alignment_index(mod, n_samps=1000, **kwargs):
 
 
 def compute_silences(
-    mod, use_fdg=False, thr=1e-2, rescale=True, n_samps=1000, use_abs=True, layer=None
+    mod,
+    use_fdg=False,
+    thr=1e-2,
+    rescale=True,
+    n_samps=1000,
+    use_abs=True,
+    layer=None,
+    con_inds=None,
 ):
-    n_g = mod.n_groups
+    if con_inds is None:
+        con_inds = range(mod.n_groups)
 
-    _, inp_rep, mod_rep = mod.sample_reps(n_samps * n_g, layer=layer)
+    _, inp_rep, mod_rep = mod.sample_reps(n_samps * len(con_inds), layer=layer)
     if use_fdg:
         mod_rep = inp_rep
     if use_abs:
@@ -2871,8 +2913,8 @@ def compute_silences(
     else:
         unit_norms = np.ones((1, mod_rep.shape[1]))
 
-    active_units = np.zeros((n_g, mod_rep.shape[1]))
-    for i in range(n_g):
+    active_units = np.zeros((len(con_inds), mod_rep.shape[1]))
+    for i in con_inds:
         _, inp_rep, mod_rep = mod.sample_reps(n_samps, context=i, layer=layer)
         if use_fdg:
             mod_rep = inp_rep

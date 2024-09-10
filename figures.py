@@ -100,6 +100,7 @@ class ModularizerFigure(pu.Figure):
         run_key="run_inds_sweep",
         template_key="controlled_template",
         folder_key="controlled_folder",
+        ref_key="tasks_per_group",
     ):
         if self.data.get(key) is None or reload:
             run_inds = self.params.getlist(run_key)
@@ -113,10 +114,11 @@ class ModularizerFigure(pu.Figure):
                     ri,
                     folder=controlled_folder,
                     template=controlled_template,
-                    ref_key="tasks_per_group",
+                    ref_key=ref_key,
                 )
-                m = out_dict[1]["args"]["dm_input_mixing"]
-                m = m / out_dict[1]["args"]["dm_input_mixing_denom"]
+                ud = list(out_dict.values())[0]
+                m = ud["args"]["dm_input_mixing"]
+                m = m / ud["args"]["dm_input_mixing_denom"]
                 mix_dicts.append(out_dict)
                 mixing.append(m)
             self.data[key] = (mixing, mix_dicts)
@@ -128,35 +130,35 @@ class ModularizerFigure(pu.Figure):
         inds = np.argsort(mixing)
         mix_sort = np.array(mixing)[inds]
 
+        task_lists = np.concatenate(list(list(mix_dicts[ind].keys()) for ind in inds))
+        tasks_all = np.unique(task_lists)
+        n_ts = len(tasks_all)
         metric_dict = {}
         for i, ind in enumerate(inds):
             out_dict = mix_dicts[ind]
-            task_arr = np.array(list(out_dict.keys()))
-            task_inds = np.argsort(task_arr)
-            task_sort = task_arr[task_inds]
-
-            n_ts = len(task_arr)
             for pk in plot_keys:
-                for j, nt in enumerate(task_sort):
-                    group = out_dict[nt][pk]
-                    if load_num == 1:
-                        group = (group,)
-                    if len(group[0].shape) > 2:
-                        group = list(np.mean(g, axis=-1) for g in group)
-                    group_arr = metric_dict.get(pk, (None,) * len(group))
-                    if group_arr[0] is None:
-                        shape = (
-                            len(mix_sort),
-                            n_ts,
-                        ) + group[0].shape
+                for j, nt in enumerate(tasks_all):
+                    od_nt = out_dict.get(nt, None)
+                    if od_nt is not None:
+                        group = od_nt[pk]
+                        if load_num == 1:
+                            group = (group,)
+                        if len(group[0].shape) > 2:
+                            group = list(np.mean(g, axis=-1) for g in group)
+                        group_arr = metric_dict.get(pk, (None,) * len(group))
+                        if group_arr[0] is None:
+                            shape = (
+                                len(mix_sort),
+                                n_ts,
+                            ) + group[0].shape
                         
-                        group_arr = list(np.zeros(shape) for g in group)
-                        for ga in group_arr:
-                            ga[:] = np.nan
-                    for k, g in enumerate(group):
-                        group_arr[k][i, j] = g
+                            group_arr = list(np.zeros(shape) for g in group)
+                            for ga in group_arr:
+                                ga[:] = np.nan
+                        for k, g in enumerate(group):
+                            group_arr[k][i, j] = g
                     metric_dict[pk] = group_arr
-        out = (mix_sort, task_sort, metric_dict)
+        out = (mix_sort, tasks_all, metric_dict)
         return out
 
     def train_eg_networks(self):
@@ -1027,6 +1029,8 @@ class FigureControlledGeometry(ModularizerFigure):
         out_arrs, n_parts, mixes = self.data[key]
         for i, pk in enumerate(plot_keys):
             arr = np.mean(out_arrs[pk], axis=2)
+            if len(arr.shape) > 2:
+                arr = np.min(np.mean(arr, axis=-1), axis=-1)
             img = gpl.pcolormesh(
                 n_parts,
                 1 - mixes,
@@ -1423,15 +1427,27 @@ class FigureConsequences(ModularizerFigure):
         key = "panel_consequences"
         axs_map, axs_trace = self.gss[key]
 
-        plot_keys = ("new task tasks", "related context tasks", "new context tasks")
+        plot_keys = (
+            "new task tasks", "related context tasks", "new context tasks",
+        )
+        geom_keys = (
+            "new task geometry", "related context geometry", "new context geometry",
+        )
+        ref_key = self.params.get("ref_key")
         if self.data.get(key) is None or recompute:
-            self.data[key] = self.load_and_organize_con_sweep(
-                plot_keys, reload=recompute
+            self.data[key]
+            learning = self.load_and_organize_con_sweep(
+                plot_keys, reload=recompute, ref_key=ref_key,
             )
-        mix_sort, task_sort, metric_dict = self.data[key]
+            geom = self.load_and_organize_con_sweep(
+                geom_keys, reload=recompute, ref_key=ref_key,
+            )
+            self.data[key] = (learning, geom)
+        mix_sort, task_sort, metric_dict = self.data[key][0]
+        _, _, geom_dict = self.data[key][1]
 
-        task_fix = 2
-        plot_mix = (0, 1)
+        task_fix = self.params.getint("x_target")
+        plot_mix = self.params.getlist("y_target", typefunc=int)
         trace_colors = (
             self.params.getcolor("disentangled_color"),
             self.params.getcolor("unstructured_color"),
@@ -1451,6 +1467,7 @@ class FigureConsequences(ModularizerFigure):
                 ax=axs_map[i],
                 cmap=cm,
                 rasterized=True,
+                equal_bins=True,
                 # vmin=-bound,
                 # vmax=bound
             )
@@ -1479,11 +1496,15 @@ class FigureConsequences(ModularizerFigure):
             gpl.add_hlines(0.5, axs_trace[i])
             axs_trace[i].set_xlabel("training epoch")
             axs_trace[i].set_ylabel("task performance")
-            axs_map[i].set_xticks([task_sort[0], 10, task_sort[-1]])
-            axs_map[i].set_yticks([mix_sort[0], 0.5, mix_sort[-1]])
+            xs = np.arange(len(task_sort))
+            mid_ind = int(len(xs) / 2)
+            axs_map[i].set_xticks([xs[0], xs[mid_ind], xs[-1]])
+            ys = np.arange(len(mix_sort))
+            mid_ind = int(len(ys) / 2)
+            axs_map[i].set_yticks([ys[0], ys[mid_ind], ys[-1]])
             axs_map[i].set_xlabel("number of tasks")
             axs_map[i].set_ylabel("input structure")
-
+            axs_map[i].invert_yaxis()
 
 def _combine_binary_arrs(binary_arrs, colors):
     comb_arr = np.zeros(binary_arrs[0].shape)

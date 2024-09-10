@@ -340,6 +340,10 @@ def _get_n_tasks(run_dict):
     return run_dict["args"].tasks_per_group
 
 
+def get_n_new_train(run_dict):
+    return run_dict["args"].n_new_train
+
+
 def get_nl_strength(run_dict):
     return run_dict["args"].dm_input_mixing
 
@@ -354,6 +358,8 @@ def sort_dict(
         "corr_rate",
         "val_loss",
         "loss",
+        "shattering",
+        "within_ccgp",
     ),
 ):
     ordering = np.squeeze(np.array(ordering))
@@ -435,7 +441,6 @@ def load_run(
             # 'diff_graph_ablation': _diff_graph_ablation,
             # 'diff_max_corr_ablation': _diff_max_corr_ablation,
         }
-    files = os.listdir(folder)
     f_template = file_template.format(run_ind=run_ind)
     out_dict = {}
     ordering = []
@@ -487,10 +492,11 @@ def load_nls_param_sweep(template, nl_inds, plot_keys, **kwargs):
     arr_tc_shape = (len(mix_sorted), len(nt_sorted), n_reps, args["model_epochs"] + 1)
     out_arrs = {}
     for pk in plot_keys:
-        if len(ij_pk_dict[pk][(mix_sorted[0], nt_sorted[0])].shape) == 1:
+        pk_shape = ij_pk_dict[pk][(mix_sorted[0], nt_sorted[0])].shape
+        if len(pk_shape) == 1:
             use_shape = arr_shape
         else:
-            use_shape = arr_tc_shape
+            use_shape = (len(mix_sorted), len(nt_sorted),) + pk_shape
         arr = np.zeros(use_shape)
         arr[:] = np.nan
         for i, j in u.make_array_ind_iterator((len(mix_sorted), len(nt_sorted))):

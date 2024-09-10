@@ -47,16 +47,38 @@ def plot_mt_diff(out, key_targ=None, ax=None, diff_key="val_loss", denom=100, **
     rel_weights, nm_strs, args, same_ds, flip_ds = out
     if key_targ is not None:
         key_ind = np.argmin(np.abs(nm_strs - key_targ))
-        sd_use = same_ds[diff_key][key_ind:key_ind + 1]
-        fd_use = flip_ds[diff_key][key_ind:key_ind + 1]
-        nm_strs = nm_strs[key_ind:key_ind + 1]
+        sd_use = same_ds[diff_key][key_ind : key_ind + 1]
+        fd_use = flip_ds[diff_key][key_ind : key_ind + 1]
+        nm_strs = nm_strs[key_ind : key_ind + 1]
     else:
         sd_use = same_ds[diff_key]
         fd_use = flip_ds[diff_key]
     diff = np.sum(sd_use - fd_use, axis=2)
     gpl.plot_trace_werr(nm_strs / denom, diff.T, ax=ax, **kwargs)
     gpl.add_hlines(0, ax)
-        
+
+
+@gpl.ax_adder()
+def plot_geometry_color(
+    primary,
+    secondary,
+    m1,
+    m2,
+    ax=None,
+    cmap="magma",
+    ms=1,
+    markers=None,
+):
+    if markers is None:
+        markers = ("o", "v", "X", "s")
+    cm = plt.get_cmap(cmap)
+    for i, m in enumerate(primary):
+        for j, nt in enumerate(secondary):
+            color = cm(i / len(primary))
+            marker = markers[j % len(markers)]
+            ax.scatter(
+                m1[i, j].flatten(), m2[i, j].flatten(), color=color, s=ms, marker=marker
+            )
 
 
 def _get_output_clusters(ws):
@@ -510,7 +532,7 @@ def visualize_stable_gates(
         ax.plot(*stim[mask].T, "o", ms=pt_ms)
     # ax.view_init(0, 0)
     return ax
-    
+
 
 def visualize_module_activity(
     model,
