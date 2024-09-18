@@ -737,7 +737,7 @@ class Modularizer:
             x = layer_m(x)
         return x
 
-    def sample_reps(self, n_samps=1000, context=None, layer=None):
+    def sample_reps(self, n_samps=1000, context=None, layer=None, return_targ=False):
         if context is not None:
             group_inds = np.ones(n_samps, dtype=int) * context
         else:
@@ -745,7 +745,10 @@ class Modularizer:
         out = self.get_x_true(n_train=n_samps, group_inds=group_inds)
         x, true, targ = out
         rep = self.get_representation(x, layer=layer)
-        return true, x, rep
+        out = (true, x, rep)
+        if return_targ:
+            out = (true, x, rep, targ)
+        return out
 
     def _compile(self, optimizer=None, loss=None, ignore_nan=True, lr=1e-3):
         if optimizer is None:

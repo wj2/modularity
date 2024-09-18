@@ -110,6 +110,7 @@ metric_methods = {
     'diff_act_ablation': ma.diff_act_ablation,
     'model_frac': ma.compute_frac_contextual,
     'alignment_index': ma.compute_alignment_index,
+    'alignment_index_targets': ma.compute_alignment_index_targets,
     'fdg_frac': ma.compute_fdg_frac_contextual,
     'variance_frac': ma.compute_variance_threshold_frac,
     'variance_index_sig': ma.compute_variance_specialization_signif,

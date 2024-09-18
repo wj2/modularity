@@ -1575,7 +1575,7 @@ def prob_elim(d, n_reps=10000):
     # other_twice = ds_chosen[:, 0] == ds_chosen[:, 1]
 
     # safe = np.mean(np.logical_or(chosen, other_twice))
-    safe_theor = 1 - ((d - 1) / d) ** 2 + (1 / 2) * (d - 1) * (1 / d ** 2)
+    safe_theor = 1 - ((d - 1) / d) ** 2 + (1 / 2) * (d - 1) * (1 / d**2)
     return 1 - safe_theor
 
 
@@ -2877,21 +2877,32 @@ def compute_variance_threshold_frac(
     return frac
 
 
-def compute_alignment_index(mod, n_samps=1000, con_inds=None, **kwargs):
-    if con_inds is None:
-        con_inds = np.arange(mod.n_groups)
-    stim_all = []
-    rep_all = []
-    cons_all = []
-    for ci in con_inds:
-        stim, _, rep = mod.sample_reps(n_samps, context=ci)
-        stim_all.append(stim)
-        rep_all.append(rep)
-        cons_all.append((ci,) * n_samps)
-    stim = np.concatenate(stim_all, axis=0)
-    rep = np.concatenate(rep_all, axis=0)
-    cons = np.concatenate(cons_all, axis=0)
+def average_target_specialization(
+    group_size, n_tasks, n_samps=1000, n_reps=30, n_groups=2, **kwargs
+):
+    out_ss = np.zeros(n_reps)
+    for i in range(n_reps):
+        m = ms.LinearModularizer(
+            group_size + n_groups,
+            tasks_per_group=n_tasks,
+            group_size=group_size,
+            group_maker=ms.overlap_groups,
+            n_overlap=group_size,
+            n_groups=n_groups,
+            single_output=True,
+            integrate_context=True,
+            **kwargs,
+        )
+
+        lvs, inp, _, targs = m.sample_reps(return_targ=n_samps)
+        subspace_spec = compute_alignment_index(m, use_targets=True)
+        out_ss[i] = subspace_spec
+    return out_ss
+
+
+def compute_alignment_index_samples(stim, rep, cons, rel_vars, eps=1e-5):
     con_ais = []
+    con_inds = np.unique(cons)
     for i, j in it.combinations(con_inds, 2):
         m1 = cons == i
         m2 = cons == j
@@ -2902,17 +2913,45 @@ def compute_alignment_index(mod, n_samps=1000, con_inds=None, **kwargs):
         con_ais.append(ai_ij)
     con_ais = np.array(con_ais)
 
-    rel_vars = np.unique(mod.groups)
     rv_ais = np.zeros(len(rel_vars))
     for i, rv in enumerate(rel_vars):
         m1 = stim[:, rv] == 0
         m2 = stim[:, rv] == 1
         try:
-            rv_ais_i =  u.alignment_index(rep[m1], rep[m2])
+            rv_ais_i = u.alignment_index(rep[m1], rep[m2])
         except np.linalg.LinAlgError:
             rv_ais_i = np.nan
         rv_ais[i] = rv_ais_i
-    return np.log(np.mean(rv_ais) / np.mean(con_ais))
+    ss = max(np.log((np.mean(rv_ais) + eps) / (np.mean(con_ais) + eps)), 0)
+    return ss
+
+
+def compute_alignment_index_targets(*args, **kwargs):
+    return compute_alignment_index(*args, **kwargs, use_targets=True)
+
+
+def compute_alignment_index(
+    mod, n_samps=1000, con_inds=None, use_targets=False, **kwargs
+):
+    if con_inds is None:
+        con_inds = np.arange(mod.n_groups)
+    rel_vars = np.unique(mod.groups)
+    stim_all = []
+    rep_all = []
+    cons_all = []
+    for ci in con_inds:
+        stim, _, rep, targ = mod.sample_reps(
+            n_samps=n_samps, context=ci, return_targ=True
+        )
+        if use_targets:
+            rep = targ
+        stim_all.append(stim)
+        rep_all.append(rep)
+        cons_all.append((ci,) * n_samps)
+    stim = np.concatenate(stim_all, axis=0)
+    rep = np.concatenate(rep_all, axis=0)
+    cons = np.concatenate(cons_all, axis=0)
+    return compute_alignment_index_samples(stim, rep, cons, rel_vars)
 
 
 def compute_silences(
