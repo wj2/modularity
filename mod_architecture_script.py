@@ -2,13 +2,11 @@ import argparse
 import scipy.stats as sts
 import numpy as np
 import pickle
-import functools as ft
 import tensorflow as tf
 from datetime import datetime
 
 import general.utility as u
 import disentangled.data_generation as dg
-import disentangled.characterization as dc
 
 import modularity.simple as ms
 import modularity.analysis as ma
@@ -263,7 +261,6 @@ if __name__ == "__main__":
 
     zs = np.zeros((args.n_reps, 2, args.zs_test_samps, tasks_per_group))
 
-    print("blah")
     for i in range(args.n_reps):
         print(i)
         print(fdg)

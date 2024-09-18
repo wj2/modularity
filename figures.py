@@ -31,7 +31,6 @@ colors = (
     / 256
 )
 
-
 class ModularizerFigure(pu.Figure):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, find_panel_keys=False, **kwargs)
@@ -135,23 +134,26 @@ class ModularizerFigure(pu.Figure):
         n_ts = len(tasks_all)
         metric_dict = {}
         for i, ind in enumerate(inds):
+            # out_dict is a dictionary with number of tasks keys
             out_dict = mix_dicts[ind]
             for pk in plot_keys:
                 for j, nt in enumerate(tasks_all):
                     od_nt = out_dict.get(nt, None)
+                    group_arr = metric_dict.get(pk, (None,) * load_num)
                     if od_nt is not None:
+                        # od_nt is a dictionary with plot_keys as keys
+                        # and values that are load_num long
                         group = od_nt[pk]
                         if load_num == 1:
                             group = (group,)
                         if len(group[0].shape) > 2:
                             group = list(np.mean(g, axis=-1) for g in group)
-                        group_arr = metric_dict.get(pk, (None,) * len(group))
                         if group_arr[0] is None:
                             shape = (
                                 len(mix_sort),
                                 n_ts,
                             ) + group[0].shape
-                        
+
                             group_arr = list(np.zeros(shape) for g in group)
                             for ga in group_arr:
                                 ga[:] = np.nan
@@ -263,7 +265,7 @@ class ModularizerFigure(pu.Figure):
 
     def make_modularizers(self, retrain=False):
         if self.data.get("trained_models") is None or retrain:
-            act_reg = self.params.getfloat("act_reg")
+            # act_reg = self.params.getfloat("act_reg")
 
             m_noreg, h_noreg = self.train_modularizer(act_reg_weight=0)
 
@@ -477,7 +479,6 @@ class FigureWorldIntro(ModularizerFigure):
         o_colors = cm(np.linspace(0.2, 0.9, len(orders)))
 
         con_task_color = self.params.getcolor("contextual_color")
-        lin_task_color = self.params.getcolor("partition_color")
 
         # any binary task
         max_flex = n_vals**relevant_dims - 1
@@ -597,9 +598,9 @@ class FigureTaskIntro(ModularizerFigure):
         n_vals = self.params.getint("n_vals")
         relevant_dims = np.arange(1, max_rel + 1)
 
-        full_dim = ss.binom(amb_dims, relevant_dims) * n_vals**relevant_dims
+        # full_dim = ss.binom(amb_dims, relevant_dims) * n_vals**relevant_dims
+        # nonlinear_basis = n_vals ** (n_cons - 1 + relevant_dims)
         o2_dim = ss.binom(amb_dims, order) * n_vals**order
-        nonlinear_basis = n_vals ** (n_cons - 1 + relevant_dims)
         linear_basis = n_cons * 2 * relevant_dims
 
         ax_order.plot(
@@ -698,7 +699,6 @@ class FigureControlledInput(ModularizerFigure):
         key = "panel_quant"
         ax_dim, ax_sep = self.gss[key]
 
-        color = self.params.getcolor("dg_color")
         nls_args = self.params.getlist("nl_bounds", typefunc=float)
         n_nls = self.params.getint("n_nls")
         nl_strengths = np.linspace(*nls_args, n_nls)
@@ -971,7 +971,6 @@ class FigureControlledGeometry(ModularizerFigure):
         geom_grid = pu.make_mxn_gridspec(self.gs, 2, 1, 0, 60, 70, 100, 10, 10)
         gss["panel_geom"] = self.get_axs(geom_grid, squeeze=True)
 
-        zs_grid = pu.make_mxn_gridspec(self.gs, 2, 1, 60, 100, 70, 100, 10, 10)
         gss["panel_zs"] = self.get_axs((self.gs[70:100, 70:100],), squeeze=False)[0, 0]
 
         zs_eg_grid = pu.make_mxn_gridspec(self.gs, 1, 2, 60, 100, 20, 60, 2, 2)
@@ -1018,8 +1017,8 @@ class FigureControlledGeometry(ModularizerFigure):
         nl_inds = self.params.getlist("nls_big_ids")
         plot_keys = ("within_ccgp", "shattering")
         labels = {
-            "within_ccgp": "abstraction",
-            "shattering": "shattering",
+            "within_ccgp": r"abstraction $D'$",
+            "shattering": r"shattering $D'$",
         }
         cms = ("Blues", "Oranges")
         if self.data.get(key) is None or reload_:
@@ -1037,7 +1036,7 @@ class FigureControlledGeometry(ModularizerFigure):
                 arr,
                 ax=axs[i],
                 cmap=cms[i],
-                vmin=0.5,
+                vmin=0,
                 rasterized=True,
             )
             self.f.colorbar(img, ax=axs[i], label=labels[pk])
@@ -1203,8 +1202,8 @@ class FigureEmergence(ModularizerFigure):
 
             # print(gates)
             # print(ws[:10])
-            resp_c1 = np.mean(resp[mask_c1], axis=0)
-            resp_c2 = np.mean(resp[~mask_c1], axis=0)
+            # resp_c1 = np.mean(resp[mask_c1], axis=0)
+            # resp_c2 = np.mean(resp[~mask_c1], axis=0)
             # axs_vis[i].plot(resp_c1, resp_c2, 'o')
             mv.visualize_stable_gates(stims, targs, gates, ws=ws, ax=axs_vis[i])
             axs_vis[i].view_init(0, 50)
@@ -1252,7 +1251,6 @@ class FigureModularity(ModularizerFigure):
             (5,): self.params.getcolor("l5_color"),
             (8,): self.params.getcolor("l8_color"),
         }
-        labels = ("D = 3", "D = 5", "D = 8")
 
         nulls = (0, 0, 0.5, 0.5)
         self._quantification_panel(
@@ -1397,7 +1395,7 @@ class FigureControlled(ModularizerFigure):
 
 class FigureConsequences(ModularizerFigure):
     def __init__(self, fig_key="controlled", colors=colors, **kwargs):
-        fsize = (6, 3)
+        fsize = (6, 5)
         cf = u.ConfigParserColor()
         cf.read(config_path)
 
@@ -1409,44 +1407,56 @@ class FigureConsequences(ModularizerFigure):
     def make_gss(self):
         gss = {}
 
-        cons_grid1 = pu.make_mxn_gridspec(self.gs, 1, 3, 0, 40, 0, 100, 10, 10)
-        axs1 = self.get_axs(
-            cons_grid1,
+        cons_grid1 = pu.make_mxn_gridspec(self.gs, 1, 3, 0, 25, 0, 100, 10, 20)
+        axs1 = self.get_axs(cons_grid1, squeeze=True, sharey="all")
+        cons_grid2 = pu.make_mxn_gridspec(self.gs, 1, 3, 35, 60, 0, 100, 10, 10)
+        axs2 = self.get_axs(cons_grid2, squeeze=True, sharey="all", sharex="all")
+        cons_grid3 = pu.make_mxn_gridspec(self.gs, 1, 3, 75, 100, 0, 100, 10, 10)
+        axs3 = self.get_axs(
+            cons_grid3,
             squeeze=True,
+            sharey="all",
+            sharex="all",
         )
-        cons_grid2 = pu.make_mxn_gridspec(self.gs, 1, 3, 60, 100, 0, 100, 10, 20)
-        axs2 = self.get_axs(
-            cons_grid2,
-            squeeze=True,
-        )
-        gss["panel_consequences"] = np.stack((axs1, axs2), axis=0)
+        gss["panel_consequences"] = np.stack((axs1, axs2, axs3), axis=0)
 
         self.gss = gss
 
     def panel_consequences(self, recompute=False):
         key = "panel_consequences"
-        axs_map, axs_trace = self.gss[key]
+        axs_trace, axs_map, axs_scatt = self.gss[key]
 
         plot_keys = (
-            "new task tasks", "related context tasks", "new context tasks",
+            "new task tasks",
+            "related context tasks",
+            "new context tasks",
         )
         geom_keys = (
-            "new task geometry", "related context geometry", "new context geometry",
+            "new task geometry",
+            "related context geometry",
+            "new context geometry",
         )
         ref_key = self.params.get("ref_key")
         if self.data.get(key) is None or recompute:
             self.data[key]
             learning = self.load_and_organize_con_sweep(
-                plot_keys, reload=recompute, ref_key=ref_key,
+                plot_keys,
+                reload=recompute,
+                ref_key=ref_key,
             )
             geom = self.load_and_organize_con_sweep(
-                geom_keys, reload=recompute, ref_key=ref_key,
+                geom_keys,
+                reload=recompute,
+                ref_key=ref_key,
             )
             self.data[key] = (learning, geom)
         mix_sort, task_sort, metric_dict = self.data[key][0]
         _, _, geom_dict = self.data[key][1]
 
         task_fix = self.params.getint("x_target")
+        n_tasks_scatter = self.params.getlist("n_tasks_scatter", typefunc=int)
+        task_inds = list(np.where(task_sort == tf_i)[0][0] for tf_i in n_tasks_scatter)
+
         plot_mix = self.params.getlist("y_target", typefunc=int)
         trace_colors = (
             self.params.getcolor("disentangled_color"),
@@ -1454,6 +1464,7 @@ class FigureConsequences(ModularizerFigure):
         )
         cm = plt.get_cmap(self.params.get("diverge_cmap"))
         labels = ("novel task", "related context", "unrelated context")
+        m_labels = ("modular", "unstructured")
 
         for i, pk in enumerate(plot_keys):
             pre_pk, null_pk = metric_dict[pk]
@@ -1472,6 +1483,21 @@ class FigureConsequences(ModularizerFigure):
                 # vmax=bound
             )
             self.f.colorbar(m, ax=axs_map[i], label="learning speed")
+
+            ls = np.sum(pre_pk, axis=3)
+            _, pk_subspace = geom_dict[geom_keys[i]]
+            mv.plot_geometry_color(
+                1 - mix_sort,
+                task_sort[task_inds],
+                ls[:, task_inds],
+                pk_subspace[:, task_inds],
+                ax=axs_scatt[i],
+            )
+            axs_scatt[i].set_xlabel("learning speed")
+            if i == 0:
+                axs_scatt[i].set_ylabel("subspace specialization")
+
+            gpl.clean_plot(axs_scatt[i], i)
             axs_map[i].set_title(labels[i])
             n_epochs = pre_pk.shape[-1]
             epochs = np.arange(n_epochs)
@@ -1483,7 +1509,7 @@ class FigureConsequences(ModularizerFigure):
                     epochs, pre_masked.T, color=trace_colors[j], alpha=0.1
                 )
                 if i == 0:
-                    label = "input structure = {}".format(1 - pm)
+                    label = "input structure = {}\n{}".format(1 - pm, m_labels[j])
                 else:
                     label = ""
                 gpl.plot_trace_werr(
@@ -1505,6 +1531,7 @@ class FigureConsequences(ModularizerFigure):
             axs_map[i].set_xlabel("number of tasks")
             axs_map[i].set_ylabel("input structure")
             axs_map[i].invert_yaxis()
+
 
 def _combine_binary_arrs(binary_arrs, colors):
     comb_arr = np.zeros(binary_arrs[0].shape)
@@ -1632,10 +1659,9 @@ class FigureModularityIsolated(ModularizerFigure):
 
         first_n_epochs = 2
         g_col = (0.8,) * 3
-        tr_diff = (
-            np.diff(out_arrs_lin[tr_key][..., :first_n_epochs], axis=-1)
-            - np.diff(out_arrs_nonlin[tr_key][..., :first_n_epochs], axis=-1)
-        )
+        tr_diff = np.diff(
+            out_arrs_lin[tr_key][..., :first_n_epochs], axis=-1
+        ) - np.diff(out_arrs_nonlin[tr_key][..., :first_n_epochs], axis=-1)
         axs_eg[1].set_ylabel("training loss")
         axs_eg[-1].set_xlabel("training epoch")
         tr_mu_diff = np.nanmean(tr_diff, axis=-1)
@@ -1645,7 +1671,10 @@ class FigureModularityIsolated(ModularizerFigure):
         else:
             tr_color = color
         gpl.plot_trace_werr(
-            struct, tr_mu_diff[:, part_ind].T, ax=axs_tr[0], color=tr_color,
+            struct,
+            tr_mu_diff[:, part_ind].T,
+            ax=axs_tr[0],
+            color=tr_color,
         )
         if color is None:
             gpl.plot_colored_line(
@@ -1727,7 +1756,7 @@ class FigureModularityIsolated(ModularizerFigure):
 
 class FigureTasks(ModularizerFigure):
     def __init__(self, fig_key="task_figure", colors=colors, **kwargs):
-        fsize = (4, 3)
+        fsize = (6.5, 3.5)
         cf = u.ConfigParserColor()
         cf.read(config_path)
 
@@ -1743,15 +1772,16 @@ class FigureTasks(ModularizerFigure):
     def make_gss(self):
         gss = {}
 
-        grid = pu.make_mxn_gridspec(self.gs, 2, 1, 0, 100, 0, 40, 10, 10)
-        axs = self.get_axs(grid, squeeze=True, sharex="all")
-        gss["panel_task_dim"] = axs[0]
-        gss["panel_task_elim"] = axs[1]
+        grid = pu.make_mxn_gridspec(self.gs, 2, 3, 0, 100, 0, 100, 10, 14)
+        axs = self.get_axs(
+            grid,
+            squeeze=True,
+            sharex="all",
+        )
+        gss["panel_task_dim"] = axs[0, :2]
+        gss["panel_task_elim"] = axs[1, 0]
 
-        gss["panel_modularity_emerge"] = self.get_axs(
-            (self.gs[30:70, 50:],),
-            squeeze=False,
-        )[0, 0]
+        gss["panel_modularity_emerge"] = axs[0, 2]
         self.gss = gss
 
     def panel_modularity_emerge(self):
@@ -1768,15 +1798,22 @@ class FigureTasks(ModularizerFigure):
                 run_dict[lv] = run
             self.data[key] = run_dict
         run_dict = self.data[key]
-        for lv, (lv_dict, nts, _) in run_dict.items():
+        cm = self.params.getcmap("groups_cmap")
+        colors = cm(np.linspace(0.2, 0.8, len(run_dict)))
+        for i, (lv, (lv_dict, nts, _)) in enumerate(run_dict.items()):
             ai = lv_dict["alignment_index"]
             ai_plot = np.zeros_like(ai)
             ai_plot[ai > 0] = ai[ai > 0]
-            gpl.plot_trace_werr(nts, ai_plot.T, ax=ax, label="LV = {}".format(lv))
+            gpl.plot_trace_werr(
+                nts, ai_plot.T, ax=ax, label="LV = {}".format(lv), color=colors[i]
+            )
+        ax.set_ylabel("subspace\nspecialization")
+        ax.set_xlabel("number of tasks")
+        gpl.add_hlines(0, ax)
 
     def panel_task_dim(self):
         key = "panel_task_dim"
-        ax = self.gss[key]
+        ax_dim, ax_exc = self.gss[key]
 
         group_sizes = self.params.getlist("group_sizes", typefunc=int)
         cm = self.params.getcmap("groups_cmap")
@@ -1787,13 +1824,20 @@ class FigureTasks(ModularizerFigure):
 
         for i, g in enumerate(group_sizes):
             dims = ma.task_dim_analytic(g, n_tasks)
-            ax.plot(n_tasks, dims, color=colors[i], label="D = {}".format(g))
+            ax_dim.plot(n_tasks, dims, color=colors[i], label="D = {}".format(g))
+            ax_exc.plot(
+                n_tasks, n_tasks - dims, color=colors[i], label="D = {}".format(g)
+            )
         g_color = (0.8,) * 3
-        ax.plot(n_tasks, n_tasks, color=g_color, label="task dimensions")
-        gpl.clean_plot(ax, 0)
-        ax.set_ylabel("dimensionality")
-        ax.set_xlabel("number of tasks")
-        ax.legend(frameon=False)
+        ax_exc.plot(n_tasks, np.zeros_like(n_tasks), color=g_color)
+        ax_dim.plot(n_tasks, n_tasks, color=g_color, label="task dimensions")
+        gpl.clean_plot(ax_dim, 0)
+        gpl.clean_plot(ax_exc, 0)
+        ax_exc.set_ylabel("excess\ndimensionality")
+        ax_dim.set_ylabel("output dimensionality")
+        ax_exc.set_xlabel("number of tasks")
+        ax_dim.set_xlabel("number of tasks")
+        ax_dim.legend(frameon=False)
 
     def panel_task_elim(self):
         key = "panel_task_elim"
@@ -1993,7 +2037,6 @@ class FigureModularityControlled(ModularizerFigure):
         ax_focus = axs[-1]
         template = self.params.get("nls_template_big")
         nl_inds = self.params.getlist("nls_big_ids")
-        print(nl_inds, template)
         plot_keys = ("model_frac", "alignment_index")
         axs = axs[: len(plot_keys)]
         labels = {
@@ -2159,7 +2202,6 @@ class FigureGeometryConsequences(ModularizerFigure):
         )
 
         ccgp_color_wi = self.params.getcolor("ccgp_color_wi")
-        ccgp_color_ac = self.params.getcolor("ccgp_color_ac")
         shattering_color = self.params.getcolor("shattering_color")
 
         gpl.violinplot(
@@ -2434,9 +2476,9 @@ class FigureIntro(ModularizerFigure):
             gpl.plot_trace_werr(epochs, dims, ax=ax_dim)
 
         c = nets[0].n_groups
-        l = nets[0].group_size
-        pred_dim = c * l
-        alt_dim = (c**2) * l - c
+        l_ = nets[0].group_size
+        pred_dim = c * l_
+        alt_dim = (c**2) * l_ - c
 
         ax_dim.plot([epochs[-1]], pred_dim, "o", ms=5, label="modular")
         ax_dim.plot([epochs[-1]], alt_dim, "o", ms=5, label="non-modular")
@@ -2471,10 +2513,6 @@ class FigureIntro(ModularizerFigure):
         axs = self.gss[key]
         ((ax_clustering, ax_abl), (ax_ccgp, ax_shatter)) = axs
 
-        ccgp_color_wi = self.params.getcolor("ccgp_color_wi")
-        ccgp_color_ac = self.params.getcolor("ccgp_color_ac")
-        shattering_color = self.params.getcolor("shattering_color")
-        ablation_color = self.params.getcolor("ablation_color")
 
         ri_l3 = self.params.get("run_ind_l3")
         ri_l5 = self.params.get("run_ind_l5")
@@ -2491,7 +2529,6 @@ class FigureIntro(ModularizerFigure):
 
             label = labels[i]
 
-            gm = run_data["gm"].T
             frac = run_data["model_frac"].T
             fdg_frac = run_data["fdg_frac"].T
             gpl.plot_trace_werr(
@@ -2636,10 +2673,10 @@ class FigureOtherCases(ModularizerFigure):
             nl_no_out = self.load_run(nl_no_run)
 
             c = l_o_out[-1]["n_groups"]
-            l = l_o_out[-1]["group_size"][0]
-            o = (l, 0)
+            l_ = l_o_out[-1]["group_size"][0]
+            o = (l_, 0)
 
-            out_dim, out_pv = ma.task_dimensionality(l, o, l_o_out[1], c, n_reps=20)
+            out_dim, out_pv = ma.task_dimensionality(l_, o, l_o_out[1], c, n_reps=20)
 
             runs = ((l_o_out, l_no_out), (nl_o_out, nl_no_out))
             self.data[key] = (runs, out_dim)
@@ -2709,22 +2746,21 @@ class FigureOtherCases(ModularizerFigure):
 
         o_run = self.params.get("overlap_ri")
         no_run = self.params.get("no_overlap_ri")
-        labels = ("overlap", "no overlap")
         for i, run in enumerate((o_run, no_run)):
             run_data, order, args = self.load_run(run)
-            l = args["group_size"][0]
+            l_ = args["group_size"][0]
             o = args["group_overlap"][0]
             if self.data.get(key) is None:
                 self.data[key] = {}
-            if self.data[key].get((l, o)) is None:
+            if self.data[key].get((l_, o)) is None:
                 c = args["n_groups"]
                 models = {"coloring": ms.ColoringModularizer}
                 out_dim, out_pv = ma.task_dimensionality(
-                    l, o, order, c, n_reps=10, models=models
+                    l_, o, order, c, n_reps=10, models=models
                 )
 
-                self.data[key][(l, o)] = out_dim["coloring"]
-            out_dim = self.data[key][(l, o)]
+                self.data[key][(l_, o)] = out_dim["coloring"]
+            out_dim = self.data[key][(l_, o)]
             wi_dim = np.squeeze(out_dim[1])
             ac_dim = np.squeeze(out_dim[2])
             gpl.plot_trace_werr(

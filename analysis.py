@@ -1566,6 +1566,24 @@ def compute_model_spectrum(
     return out_dict
 
 
+def prob_elim(d, n_reps=10000):
+    # ds = np.arange(1, d + 1)
+    # ds_all = np.concatenate((ds, -ds))
+    # rng = np.random.default_rng()
+    # ds_chosen = rng.choice(ds_all, size=(n_reps, 2))
+    # chosen = np.any(np.abs(ds_chosen) == 1, axis=1)
+    # other_twice = ds_chosen[:, 0] == ds_chosen[:, 1]
+
+    # safe = np.mean(np.logical_or(chosen, other_twice))
+    safe_theor = 1 - ((d - 1) / d) ** 2 + (1 / 2) * (d - 1) * (1 / d ** 2)
+    return 1 - safe_theor
+
+
+def prob_all_elim(d, t):
+    p = prob_elim(d)
+    return 1 - sts.binom.cdf(d - 1, t, p)
+
+
 def analyze_model_order(model, order, subset=True, layer=None, n_samps=1000, **kwargs):
     inp_rep, stim, targ = model.get_x_true(n_train=n_samps)
     rep = model.get_representation(inp_rep, layer=layer)
@@ -2877,7 +2895,10 @@ def compute_alignment_index(mod, n_samps=1000, con_inds=None, **kwargs):
     for i, j in it.combinations(con_inds, 2):
         m1 = cons == i
         m2 = cons == j
-        ai_ij = u.alignment_index(rep[m1], rep[m2])
+        try:
+            ai_ij = u.alignment_index(rep[m1], rep[m2])
+        except np.linalg.LinAlgError:
+            ai_ij = np.nan
         con_ais.append(ai_ij)
     con_ais = np.array(con_ais)
 
@@ -2886,7 +2907,11 @@ def compute_alignment_index(mod, n_samps=1000, con_inds=None, **kwargs):
     for i, rv in enumerate(rel_vars):
         m1 = stim[:, rv] == 0
         m2 = stim[:, rv] == 1
-        rv_ais[i] = u.alignment_index(rep[m1], rep[m2])
+        try:
+            rv_ais_i =  u.alignment_index(rep[m1], rep[m2])
+        except np.linalg.LinAlgError:
+            rv_ais_i = np.nan
+        rv_ais[i] = rv_ais_i
     return np.log(np.mean(rv_ais) / np.mean(con_ais))
 
 

@@ -734,7 +734,7 @@ def plot_context_scatter(
     labels, act = cluster_func(
         m, n_samps=n_samps, use_mean=True, ret_act=True, from_layer=from_layer
     )
-    xy_labels = ("con 1 activity", "con 2 activity")
+    xy_labels = ("ctx 1 activity", "ctx 2 activity")
     u_labels = np.unique(labels)
     if colors is None:
         colors = (None,) * len(u_labels)
@@ -846,7 +846,7 @@ def plot_context_clusters(
             ax,
             anchor=(n_samps / 2) + n_samps * i,
             magnitude=n_samps / 2 - gap,
-            label="con {}".format(i + 1),
+            label="ctx {}".format(i + 1),
             color=context_colors[i],
             fontsize=fontsize,
         )
