@@ -224,8 +224,12 @@ def load_consequence_runs(
     for fl in fls:
         m = re.match(use_templ, fl)
         if m is not None:
-            fp = os.path.join(folder, fl, file_name)
-            data_fl = pickle.load(open(fp, "rb"))
+            try: 
+                fp = os.path.join(folder, fl, file_name)
+                data_fl = pickle.load(open(fp, "rb"))
+            except FileNotFoundError:
+                print("did not find {}".format(fp))
+                continue
             data_fl["args"] = vars(data_fl["args"])
             ki = data_fl["args"][ref_key]
             data_dict[ki] = data_fl
@@ -362,12 +366,17 @@ def sort_dict(
         "within_ccgp",
     ),
 ):
-    ordering = np.squeeze(np.array(ordering))
+    ordering = np.reshape(np.array(ordering), (-1,))
     order_inds = np.argsort(ordering)
     ordering = ordering[order_inds]
     sorted_dict = {}
     for k, v in sd.items():
-        v = np.squeeze(np.stack(list(v), axis=stack_ax))
+        v = np.stack(list(v), axis=stack_ax)
+        # print(inter.shape)
+        # v = np.squeeze(inter)
+        # print(v.shape)
+        # # print(k, v)
+        # print(order_inds)
         v_sort = v[order_inds]
         if k not in no_mean:
             m_range = tuple(range(2, 2 + len(v_sort.shape[2:])))
@@ -413,6 +422,7 @@ default_take_keys = (
         "model_frac",
         "fdg_frac",
         "alignment_index",
+        "alignment_index_targets",
     # "weights",
     # "group_members",
         "groups",
@@ -445,6 +455,7 @@ def load_run(
     out_dict = {}
     ordering = []
     gen = u.load_folder_regex_generator(folder, f_template, file_target=file_name)
+    args = None
     for fp, gd, model_dict in gen:
         model_dict = pickle.load(open(fp, "rb"))
         args = vars(model_dict["args"])
@@ -467,7 +478,7 @@ def make_runind_str(start, end):
     return out_s
 
 
-def load_nls_param_sweep(template, nl_inds, plot_keys, **kwargs):
+def load_nls_param_sweep(template, nl_inds, plot_keys, default_n_reps=30, **kwargs):
     ij_pk_dict = {pk: {} for pk in plot_keys}
     mixes = []
     nts = []
@@ -479,8 +490,13 @@ def load_nls_param_sweep(template, nl_inds, plot_keys, **kwargs):
         )
         sd, n_tasks, args = out
 
-        n_reps = args["n_reps"]
-        mix = args["dm_input_mixing"] / args["dm_input_mixing_denom"]
+        if args is None:
+            args = {}
+            n_reps = default_n_reps
+            mix = np.nan
+        else:
+            n_reps = args.get("n_reps")
+            mix = args.get("dm_input_mixing") / args.get("dm_input_mixing_denom")
         mixes.append(mix)
         for pk in plot_keys:
             for j, nt in enumerate(n_tasks):
@@ -489,7 +505,6 @@ def load_nls_param_sweep(template, nl_inds, plot_keys, **kwargs):
     mix_sorted = np.unique(mixes)
     nt_sorted = np.unique(nts)
     arr_shape = (len(mix_sorted), len(nt_sorted), n_reps)
-    arr_tc_shape = (len(mix_sorted), len(nt_sorted), n_reps, args["model_epochs"] + 1)
     out_arrs = {}
     for pk in plot_keys:
         pk_shape = ij_pk_dict[pk][(mix_sorted[0], nt_sorted[0])].shape

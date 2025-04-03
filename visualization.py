@@ -3,11 +3,175 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import sklearn.decomposition as skd
 import itertools as it
+import functools as ft
 
 import general.utility as u
 import general.plotting as gpl
 import modularity.analysis as ma
 import modularity.auxiliary as maux
+
+
+def make_rotation_video(
+    v11, v21, v12, v22, path, n_neurs=50, n_frames=120, fax=None, dpi=500, fwid=1.5
+):
+    if fax is None:
+        f, axs = plt.subplots(2, 1, figsize=(fwid, fwid * 2))
+
+    trades = np.expand_dims(np.linspace(0, 1, n_frames), (1, 2))
+    v1_tc = v11[None] * (1 - trades) + trades * v12[None]
+    v2_tc = v21[None] * (1 - trades) + trades * v22[None]
+
+    vs_tc = list(zip(v1_tc, v2_tc))
+    rng = np.random.default_rng()
+    scales = rng.normal(1, 1, size=(n_neurs, 2))
+    scales[scales < 0] = 0
+
+    def plot_vs_seq(vs, axs=axs):
+        plot_vs(*vs, n_neurs=n_neurs, axs=axs, scales=scales)
+
+    gpl.animate_plot_axs(f, axs, path, vs_tc, plot_vs_seq, dpi=dpi)
+
+
+def plot_vs(
+    v1,
+    v2,
+    scales=None,
+    n_neurs=50,
+    c1_col=None,
+    c2_col=None,
+    grey_col=(0.5, 0.5, 0.5),
+    axs=None,
+    fwid=1.5,
+    ms=1.5,
+    pt_ms=5,
+    disent_avg=False,
+):
+    if axs is None:
+        f, axs = plt.subplots(2, 1, figsize=(fwid, fwid * 2))
+
+    if c1_col is None:
+        c1_col = np.array((253, 86, 30)) / 256
+    if c2_col is None:
+        c2_col = np.array((46, 171, 167)) / 256
+
+    axs[0].plot(*v1.T, color=grey_col)
+    axs[0].plot(*v2.T, color=grey_col)
+    axs[0].plot(*v1.T, "o", ms=pt_ms, color=c1_col)
+    axs[0].plot(*v2.T, "o", ms=pt_ms, color=c2_col)
+    axs[0].set_xlabel("neuron 1")
+    axs[0].set_ylabel("neuron 2")
+
+    if scales is None:
+        rng = np.random.default_rng()
+        scales = rng.normal(1, 1, size=(n_neurs, 2))
+        scales[scales < 0] = 0
+
+    v1_s = v1[:, None] * scales[None]
+    v2_s = v2[:, None] * scales[None]
+    avg_c1 = np.mean(v1_s, axis=0)
+    avg_c2 = np.mean(v2_s, axis=0)
+    if disent_avg:
+        print(v1_s.shape, v2_s.shape)
+        
+    
+    axs[1].plot(avg_c1[:, 0], avg_c1[:, 1], "o", ms=ms, color=c1_col)
+    axs[1].plot(avg_c2[:, 0], avg_c2[:, 1], "o", ms=ms, color=c2_col)
+    axs[1].set_xlabel("ctx 1 activity")
+    axs[1].set_ylabel("ctx 2 activity")
+    gpl.clean_plot(axs[0], 0)
+    gpl.clean_plot(axs[1], 0)
+
+
+def make_training_video(
+    stim,
+    mr_tc,
+    path,
+    fax=None,
+    dpi=500,
+    n_contexts=2,
+    figsize=(1.4, 1.4),
+    colors=None,
+    last_labels=False,
+    **kwargs,
+):
+    if fax is None:
+        f, ax = plt.subplots(1, 1, figsize=figsize)
+
+    if last_labels:
+        use_labels = ma.infer_optimal_clusters_from_activity(stim, mr_tc[-1])
+    else:
+        use_labels = None
+
+    def plot_context_scatter(rep_tc, ax=None):
+        plot_optimal_context_scatter_from_activity(
+            stim, rep_tc, use_labels=use_labels, ax=ax, colors=colors
+        )
+        ax.set_aspect("equal")
+
+    gpl.animate_plot(f, ax, path, mr_tc, plot_context_scatter, dpi=dpi, **kwargs)
+
+
+def make_geometry_transition_video(
+    embedded_tc,
+    path,
+    fax=None,
+    dpi=500,
+    **kwargs,
+):
+    if fax is None:
+        fax = plt.subplots(1, 1, figsize=(1, 1), subplot_kw={"projection": "3d"})
+    f, ax = fax
+
+    plot_func = ft.partial(plot_simple_geometry, **kwargs)
+    gpl.animate_3d_plot(f, ax, path, embedded_tc, plot_func, dpi=dpi)
+
+
+def plot_simple_geometry(
+    embedded,
+    ax=None,
+    lv1_col=(152, 111, 165),
+    lv2_col=(116, 70, 241),
+    lv1_inds=((0, 1), (2, 3)),
+    lv2_inds=((0, 2), (1, 3)),
+    dashed_inds=((0, 3), (1, 2)),
+    grey_col=(0.5, 0.5, 0.5),
+    grey_lw=1,
+    pt_ms=5,
+    bar_cent=(-1.5, -1.5, -1.5),
+    bar_len=0.5,
+):
+    if ax is None:
+        _, ax = plt.subplots(1, 1, figsize=(1, 1), subplot_kw={"projection": "3d"})
+    lv1_col = np.array(lv1_col) / 256
+    lv2_col = np.array(lv2_col) / 256
+    lv1_inds = np.array(lv1_inds)
+    lv2_inds = np.array(lv2_inds)
+    dashed_inds = np.array(dashed_inds)
+    for lv1_i in lv1_inds:
+        ax.plot(*embedded[lv1_i].T, color=lv1_col)
+    for lv2_i in lv2_inds:
+        ax.plot(*embedded[lv2_i].T, color=lv2_col)
+    for di in dashed_inds:
+        ax.plot(*embedded[di].T, color=grey_col, linestyle="dashed", lw=grey_lw)
+
+    ax.plot(*embedded.T, "o", ms=pt_ms, color=grey_col)
+    ax.set_aspect("equal")
+    gpl.clean_3d_plot(ax)
+    gpl.make_3d_bars(ax, bar_len=bar_len, center=bar_cent)
+
+
+def make_geometry_video(
+    embedded,
+    path,
+    fax=None,
+    dpi=500,
+    **kwargs,
+):
+    if fax is None:
+        fax = plt.subplots(1, 1, figsize=(1, 1), subplot_kw={"projection": "3d"})
+    f, ax = fax
+    plot_simple_geometry(embedded, ax=ax, **kwargs)
+    gpl.rotate_3d_plot(f, ax, path, dpi=dpi)
 
 
 @gpl.ax_adder()
@@ -54,8 +218,24 @@ def plot_mt_diff(out, key_targ=None, ax=None, diff_key="val_loss", denom=100, **
         sd_use = same_ds[diff_key]
         fd_use = flip_ds[diff_key]
     diff = np.sum(sd_use - fd_use, axis=2)
-    gpl.plot_trace_werr(nm_strs / denom, diff.T, ax=ax, **kwargs)
+    mix = nm_strs / denom
+    gpl.plot_trace_werr(mix, diff.T, ax=ax, **kwargs)
+    mix_pts = np.stack((mix,) * diff.shape[1], axis=1)
+    kwargs.pop("points", None)
+    ax.scatter(mix_pts.flatten(), diff.flatten(), **kwargs)
     gpl.add_hlines(0, ax)
+
+
+
+@gpl.ax_adder()
+def plot_training_seq(hs, ax=None, plot_key="val_loss", **kwargs):
+    epochs = 0
+    for i, h in enumerate(hs):
+        traj = np.array(h.history[plot_key])
+        blocks = np.arange(epochs, traj.shape[0] + epochs)
+        epochs = epochs + traj.shape[0]
+        gpl.plot_trace_werr(blocks, traj, ax=ax, **kwargs)
+
 
 
 @gpl.ax_adder()
@@ -117,12 +297,16 @@ def visualize_activity(
     c_colors=("r", "g"),
     r1_color="b",
     r2_color="m",
+    single_con_input=False,
     trs=None,
     ax=None,
 ):
     if ax is None:
         f, ax = plt.subplots(1, 1, subplot_kw={"projection": "3d"})
-    cons = np.argmax(inputs[:, con_inds], axis=1)
+    if single_con_input:
+        cons = 1 - inputs[:, -1]
+    else:
+        cons = np.argmax(inputs[:, con_inds], axis=1)
     u_cons = np.unique(cons)
     _, trs = gpl.plot_highdim_points(
         activity,
@@ -146,14 +330,14 @@ def visualize_activity(
                 )
     r1_mask = targs[:, 0] == 0
     r2_mask = targs[:, 0] == 1
-    gpl.plot_highdim_points(
+    _, trs = gpl.plot_highdim_points(
         activity[r1_mask],
         activity[r2_mask],
         ax=ax,
         p=trs,
         colors=(r1_color, r2_color),
     )
-    return ax
+    return ax, trs
 
 
 def visualize_model_order(orders, out_scores, ax=None, color_dict=None):
@@ -720,20 +904,37 @@ def plot_optimal_context_scatter(
     return out
 
 
-def plot_context_scatter(
-    m,
-    n_samps=1000,
-    ax=None,
-    fwid=3,
-    from_layer=None,
-    colors=None,
-    cluster_func=ma.infer_activity_clusters,
+def plot_optimal_context_scatter_from_activity(
+    stim,
+    activity,
+    cluster_func=ma.infer_optimal_clusters_from_activity,
+    use_labels=None,
+    **kwargs,
 ):
-    if ax is None:
-        f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
+    labels, act = cluster_func(stim, activity, ret_act=True)
+    if use_labels is None:
+        use_labels = labels
+    return plot_context_scatter_labels(use_labels, act, **kwargs)
+
+
+def plot_context_scatter(
+    m, n_samps=1000, cluster_func=ma.infer_activity_clusters, from_layer=None, **kwargs
+):
     labels, act = cluster_func(
         m, n_samps=n_samps, use_mean=True, ret_act=True, from_layer=from_layer
     )
+    return plot_context_scatter_labels(labels, act, **kwargs)
+
+
+def plot_context_scatter_labels(
+    labels,
+    act,
+    ax=None,
+    fwid=3,
+    colors=None,
+):
+    if ax is None:
+        f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
     xy_labels = ("ctx 1 activity", "ctx 2 activity")
     u_labels = np.unique(labels)
     if colors is None:

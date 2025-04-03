@@ -57,6 +57,8 @@ def generate_linear_tasks(
     intercept_var=0,
     axis_tasks=False,
     separate_tasks=None,
+    use_tasks=None,
+    use_inters=None,
     split_inp=0.5,
 ):
     rng = np.random.default_rng()
@@ -69,6 +71,8 @@ def generate_linear_tasks(
     else:
         task = rng.normal(size=(n_tasks, n_inp))
         task = u.make_unit_vector(task)
+    if use_tasks is not None:
+        task = np.array(use_tasks)
     if separate_tasks is not None:
         if not u.check_list(separate_tasks):
             separate_tasks = np.arange(separate_tasks, dtype=int)
@@ -84,6 +88,8 @@ def generate_linear_tasks(
         intercepts = rng.normal(0, np.sqrt(intercept_var), size=(n_tasks, 1))
     else:
         intercepts = np.zeros((n_tasks, 1))
+    if use_inters is not None:
+        intercepts = np.array(use_inters)
     return task, intercepts
 
 
@@ -357,7 +363,7 @@ def analyze_correlation(model, stim=None, n_samps=1000, layer=None):
         t2_use = np.copy(true2)
         t2_use[:, gis[1]] = rel_vars
         t2_use[:, gis[0]] = irrel_vars
-        x2, _, targ2 = model.get_x_true(true=t2_use[:, :-len(gis)], group_inds=1)
+        x2, _, targ2 = model.get_x_true(true=t2_use[:, : -len(gis)], group_inds=1)
         true2 = t2_use
     rep1 = model.get_representation(x1, layer=layer)
     rep2 = model.get_representation(x2, layer=layer)
@@ -365,10 +371,10 @@ def analyze_correlation(model, stim=None, n_samps=1000, layer=None):
 
     xs = (true1[:, gis[0]], true2[:, gis[1]])
     dist_mat_same = skmp.euclidean_distances(*xs)
-    
-    buffer = np.zeros((true1.shape[0], len(gis[0])))    
+
+    buffer = np.zeros((true1.shape[0], len(gis[0])))
     orth_true1 = np.concatenate((true1[:, gis[0]], buffer), axis=1)
-    orth_true2 = np.concatenate((buffer, true2[:, gis[1]]), axis=1)    
+    orth_true2 = np.concatenate((buffer, true2[:, gis[1]]), axis=1)
     dist_mat_orth = skmp.euclidean_distances(orth_true1, orth_true2)
 
     targ_buffer = np.zeros((true1.shape[0], 1))
@@ -382,7 +388,7 @@ def analyze_correlation(model, stim=None, n_samps=1000, layer=None):
     # dist_mat_same[mask] = np.nan
     # dist_mat_orth[mask] = np.nan
     # dist_mat_rep[mask] = np.nan
-    
+
     dms = dist_mat_same.flatten()
     dms = dms[~np.isnan(dms)]
     dmo = dist_mat_orth.flatten()
@@ -437,7 +443,7 @@ class RepSimCallback(tfk.callbacks.Callback):
         self.sim_orth_rep = np.array(self.sim_orth_rep)
         self.sim_targ_same_rep = np.array(self.sim_targ_same_rep)
         self.sim_targ_orth_rep = np.array(self.sim_targ_orth_rep)
-        
+
 
 class DimCorrCallback(tfk.callbacks.Callback):
     def __init__(
@@ -544,7 +550,7 @@ class Modularizer:
         if n_groups is None:
             n_groups = int(np.floor(inp_dims / group_size))
         if integrate_context:
-            sub_context = n_groups
+            sub_context = n_groups - remove_last_inp
         else:
             sub_context = 0
         if groups is None:
@@ -795,7 +801,7 @@ class Modularizer:
         if self.mix is not None:
             stim, _ = self.mix.sample_reps(n_samps)
             if self.integrate_context and not self.continuous:
-                stim = stim[:, : -self.n_groups]
+                stim = stim[:, : -self.n_groups + self.remove_last_inp]
         else:
             stim = self.rng.uniform(0, 1, size=(n_samps, self.inp_dims)) < 0.5
         if self.renorm_stim:
@@ -803,9 +809,14 @@ class Modularizer:
         return stim
 
     def get_all_stim(self):
-        con_dims = np.arange(-self.n_groups, 0)
+        con_dims = np.arange(-self.n_groups + self.remove_last_inp, 0)
+        if len(con_dims) == 1:
+            con_dims = None
         stim, reps = self.mix.get_all_stim(con_dims=con_dims)
-        group_inds = np.argmax(stim[:, con_dims], axis=1)
+        if con_dims is None:
+            group_inds = 1 - stim[:, -1]
+        else:
+            group_inds = np.argmax(stim[:, con_dims], axis=1)
         targs = self.generate_target(stim, group_inds=group_inds)
         return stim, reps, targs
 
@@ -1002,7 +1013,7 @@ class Modularizer:
             rs_callback = RepSimCallback(self)
             cb.append(rs_callback)
             kwargs["callbacks"] = cb
-            
+
         if track_corr is not None:
             cb = kwargs.get("callbacks", [])
             corr_callbacks = {}
@@ -1021,7 +1032,8 @@ class Modularizer:
             kwargs["callbacks"] = cb
         if profile_training is not None:
             tb_callback = tf.keras.callbacks.TensorBoard(
-                log_dir=profile_training, profile_batch=(1, 1000),
+                log_dir=profile_training,
+                profile_batch=(1, 1000),
             )
             cb = kwargs.get("callbacks", [])
             cb.append(tb_callback)
@@ -1219,7 +1231,11 @@ def make_linear_task_func(n_g, n_tasks=1, i_var=0, center=0.5, renorm=False, **k
 
 
 def make_non_overlapping_contextual_task_func(
-        n_g, n_tasks, n_cons, task_func=make_linear_task_func, **kwargs,
+    n_g,
+    n_tasks,
+    n_cons,
+    task_func=make_linear_task_func,
+    **kwargs,
 ):
     con_inds = np.arange(-n_cons, 0)
     rel_inds = list(np.arange(n_g * i, n_g * (i + 1)) for i in range(n_cons))
@@ -1239,7 +1255,7 @@ def make_non_overlapping_contextual_task_func(
         return out
 
     return task_func
-    
+
 
 def make_contextual_task_func(
     n_g, n_tasks, n_cons=2, task_func=make_linear_task_func, **kwargs
@@ -1307,6 +1323,7 @@ class LinearModularizer(Modularizer):
         renorm=False,
         separate_tasks=None,
         axis_tasks=False,
+        **kwargs,
     ):
         return make_linear_task_func(
             n_g,
@@ -1316,6 +1333,7 @@ class LinearModularizer(Modularizer):
             renorm=renorm,
             separate_tasks=separate_tasks,
             axis_tasks=axis_tasks,
+            **kwargs,
         )
 
     def __init__(
@@ -1330,12 +1348,18 @@ class LinearModularizer(Modularizer):
         share_pairs=None,
         separate_tasks=None,
         axis_tasks=False,
+        use_tasks=None,
+        use_inters=None,
         **kwargs,
     ):
         # COMMON TASKS FOR EACH GROUP
         super().__init__(*args, tasks_per_group=tasks_per_group, **kwargs)
         group_func = []
-        for g in self.groups:
+        if use_tasks is None:
+            use_tasks = (None,) * len(self.groups)
+        if use_inters is None:
+            use_inters = (None,) * len(self.groups)
+        for i, g in enumerate(self.groups):
             group_func.append(
                 self._make_linear_task_func(
                     len(g),
@@ -1345,6 +1369,8 @@ class LinearModularizer(Modularizer):
                     renorm=renorm_tasks,
                     separate_tasks=separate_tasks,
                     axis_tasks=axis_tasks,
+                    use_tasks=use_tasks[i],
+                    use_inters=use_inters[i],
                 )
             )
         if share_pairs is not None:
@@ -1415,7 +1441,9 @@ def make_linear_network(
         )(x)
     m_rep = tfk.Model(inp, x)
     out = tfkl.Dense(
-        ys.shape[1], kernel_initializer=init, use_bias=use_bias  # activation=act_func,
+        ys.shape[1],
+        kernel_initializer=init,
+        use_bias=use_bias,  # activation=act_func,
     )(x)
     m = tfk.Model(inp, out)
     if optimizer is None:
@@ -1543,6 +1571,45 @@ class GatedLinearModularizerShell:
         self.gl_model.fit(inputs_all, targ, **kwargs)
 
 
+def make_and_train_mod_model_set(
+    mixing,
+    n_feats,
+    n_cons=2,
+    n_units=600,
+    n_tasks=10,
+    mixing_order=None,
+    overlapping_variables=True,
+    n_irrel_variables=0,
+    params=None,
+    **kwargs,
+):
+    fdg = dg.MixedDiscreteDataGenerator(
+        n_feats + n_cons,
+        mix_strength=mixing,
+        mixing_order=mixing_order,
+    )
+    n_decs = n_feats - n_irrel_variables
+    if overlapping_variables:
+        n_overlap = n_decs
+    else:
+        n_overlap = 0
+    shared_params = {
+        "n_overlap": n_overlap,
+        "n_groups": n_cons,
+        "group_size": n_decs,
+        "integrate_context": True,
+        "tasks_per_group": n_tasks,
+    }
+    out = train_modularizer(
+        fdg,
+        params=params,
+        use_early_stopping=False,
+        **shared_params,
+        **kwargs,
+    )
+    return fdg, out
+
+
 def make_and_train_mt_model_set(
     mixing,
     n_feats=4,
@@ -1575,13 +1642,9 @@ def make_and_train_mt_model_set(
     if relational:
         fdg = dg.RelationalAugmentor(fdg, weight=relational_weight)
     if overlapping_variables:
-        groups = np.array(
-            ((0, 1),) * n_cons
-        )
+        groups = np.array(((0, 1),) * n_cons)
     else:
-        groups = np.array(
-            ((0, 1),) * int(n_cons / 2) + ((2, 3),) * int(n_cons / 2)
-        )
+        groups = np.array(((0, 1),) * int(n_cons / 2) + ((2, 3),) * int(n_cons / 2))
     shared_params = {
         "n_overlap": 0,
         "n_groups": n_cons,
@@ -1607,6 +1670,44 @@ def make_and_train_mt_model_set(
         **kwargs,
     )
     return fdg, out_same, out_flip
+
+
+def make_and_train_mt_model_set_sequential(
+    *args,
+    train_epochs=10,
+    train_seq=(0, 1),
+    batch_size=100,
+    n_train=1000,
+    verbose=False,
+    **kwargs,
+):
+    fdg, (m_same, _), (m_flip, _) = make_and_train_mt_model_set(
+        *args, train_epochs=0, **kwargs
+    )
+    same_hist = []
+    flip_hist = []
+    train_epochs = int(np.round(train_epochs / len(train_seq)))
+    for i, group in enumerate(train_seq):
+        h_same_i = m_same.fit(
+            epochs=train_epochs,
+            batch_size=batch_size,
+            verbose=verbose,
+            n_train=n_train,
+            only_groups=(group,),
+            val_only_groups=(group,),
+        )
+        same_hist.append(h_same_i)
+        h_flip_i = m_flip.fit(
+            epochs=train_epochs,
+            batch_size=batch_size,
+            verbose=verbose,
+            n_train=n_train,
+            only_groups=(group,),
+            val_only_groups=(group,),
+        )
+        flip_hist.append(h_flip_i)
+    return fdg, (m_same, same_hist), (m_flip, flip_hist)
+
 
 
 def make_modularizer(

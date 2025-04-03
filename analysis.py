@@ -915,6 +915,7 @@ def _fit_optimal_clusters(
     model=skmx.GaussianMixture,
     use_init=False,
     demean=True,
+    ret_scores=False,
 ):
     if demean:
         act = act - np.mean(act, axis=0, keepdims=True)
@@ -934,7 +935,10 @@ def _fit_optimal_clusters(
     ind = np.argmin(scores)
     m = models[ind]
     labels = labels[ind]
-    return m, labels
+    out = (m, labels)
+    if ret_scores:
+        out = (m, labels, scores)
+    return out
 
 
 def _fit_clusters(
@@ -977,7 +981,7 @@ def kernel_theory(fdg, tasks=None, n_cons=2, weight_var=1):
     if tasks is None:
         tasks = ms.make_non_overlapping_contextual_task_func(1, 1, n_cons)
     stim, inp_rep = fdg.get_all_stim(con_dims=np.arange(-n_cons, 0))
-    targ = tasks(stim)
+    targ = 2 * (tasks(stim) - 0.5)
     kernel = weight_var * _compute_kernel(inp_rep)
     v = kernel @ targ
     return v.T @ v
@@ -1805,11 +1809,38 @@ def infer_optimal_activity_clusters(
         m, n_samps=n_samps, use_mean=use_mean, from_layer=from_layer
     )
     act_full = np.concatenate(activity, axis=0)
-    _, out = _fit_optimal_clusters(act_full, len(activity) + 1)
+    out = infer_optimal_clusters_from_mean_activity(act_full, order=order)
+    if ret_act:
+        out = (out, act_full.T)
+    return out
 
+
+def _make_mean_activity(stim, activity, n_contexts=2):
+    con_ind = np.argmax(stim[:, -n_contexts:], axis=1)
+    u_cons = np.unique(con_ind)
+    out_mu = []
+    for uc in u_cons:
+        mu_uc = np.mean(activity[con_ind == uc], axis=0, keepdims=True)
+        out_mu.append(mu_uc)
+    out_mu = np.concatenate(out_mu, axis=0)
+    return out_mu
+
+
+def infer_optimal_clusters_from_activity(
+    stim, activity, n_contexts=2, order=True, ret_act=False
+):
+    act_full = _make_mean_activity(stim, activity, n_contexts=n_contexts)
+    out = infer_optimal_clusters_from_mean_activity(act_full, order=order)
+    if ret_act:
+        out = (out, act_full.T)
+    return out
+
+
+def infer_optimal_clusters_from_mean_activity(activity, order=True):
+    _, out = _fit_optimal_clusters(activity, len(activity) + 1)
     if order:
         u_clust = np.unique(out)
-        m_diff = np.mean(activity[0] - activity[1], axis=0)
+        m_diff = activity[0] - activity[1]
         diffs = np.zeros(len(u_clust))
         for i, uc in enumerate(u_clust):
             diffs[i] = np.mean(m_diff[uc == out])
@@ -1819,8 +1850,6 @@ def infer_optimal_activity_clusters(
         for i, uc in enumerate(u_clust):
             new_out[out == uc] = ranks[i]
         out = new_out
-    if ret_act:
-        out = (out, act_full.T)
     return out
 
 
