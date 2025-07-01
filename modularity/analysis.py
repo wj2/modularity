@@ -17,11 +17,14 @@ import tensorflow as tf
 import general.utility as u
 import general.stan_utility as su
 import general.neural_analysis as na
+import general.tasks.classification as gtc
+import general.tf.networks as gtn
 import modularity.simple as ms
 import modularity.auxiliary as maux
 import disentangled.data_generation as dg
 import composite_tangling.code_creation as cc
 import sklearn.metrics.pairwise as skmp
+import sklearn.neighbors as sknn
 
 tfk = tf.keras
 
@@ -303,9 +306,92 @@ class ModularizerCode(cc.Code):
         return train_sets, test_sets
 
 
+def get_all_linear_groups(stim, n=10000):
+    rng = np.random.default_rng()
+    vecs = rng.normal(0, size=(stim.shape[1], n))
+    bias = rng.normal(0, size=n)
+    pos = (stim @ vecs + bias) > 0
+    groups = np.unique(pos, axis=1)
+    return groups
+
+
+def lasso_selectivity(
+    k=3,
+    o=2,
+    n=2,
+    hidden_rep=500,
+    n_tasks=1,
+    n_train=1000,
+    n_epochs=20,
+    alpha=1e-2,
+    mix=0,
+    train_net=True,
+    min_prop=.05,
+    r_thr=.1,
+    **kwargs,
+):
+    task = gtc.make_contextual_task(k - 1, n_tasks, single_ind=True, axis_aligned=True)
+    fdg = dg.MixedDiscreteDataGenerator(k, n_vals=n, mix_strength=mix)
+    lvs, stim = fdg.get_all_stim()
+    out = {}
+    out["stim"] = stim
+    if train_net:
+        net = gtn.GenericFFNetwork(fdg, hidden_rep, tasks=task, **kwargs)
+        h = net.fit(n_train=n_train, epochs=n_epochs)
+        print("final loss: {:.2f}".format(h.history["val_loss"][-1]))
+        rep = net.get_representation(stim)
+        rep_class, counts = np.unique(rep > r_thr, axis=1, return_counts=True)
+        mask = (counts / rep.shape[1]) > min_prop
+        out["rep_class"] = rep_class[:, mask]
+        out["net"] = net
+        out["fdg"] = fdg
+        out["net_reps"] = rep.numpy()
+        out["weights"] = net.rep_model.weights[0].numpy()
+    
+    y = 2 * (task(lvs) - .5)
+    linear_mat = get_all_linear_groups(stim)
+    m = sklm.Lasso(alpha=alpha, fit_intercept=False)
+    m.fit(linear_mat, y)
+    out["lm"] = m
+    out["lvs"] = lvs
+    out["gates"] = linear_mat
+    out["y"] = y
+    return out
+
+
 def expected_pn(modules, tasks, inp_dim, acc=0.95, sigma=0.1, n_values=2):
     s = sts.norm(0, 1).ppf(acc)
     return modules * (s**2) * (sigma**2) * (n_values**inp_dim)
+
+
+def selectivity_manifold(fdg, weights, n_pts=50):
+    weights = u.make_unit_vector(weights)
+    stim, stim_rep = fdg.get_all_stim()
+    stim = np.round(skp.StandardScaler().fit_transform(stim)).astype(int)
+    ts = np.linspace(0, 1, n_pts)[:, None]
+    sides = []
+    colors = []
+    idents = []
+    count_col = 0
+    for i, j in it.combinations(range(len(stim)), 2):
+        si = stim[i]
+        sj = stim[j]
+        if np.sum(np.abs(si - sj) > 0) == 1:
+            side = stim_rep[i][None] * ts + stim_rep[j][None] * (1 - ts)
+            m = si == sj
+            id_ij = np.zeros(stim.shape[1])
+            id_ij[m] = si[m]
+
+            idents.append(id_ij)
+            sides.append(side)
+            colors.append((count_col,) * n_pts)
+            count_col += 1
+    sides = np.concatenate(sides, axis=0)
+    colors = np.concatenate(colors, axis=0)
+    m = sknn.KNeighborsClassifier()
+    m.fit(sides, colors)
+    clustered = m.predict(weights)
+    return np.stack(idents, axis=0), clustered
 
 
 @u.arg_list_decorator

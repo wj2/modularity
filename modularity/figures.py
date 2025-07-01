@@ -10,6 +10,8 @@ import modularity.analysis as ma
 import modularity.visualization as mv
 import modularity.auxiliary as maux
 import disentangled.data_generation as dg
+import general.tf.networks as gtn
+import general.tasks.classification as gtc
 
 import general.utility as u
 import general.paper_utilities as pu
@@ -180,7 +182,9 @@ class ModularizerFigure(pu.Figure):
                     n_units=n_units,
                 )
                 m_ij, h_ij = self.train_modularizer(
-                    fdg=mddg, tasks_per_group=nt, track_reps=True,
+                    fdg=mddg,
+                    tasks_per_group=nt,
+                    track_reps=True,
                 )
                 models[i, j] = m_ij
                 hists[i, j] = h_ij
@@ -336,6 +340,256 @@ class ModularizerFigure(pu.Figure):
             gpl.add_hlines(nulls[i], axs[i])
 
 
+class ArbitraryTaskFigure(ModularizerFigure):
+    def __init__(self, fig_key="arbitrary_task_figure", colors=colors, **kwargs):
+        fsize = (8, 6.5)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        n_cols = 4
+        task_grid = pu.make_mxn_gridspec(self.gs, 1, n_cols, 0, 30, 0, 100, 5, 0)
+        task_axs = self.get_axs(task_grid, squeeze=True, all_3d=True)
+
+        selectivity_grid = pu.make_mxn_gridspec(
+            self.gs, 1, n_cols, 10, 85, 0, 100, 5, 0
+        )
+        selectivity_axs = self.get_axs(selectivity_grid, squeeze=True, all_3d=True)
+
+        sel_count_grid = pu.make_mxn_gridspec(self.gs, 1, n_cols, 55, 70, 5, 95, 5, 5)
+        sel_count_axs = self.get_axs(
+            sel_count_grid, squeeze=True, sharey="all", sharex="all"
+        )
+
+        avg_grid = pu.make_mxn_gridspec(self.gs, 1, n_cols, 85, 100, 5, 95, 5, 5)
+        plot_3ds = np.zeros((1, n_cols), dtype=bool)
+        plot_3ds[:, -1] = True
+        avg_axs = self.get_axs(
+            avg_grid, squeeze=True, sharey="all", sharex="all", plot_3ds=plot_3ds
+        )
+
+        gss["panel_arbitrary_tasks"] = zip(
+            task_axs, selectivity_axs, sel_count_axs, avg_axs
+        )
+        self.gss = gss
+
+    def train_model(self, task, n=2, k=3, o=2, hidden_rep=500):
+        n_train = self.params.getint("n_train")
+        n_epochs = self.params.getint("n_epochs")
+        mix = self.params.getfloat("mix_strength")
+
+        fdg = dg.MixedDiscreteDataGenerator(k, n_vals=n, mix_strength=mix)
+        net = gtn.GenericFFNetwork(fdg, hidden_rep, tasks=task)
+        h = net.fit(n_train=n_train, epochs=n_epochs)
+        weights = net.model.layers[1].weights[0].numpy().T
+        return fdg, net, weights, h
+
+    def panel_arbitrary_tasks(self, retrain=False):
+        key = "panel_arbitrary_tasks"
+        task_axs = self.gss[key]
+
+        n_tasks = self.params.getint("n_tasks")
+        k = self.params.getint("n_feats")
+        o = self.params.getint("task_order")
+        n = self.params.getint("n_values")
+        exclusion1 = ()  # (((0, 1), (1, 0)),)
+        exclusion_con = (
+            ((0, 1), (0, 1)),
+            ((0, 1), (1, 0)),
+            ((0, 1), (0, 0)),
+            ((0, 1), (1, 1)),
+        )
+        exclusion2 = (
+            ((0, 1), (1, 0)),
+            ((0, 1), (0, 0)),
+            ((0, 2), (1, 1)),
+            ((0, 2), (0, 1)),
+        )
+        exclusion3 = (
+            ((0, 1), (1, 0)),
+            ((0, 1), (0, 0)),
+            ((0, 2), (1, 1)),
+            ((0, 2), (0, 1)),
+            ((0, 1), (1, 1)),
+            ((0, 1), (0, 1)),
+        )
+
+        clusters1 = (
+            (
+                ((0, 1), (0, 0)),
+                ((0, 1), (0, 1)),
+                ((0, 1), (1, 0)),
+                ((0, 1), (1, 1)),
+                ((0, 2), (0, 0)),
+                ((0, 2), (0, 1)),
+                ((0, 2), (1, 0)),
+                ((0, 2), (1, 1)),
+                ((1, 2), (0, 0)),
+                ((1, 2), (0, 1)),
+                ((1, 2), (1, 0)),
+                ((1, 2), (1, 1)),
+            ),
+        )
+        clusters_con = (
+            (
+                ((0, 2), (0, 0)),
+                ((0, 2), (1, 0)),
+                ((1, 2), (0, 0)),
+                ((1, 2), (1, 0)),
+            ),
+            (
+                ((0, 2), (1, 1)),
+                ((0, 2), (0, 1)),
+                ((1, 2), (0, 1)),
+                ((1, 2), (1, 1)),
+            ),
+        )
+        clusters2 = (
+            (
+                ((0, 2), (0, 0)),
+                ((0, 2), (1, 0)),
+                ((1, 2), (0, 0)),
+                ((1, 2), (1, 0)),
+                ((0, 1), (1, 1)),
+                ((0, 1), (0, 1)),
+                ((1, 2), (1, 1)),
+                ((0, 2), (0, 0)),
+                ((1, 2), (0, 0)),
+                ((1, 2), (0, 1)),
+                ((1, 2), (1, 0)),
+            ),
+            (((1, 2), (0, 1)),),
+        )
+        clusters3 = (
+            (
+                ((0, 2), (0, 0)),
+                ((0, 2), (1, 0)),
+                ((1, 2), (0, 0)),
+                ((1, 2), (1, 0)),
+                ((1, 2), (1, 1)),
+                ((0, 2), (0, 0)),
+                ((1, 2), (0, 0)),
+                ((1, 2), (0, 1)),
+                ((1, 2), (1, 0)),
+            ),
+            (((1, 2), (0, 1)),),
+            (((1, 2), (1, 1)),),
+        )
+        clusters = (clusters1, clusters_con, clusters2, clusters3)
+        tasks = (
+            gtc.DiscreteOrderTaskStrict.make_task_group(
+                n_tasks,
+                k,
+                o,
+                n_vals=n,
+                exclusion=exclusion1,
+            ),
+            gtc.make_contextual_task(k - 1, n_tasks, single_ind=True),
+            gtc.DiscreteOrderTaskStrict.make_task_group(
+                n_tasks,
+                k,
+                o,
+                n_vals=n,
+                exclusion=exclusion2,
+            ),
+            gtc.DiscreteOrderTaskStrict.make_task_group(
+                n_tasks,
+                k,
+                o,
+                n_vals=n,
+                exclusion=exclusion3,
+            ),
+        )
+        exclusions = (
+            exclusion1,
+            exclusion_con,
+            exclusion2,
+            exclusion3,
+        )
+
+        def _con_mask(stim):
+            m1 = stim[:, -1] == 0
+            return m1, np.logical_not(m1)
+
+        def _excl2_mask(stim):
+            mi = stim[:, 1] == 0
+            mj = stim[:, 2] == 1
+            m1 = np.logical_and(mi, mj)
+            return m1, np.logical_not(m1)
+
+        def _excl3_mask(stim):
+            m1i = stim[:, 1] == 0
+            m1j = stim[:, 2] == 1
+            m1 = np.logical_and(m1i, m1j)
+            m2i = stim[:, 1] == 1
+            m2j = stim[:, 2] == 1
+            m2 = np.logical_and(m2i, m2j)
+            m3 = np.logical_not(np.logical_and(m1, m2))
+            return m1, m2, m3
+
+        cluster_colors = plt.get_cmap("viridis")(
+            np.linspace(.2, 1, len(clusters[-1]))
+        )
+        mask_funcs = (
+            _con_mask,
+            _con_mask,
+            _excl2_mask,
+            _excl3_mask,
+        )
+        if self.data.get(key) is None or retrain:
+            out_weights = []
+            for i, task in enumerate(tasks):
+                fdg, net, weights, _ = self.train_model(task)
+                out_weights.append((fdg, net, task, weights))
+            self.data[key] = out_weights
+
+        views = ((33, 33), None, (33, 45), None)
+        for i, (t_ax, s_ax, c_ax, a_ax) in enumerate(task_axs):
+            fdg, net, task, weights = self.data[key][i]
+            stim = fdg.get_all_stim()[0]
+            mv.plot_task_cube(
+                stim,
+                ax=t_ax,
+                exclusions=exclusions[i],
+                clusters=clusters[i],
+                cluster_colors=cluster_colors,
+            )
+            mv.plot_selectivity_directions(
+                fdg,
+                weights,
+                axs=(s_ax, c_ax),
+                exclusions=exclusions[i],
+                clusters=clusters[i],
+                cluster_colors=cluster_colors,
+                view_init=views[i],
+            )
+
+            sgs = mask_funcs[i](stim)
+            mv.plot_average_responses(
+                fdg,
+                net,
+                *sgs,
+                ax=a_ax,
+                color=(.3,) * 3,
+            )
+
+
+class NonlinearInputArbitraryTaskFigure(ArbitraryTaskFigure):
+    def __init__(self, fig_key="arbitrary_task_nonlinear_figure", **kwargs):
+        super().__init__(fig_key=fig_key, **kwargs)
+
+
+class ArbitraryLinearTaskFigure(ArbitraryTaskFigure):
+    def __init__(self, fig_key="arbitrary_linear_task_figure", **kwargs):
+        super().__init__(fig_key=fig_key, **kwargs)
+
+
 class NichoSimoneFigure(ModularizerFigure):
     def __init__(self, fig_key="nicho_simone_figure", colors=colors, **kwargs):
         fsize = (4.4, 3.5)
@@ -373,6 +627,7 @@ class NichoSimoneFigure(ModularizerFigure):
         s_color = self.params.getcolor("same_color")
         d_color = self.params.getcolor("different_color")
         diff_color = self.params.getcolor("diff_color")
+        vis_key = self.params.getlist("vis_key", "corr_rate", splitchar=";")
 
         aligned_out = maux.load_mt_run(aligned_ri, gd_func=np.float64, sort_key="corr")
         same_out = maux.load_mt_run(same_ri, gd_func=np.float64, sort_key="corr")
@@ -380,7 +635,7 @@ class NichoSimoneFigure(ModularizerFigure):
             aligned_out,
             key_targ=0,
             ax=perf_axs[0],
-            vis_key="corr_rate",
+            vis_key=vis_key,
             same_color=s_color,
             flip_color=d_color,
         )
@@ -388,7 +643,7 @@ class NichoSimoneFigure(ModularizerFigure):
             aligned_out,
             key_targ=align,
             ax=perf_axs[1],
-            vis_key="corr_rate",
+            vis_key=vis_key,
             same_color=s_color,
             flip_color=d_color,
             same_label="",
@@ -398,7 +653,7 @@ class NichoSimoneFigure(ModularizerFigure):
             same_out,
             key_targ=0,
             ax=perf_axs[2],
-            vis_key="corr_rate",
+            vis_key=vis_key,
             same_color=s_color,
             flip_color=d_color,
             same_label="",
@@ -408,22 +663,50 @@ class NichoSimoneFigure(ModularizerFigure):
         list(gpl.add_hlines(0.5, pa) for pa in perf_axs)
         list(gpl.clean_plot(ax, i) for i, ax in enumerate(perf_axs))
         perf_axs[0].set_ylabel("fraction correct")
+        diff_key = self.params.get("diff_key", "val_loss")
 
         mv.plot_mt_diff(
-            aligned_out, key_targ=0, color=diff_color, ax=diff_axs[0, 0], points=True
+            aligned_out,
+            key_targ=0,
+            color=diff_color,
+            ax=diff_axs[0, 0],
+            points=True,
+            diff_key=diff_key,
         )
-        mv.plot_mt_diff(aligned_out, color=diff_color, ax=diff_axs[0, 1])
         mv.plot_mt_diff(
-            same_out, key_targ=0, color=diff_color, ax=diff_axs[0, 2], points=True
+            aligned_out,
+            color=diff_color,
+            ax=diff_axs[0, 1],
+            diff_key=diff_key,
+        )
+        mv.plot_mt_diff(
+            same_out,
+            key_targ=0,
+            color=diff_color,
+            ax=diff_axs[0, 2],
+            points=True,
+            diff_key=diff_key,
         )
         list(gpl.clean_plot_bottom(da) for da in diff_axs[0])
         diff_axs[0, 0].set_ylim([-2, 2])
         mv.plot_mt_diff(
-            aligned_out, key_targ=0, color=diff_color, ax=diff_axs[1, 0], points=True
+            aligned_out,
+            key_targ=0,
+            color=diff_color,
+            ax=diff_axs[1, 0],
+            points=True,
+            diff_key=diff_key,
         )
-        mv.plot_mt_diff(aligned_out, color=diff_color, ax=diff_axs[1, 1])
         mv.plot_mt_diff(
-            same_out, key_targ=0, color=diff_color, ax=diff_axs[1, 2], points=True
+            aligned_out, color=diff_color, ax=diff_axs[1, 1], diff_key=diff_key
+        )
+        mv.plot_mt_diff(
+            same_out,
+            key_targ=0,
+            color=diff_color,
+            ax=diff_axs[1, 2],
+            points=True,
+            diff_key=diff_key,
         )
         diff_axs[1, 0].set_ylim([-7, -3])
         diff_axs[0, 0].set_ylabel("learning speed difference\n(different - same)")
@@ -435,6 +718,11 @@ class NichoSimoneFigure(ModularizerFigure):
 
         for i, j in u.make_array_ind_iterator(diff_axs.shape):
             gpl.clean_plot(diff_axs[i, j], j)
+
+
+class BlockedNSFigure(NichoSimoneFigure):
+    def __init__(self, fig_key="nicho_simone_blocked_figure", **kwargs):
+        super().__init__(fig_key=fig_key, **kwargs)
 
 
 class FigureWorldIntro(ModularizerFigure):

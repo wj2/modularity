@@ -72,8 +72,7 @@ def plot_vs(
     avg_c2 = np.mean(v2_s, axis=0)
     if disent_avg:
         print(v1_s.shape, v2_s.shape)
-        
-    
+
     axs[1].plot(avg_c1[:, 0], avg_c1[:, 1], "o", ms=ms, color=c1_col)
     axs[1].plot(avg_c2[:, 0], avg_c2[:, 1], "o", ms=ms, color=c2_col)
     axs[1].set_xlabel("ctx 1 activity")
@@ -174,6 +173,183 @@ def make_geometry_video(
     gpl.rotate_3d_plot(f, ax, path, dpi=dpi)
 
 
+@gpl.ax_adder(three_dim=True)
+def plot_task_cube(
+    stim,
+    labels=None,
+    ax=None,
+    offset=-0.15,
+    excl_color=(0.8,) * 3,
+    cmap="hsv",
+    line_color=None,
+    exclusions=None,
+    clusters=None,
+    cluster_colors=None,
+):
+    if exclusions is None:
+        exclusions = ()
+    if clusters is None:
+        clusters = ()
+    if cluster_colors is None:
+        cluster_colors = (None,) * len(clusters)
+    cm = plt.get_cmap(cmap)
+    lines = []
+    colors = []
+    linestyles = []
+    for i, j in it.combinations(range(len(stim)), 2):
+        si = stim[i]
+        sj = stim[j]
+        if np.sum(np.abs(si - sj) > 0) == 1:
+            fs = np.where((si - sj) == 0)[0]
+            vs = si[fs]
+            line_key = (tuple(fs), tuple(vs))
+            if line_key in exclusions:
+                color = excl_color
+                ls = "dashed"
+            else:
+                color = None
+                ls = None
+            for i, cluster in enumerate(clusters):
+                if line_key in cluster:
+                    color = cluster_colors[i]
+            line = np.stack((si, sj), axis=0)
+            lines.append(line)
+            colors.append(color)
+            linestyles.append(ls)
+    for i, line in enumerate(lines):
+        color = colors[i]
+        if color is None:
+            if line_color is None:
+                color = cm(i / (len(lines) + 1))
+            else:
+                color = line_color
+        ax.plot(*line.T, color=color, ls=linestyles[i])
+    if labels is not None:
+        pt_color = labels
+    else:
+        pt_color = "k"
+    ax.scatter(*stim.T, c=pt_color)
+    gpl.clean_3d_plot(ax)
+    gpl.make_3d_bars(ax, center=(offset,) * 3, bar_len=0.5)
+
+
+def visualize_lasso_selectivity(
+    lvs,
+    coefs,
+    X,
+    thr=0.1,
+    **kwargs,
+):
+    inds = np.where(np.abs(coefs) > thr)[0]
+    X_plot = X[:, inds]
+    return visualize_lasso_tuning(lvs, X_plot, **kwargs)
+
+
+def visualize_lasso_tuning(
+    lvs, X_plot, fwid=2, axs=None, line_color=(0.9, 0.9, 0.9), **kwargs
+):
+    if axs is None:
+        f, axs = plt.subplots(
+            X_plot.shape[1],
+            1,
+            figsize=(fwid, fwid * X_plot.shape[1]),
+            subplot_kw={"projection": "3d"},
+        )
+
+    for i in range(X_plot.shape[1]):
+        plot_task_cube(lvs, X_plot[:, i], line_color=(0.9, 0.9, 0.9), ax=axs[i])
+
+
+@gpl.ax_adder()
+def plot_average_responses(fdg, net, *sgs, ax=None, **kwargs):
+    stim, stim_rep = fdg.get_all_stim()
+    net_rep = net.get_representation(stim_rep)
+    sgs = list(sgs)
+    if len(sgs) == 1:
+        sgs.append(np.logical_not(sgs[0]))
+
+    reps = list(np.mean(net_rep[sg], axis=0) for sg in sgs)
+    ax.scatter(*reps, s=0.5, **kwargs)
+    if ax.name == "3d":
+        gpl.clean_3d_plot(ax)
+        gpl.make_3d_bars(ax)
+        ax.set_zlabel("cluster 3 activity")
+    else:
+        gpl.clean_plot(ax, 0)
+    ax.set_xlabel("cluster 1 activity")
+    ax.set_ylabel("cluster 2 activity")
+    ax.set_aspect("equal")
+
+
+def plot_selectivity_directions(
+    fdg,
+    weights,
+    offset=-0.1,
+    excl_color=(0.8,) * 3,
+    cmap="hsv",
+    axs=None,
+    ms=0.5,
+    fwid=3,
+    exclusions=None,
+    clusters=None,
+    cluster_colors=None,
+    view_init=None,
+):
+    if exclusions is None:
+        exclusions = ()
+    if clusters is None:
+        clusters = ()
+    if cluster_colors is None:
+        cluster_colors = (None,) * len(clusters)
+    if axs is None:
+        f = plt.figure(figsize=(2 * fwid, fwid))
+        ax1 = f.add_subplot(1, 2, 1, projection="3d")
+        ax2 = f.add_subplot(1, 2, 2)
+        axs = (ax1, ax2)
+    ax1, ax2 = axs
+
+    _, rep = fdg.get_all_stim()
+    weight_us = u.make_unit_vector(weights)
+    side_ident, sel_clusters = ma.selectivity_manifold(fdg, weight_us)
+
+    cmap = plt.get_cmap(cmap)
+
+    _, p = gpl.plot_highdim_points(rep, ax=ax1, color="k", ms=ms)
+    col_div = len(side_ident) + 1
+    for i, si in enumerate(side_ident):
+        fs = np.where(si != 0)[0]
+        vs = (si[fs].astype(int) + 1) / 2
+        line_key = (tuple(fs), tuple(vs))
+        if line_key in exclusions:
+            col_i = excl_color
+        else:
+            col_i = cmap(i / col_div)
+        for j, cluster in enumerate(clusters):
+            if line_key in cluster:
+                col_i = cluster_colors[j]
+
+        m = sel_clusters == i
+        n_i = np.sum(m)
+        if n_i > 0:
+            gpl.plot_highdim_points(
+                weight_us[m],
+                ax=ax1,
+                p=p,
+                color=col_i,
+                ms=ms,
+            )
+        ax2.bar(i, n_i, color=col_i)
+    if view_init is not None:
+        ax1.view_init(*view_init)
+    gpl.make_yaxis_scale_bar(
+        ax2, magnitude=30, double=False, label="neuron count", text_buff=.22,
+    )
+    ax2.set_xlabel("edge direction")
+    gpl.clean_plot(ax2, 0)
+    gpl.clean_3d_plot(ax1)
+    gpl.make_3d_bars(ax1, center=(-0.7 + offset,) * 3, bar_len=0.5)
+
+
 @gpl.ax_adder()
 def plot_mt_learning(
     *outs,
@@ -192,22 +368,54 @@ def plot_mt_learning(
         args_list.append(args)
         key_ind = np.argmin(np.abs(nm_strs - key_targ))
         mixing_list.append(nm_strs[key_ind])
-        epochs = np.arange(same_ds[vis_key].shape[2])
+        if u.check_list(vis_key):
+            same_traj = np.concatenate(
+                list(
+                    np.pad(same_ds[x], ((0, 0), (0, 0), (0, 1)), constant_values=np.nan)
+                    for x in vis_key
+                ),
+                axis=-1,
+            )
+            flip_traj = np.concatenate(
+                list(
+                    np.pad(flip_ds[x], ((0, 0), (0, 0), (0, 1)), constant_values=np.nan)
+                    for x in vis_key
+                ),
+                axis=-1,
+            )
+        else:
+            same_traj = same_ds[vis_key]
+            flip_traj = flip_ds[vis_key]
+        epochs = np.arange(same_traj.shape[-1])
         gpl.plot_trace_werr(
-            epochs, same_ds[vis_key][key_ind], ax=ax, label=same_label, color=same_color
+            epochs,
+            same_traj[key_ind],
+            ax=ax,
+            label=same_label,
+            color=same_color,
+            confstd=True,
         )
         gpl.plot_trace_werr(
             epochs,
-            flip_ds[vis_key][key_ind],
+            flip_traj[key_ind],
             ax=ax,
             label=flip_label,
             color=flip_color,
+            confstd=True,
         )
     return u.merge_dict(args_list), mixing_list
 
 
 @gpl.ax_adder()
-def plot_mt_diff(out, key_targ=None, ax=None, diff_key="val_loss", denom=100, **kwargs):
+def plot_mt_diff(
+    out,
+    key_targ=None,
+    ax=None,
+    diff_key="val_loss",
+    plot_points=False,
+    denom=100,
+    **kwargs,
+):
     rel_weights, nm_strs, args, same_ds, flip_ds = out
     if key_targ is not None:
         key_ind = np.argmin(np.abs(nm_strs - key_targ))
@@ -219,12 +427,12 @@ def plot_mt_diff(out, key_targ=None, ax=None, diff_key="val_loss", denom=100, **
         fd_use = flip_ds[diff_key]
     diff = np.sum(sd_use - fd_use, axis=2)
     mix = nm_strs / denom
-    gpl.plot_trace_werr(mix, diff.T, ax=ax, **kwargs)
+    gpl.plot_trace_werr(mix, diff.T, ax=ax, confstd=True, **kwargs)
     mix_pts = np.stack((mix,) * diff.shape[1], axis=1)
     kwargs.pop("points", None)
-    ax.scatter(mix_pts.flatten(), diff.flatten(), **kwargs)
+    if plot_points:
+        ax.scatter(mix_pts.flatten(), diff.flatten(), **kwargs)
     gpl.add_hlines(0, ax)
-
 
 
 @gpl.ax_adder()
@@ -235,7 +443,6 @@ def plot_training_seq(hs, ax=None, plot_key="val_loss", **kwargs):
         blocks = np.arange(epochs, traj.shape[0] + epochs)
         epochs = epochs + traj.shape[0]
         gpl.plot_trace_werr(blocks, traj, ax=ax, **kwargs)
-
 
 
 @gpl.ax_adder()
