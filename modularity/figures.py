@@ -17,7 +17,7 @@ import general.utility as u
 import general.paper_utilities as pu
 import general.plotting as gpl
 
-config_path = "modularity/figures.conf"
+config_path = "modularity/modularity/figures.conf"
 
 colors = (
     np.array(
@@ -166,7 +166,7 @@ class ModularizerFigure(pu.Figure):
         out = (mix_sort, tasks_all, metric_dict)
         return out
 
-    def train_eg_networks(self):
+    def train_eg_networks(self, **kwargs):
         n_tasks = self.params.getlist("eg_n_tasks", typefunc=int)
         nl_strengths = self.params.getlist("eg_nl_strs", typefunc=float)
         n_units = self.params.getint("n_units")
@@ -185,6 +185,7 @@ class ModularizerFigure(pu.Figure):
                     fdg=mddg,
                     tasks_per_group=nt,
                     track_reps=True,
+                    **kwargs,
                 )
                 models[i, j] = m_ij
                 hists[i, j] = h_ij
@@ -533,9 +534,7 @@ class ArbitraryTaskFigure(ModularizerFigure):
             m3 = np.logical_not(np.logical_and(m1, m2))
             return m1, m2, m3
 
-        cluster_colors = plt.get_cmap("viridis")(
-            np.linspace(.2, 1, len(clusters[-1]))
-        )
+        cluster_colors = plt.get_cmap("viridis")(np.linspace(0.2, 1, len(clusters[-1])))
         mask_funcs = (
             _con_mask,
             _con_mask,
@@ -576,7 +575,7 @@ class ArbitraryTaskFigure(ModularizerFigure):
                 net,
                 *sgs,
                 ax=a_ax,
-                color=(.3,) * 3,
+                color=(0.3,) * 3,
             )
 
 
@@ -2345,6 +2344,74 @@ class FigureModularityWeights(ModularizerFigure):
             ax_focus[j].tick_params(
                 top=True, labeltop=True, bottom=False, labelbottom=False
             )
+
+
+class FigureModularityColoring(ModularizerFigure):
+    def __init__(self, fig_key="coloring_rep", colors=colors, **kwargs):
+        fsize = (6, 4.4)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = (
+            "panel_eg_networks",
+            "panel_param_sweep",
+        )
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        eg_grid = pu.make_mxn_gridspec(self.gs, 2, 4, 0, 55, 0, 100, 10, 10)
+        eg_axs = self.get_axs(eg_grid, squeeze=True)
+        gss["panel_eg_networks"] = eg_axs
+
+        ps_grid = pu.make_mxn_gridspec(self.gs, 1, 3, 75, 100, 0, 100, 10, 17)
+        gss["panel_param_sweep"] = self.get_axs(
+            ps_grid,
+            squeeze=True,
+        )
+
+        self.gss = gss
+
+    def panel_eg_networks(self, retrain=False):
+        key = "panel_eg_networks"
+        axs = self.gss[key]
+
+        if self.data.get(key) is None or retrain:
+            nonoverlap = self.train_eg_networks(
+                model_type=ms.ColoringModularizer, n_overlap=0
+            )
+            overlap = self.train_eg_networks(model_type=ms.ColoringModularizer)
+            self.data[key] = (overlap, nonoverlap)
+
+        c1_color = self.params.getcolor("con1_color")
+        c2_color = self.params.getcolor("con2_color")
+        neutral_color = self.params.getcolor("noncon_color")
+        colors = (c1_color, neutral_color, c2_color)
+
+        trained_models = self.data[key]
+        for k, ((n_tasks, nl_strengths), models, _) in enumerate(trained_models):
+            for i, j in u.make_array_ind_iterator(models.shape):
+                n_t = n_tasks[i]
+                n_l = nl_strengths[j]
+                print("n_tasks", n_t, "      nl_str", n_l)
+                mv.plot_optimal_context_scatter(
+                    models[i, j],
+                    ax=axs[j, i + k * 2],
+                    colors=colors,
+                )
+                print(
+                    "subspace      {:.2f}".format(
+                        ma.compute_alignment_index(models[i, j])
+                    )
+                )
+                print(
+                    "subpopulation {:.2f}".format(
+                        ma.compute_frac_contextual(models[i, j])
+                    )
+                )
 
 
 class FigureModularityControlled(ModularizerFigure):

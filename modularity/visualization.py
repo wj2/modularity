@@ -286,14 +286,18 @@ def plot_selectivity_directions(
     weights,
     offset=-0.1,
     excl_color=(0.8,) * 3,
+    net=None,
     cmap="hsv",
     axs=None,
     ms=0.5,
+    sel_ms=None,
+    stim_ms=None,
     fwid=3,
     exclusions=None,
     clusters=None,
     cluster_colors=None,
     view_init=None,
+    task_ind=0,
 ):
     if exclusions is None:
         exclusions = ()
@@ -308,13 +312,26 @@ def plot_selectivity_directions(
         axs = (ax1, ax2)
     ax1, ax2 = axs
 
-    _, rep = fdg.get_all_stim()
+    if sel_ms is None:
+        sel_ms = ms
+    if stim_ms is None:
+        stim_ms = ms
+    lvs, rep = fdg.get_all_stim()
     weight_us = u.make_unit_vector(weights)
     side_ident, sel_clusters = ma.selectivity_manifold(fdg, weight_us)
 
     cmap = plt.get_cmap(cmap)
 
-    _, p = gpl.plot_highdim_points(rep, ax=ax1, color="k", ms=ms)
+    if net is None:
+        use_reps = (rep,)
+        colors = ("k",)
+    else:
+        targs = net.get_target(lvs)[:, task_ind]
+        u_ts = np.unique(targs)
+        use_reps = list(rep[ut == targs] for ut in u_ts)
+        colors = ("r", "b")
+
+    _, p = gpl.plot_highdim_points(*use_reps, ax=ax1, colors=colors, ms=stim_ms)
     col_div = len(side_ident) + 1
     for i, si in enumerate(side_ident):
         fs = np.where(si != 0)[0]
@@ -336,7 +353,7 @@ def plot_selectivity_directions(
                 ax=ax1,
                 p=p,
                 color=col_i,
-                ms=ms,
+                ms=sel_ms,
             )
         ax2.bar(i, n_i, color=col_i)
     if view_init is not None:
