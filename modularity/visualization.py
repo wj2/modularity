@@ -281,7 +281,7 @@ def plot_average_responses(fdg, net, *sgs, ax=None, **kwargs):
     ax.set_aspect("equal")
 
 
-def plot_selectivity_directions(
+def plot_selectivity_directions_and_counts(
     fdg,
     weights,
     offset=-0.1,
@@ -312,14 +312,79 @@ def plot_selectivity_directions(
         axs = (ax1, ax2)
     ax1, ax2 = axs
 
+    out = plot_selectivity_directions(
+        fdg,
+        weights,
+        offset=offset,
+        net=net,
+        cmap=cmap,
+        ms=ms,
+        sel_ms=sel_ms,
+        stim_ms=stim_ms,
+        exclusions=exclusions,
+        clusters=clusters,
+        cluster_colors=cluster_colors,
+        view_init=view_init,
+        task_ind=task_ind,
+        ax=ax1,
+        return_info=True,
+    )
+    counts, colors, side_ident = out[0]
+    for i, si in enumerate(side_ident):
+        ax2.bar(i, counts[i], color=colors[i])
+
+    gpl.make_yaxis_scale_bar(
+        ax2,
+        magnitude=30,
+        double=False,
+        label="neuron count",
+        text_buff=0.22,
+    )
+    ax2.set_xlabel("edge direction")
+    gpl.clean_plot(ax2, 0)
+
+
+@gpl.ax_adder(three_dim=True)
+def plot_selectivity_directions(
+    fdg,
+    weights,
+    offset=-0.1,
+    excl_color=(0.8,) * 3,
+    net=None,
+    cmap="hsv",
+    ax=None,
+    ms=0.5,
+    sel_ms=None,
+    stim_ms=None,
+    fwid=3,
+    exclusions=None,
+    clusters=None,
+    cluster_colors=None,
+    view_init=None,
+    task_ind=0,
+    return_info=False,
+    single_context=True,
+    unit_vectors=True,
+):
+    if exclusions is None:
+        exclusions = ()
+    if clusters is None:
+        clusters = ()
+    if cluster_colors is None:
+        cluster_colors = (None,) * len(clusters)
+
     if sel_ms is None:
         sel_ms = ms
     if stim_ms is None:
         stim_ms = ms
     lvs, rep = fdg.get_all_stim()
-    weight_us = u.make_unit_vector(weights)
-    side_ident, sel_clusters = ma.selectivity_manifold(fdg, weight_us)
-
+    if not single_context:
+        mask = np.sum(lvs[:, -2:], axis=1) > 1
+        lvs = lvs[mask]
+        rep = rep[mask]
+    if unit_vectors:
+        weights = u.make_unit_vector(weights)
+    side_ident, sel_clusters = ma.selectivity_manifold(fdg, weights)
     cmap = plt.get_cmap(cmap)
 
     if net is None:
@@ -331,8 +396,10 @@ def plot_selectivity_directions(
         use_reps = list(rep[ut == targs] for ut in u_ts)
         colors = ("r", "b")
 
-    _, p = gpl.plot_highdim_points(*use_reps, ax=ax1, colors=colors, ms=stim_ms)
+    _, p = gpl.plot_highdim_points(*use_reps, ax=ax, colors=colors, ms=stim_ms)
     col_div = len(side_ident) + 1
+    counts = []
+    colors = []
     for i, si in enumerate(side_ident):
         fs = np.where(si != 0)[0]
         vs = (si[fs].astype(int) + 1) / 2
@@ -349,22 +416,23 @@ def plot_selectivity_directions(
         n_i = np.sum(m)
         if n_i > 0:
             gpl.plot_highdim_points(
-                weight_us[m],
-                ax=ax1,
+                weights[m],
+                ax=ax,
                 p=p,
                 color=col_i,
                 ms=sel_ms,
             )
-        ax2.bar(i, n_i, color=col_i)
+        counts.append(n_i)
+        colors.append(col_i)
     if view_init is not None:
-        ax1.view_init(*view_init)
-    gpl.make_yaxis_scale_bar(
-        ax2, magnitude=30, double=False, label="neuron count", text_buff=.22,
-    )
-    ax2.set_xlabel("edge direction")
-    gpl.clean_plot(ax2, 0)
-    gpl.clean_3d_plot(ax1)
-    gpl.make_3d_bars(ax1, center=(-0.7 + offset,) * 3, bar_len=0.5)
+        ax.view_init(*view_init)
+    gpl.clean_3d_plot(ax)
+    gpl.make_3d_bars(ax, center=(-0.7 + offset,) * 3, bar_len=0.5)
+    ax.set_aspect("equal")
+    out = None
+    if return_info:
+        out = (counts, colors, side_ident)
+    return out
 
 
 @gpl.ax_adder()

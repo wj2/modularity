@@ -16,6 +16,7 @@ import general.tasks.classification as gtc
 import general.utility as u
 import general.paper_utilities as pu
 import general.plotting as gpl
+import modularity.learning_analysis as mla
 
 config_path = "modularity/modularity/figures.conf"
 
@@ -166,14 +167,17 @@ class ModularizerFigure(pu.Figure):
         out = (mix_sort, tasks_all, metric_dict)
         return out
 
-    def train_eg_networks(self, **kwargs):
+    def train_eg_networks(self, n_units=None, n_feats=None, **kwargs):
         n_tasks = self.params.getlist("eg_n_tasks", typefunc=int)
         nl_strengths = self.params.getlist("eg_nl_strs", typefunc=float)
-        n_units = self.params.getint("n_units")
-        n_feats = self.params.getint("n_feats")
+        if n_units is None:
+            n_units = self.params.getint("n_units")
+        if n_feats is None:
+            n_feats = self.params.getint("n_feats")
 
         models = np.zeros((len(n_tasks), len(nl_strengths)), dtype=object)
         hists = np.zeros_like(models)
+        print(n_feats)
         for i, nt in enumerate(n_tasks):
             for j, nl in enumerate(nl_strengths):
                 mddg = dg.MixedDiscreteDataGenerator(
@@ -380,14 +384,16 @@ class ArbitraryTaskFigure(ModularizerFigure):
         )
         self.gss = gss
 
-    def train_model(self, task, n=2, k=3, o=2, hidden_rep=500):
+    def train_model(
+        self, task, n=2, k=3, hidden_rep=500, early_stopping=True, use_bias=True
+    ):
         n_train = self.params.getint("n_train")
         n_epochs = self.params.getint("n_epochs")
         mix = self.params.getfloat("mix_strength")
 
         fdg = dg.MixedDiscreteDataGenerator(k, n_vals=n, mix_strength=mix)
-        net = gtn.GenericFFNetwork(fdg, hidden_rep, tasks=task)
-        h = net.fit(n_train=n_train, epochs=n_epochs)
+        net = gtn.GenericFFNetwork(fdg, hidden_rep, tasks=task, use_bias=use_bias)
+        h = net.fit(n_train=n_train, epochs=n_epochs, use_early_stopping=early_stopping)
         weights = net.model.layers[1].weights[0].numpy().T
         return fdg, net, weights, h
 
@@ -577,6 +583,43 @@ class ArbitraryTaskFigure(ModularizerFigure):
                 ax=a_ax,
                 color=(0.3,) * 3,
             )
+
+
+class ColoringTaskFigure(ArbitraryTaskFigure):
+    def __init__(self, fig_key="coloring_task_figure", **kwargs):
+        super().__init__(fig_key=fig_key, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+        task_ax = self.get_axs((self.gs[:, :],), all_3d=True)[0, 0]
+        gss["panel_task"] = task_ax
+
+        self.gss = gss
+
+    def panel_task(self, retrain=False, task=None):
+        key = "panel_task"
+        ax = self.gss[key]
+
+        k = 3
+
+        if self.data.get(key) is None or retrain:
+            if task is None:
+                task = gtc.ColoringTask(np.arange(k))
+            fdg, net, weights, h = self.train_model(
+                task, k=k, use_bias=False, early_stopping=False
+            )
+            self.data[key] = (task, fdg, net, weights, h)
+        task, fdg, net, weights, h = self.data[key]
+        print(h.history["loss"][-4:])
+
+        mv.plot_selectivity_directions(
+            fdg,
+            weights,
+            net=net,
+            ax=ax,
+            stim_ms=5,
+            unit_vectors=False, 
+        )
 
 
 class NonlinearInputArbitraryTaskFigure(ArbitraryTaskFigure):
@@ -2367,11 +2410,16 @@ class FigureModularityColoring(ModularizerFigure):
         eg_axs = self.get_axs(eg_grid, squeeze=True)
         gss["panel_eg_networks"] = eg_axs
 
-        ps_grid = pu.make_mxn_gridspec(self.gs, 1, 3, 75, 100, 0, 100, 10, 17)
-        gss["panel_param_sweep"] = self.get_axs(
-            ps_grid,
-            squeeze=True,
-        )
+        tuning_grid = pu.make_mxn_gridspec(self.gs, 2, 4, 60, 100, 0, 100, 1, 1)
+        t_axs = self.get_axs(tuning_grid, all_3d=True)
+        t_axs = (t_axs[:, :2], t_axs[:, 2:])
+        gss["panel_tuning"] = t_axs
+
+        # ps_grid = pu.make_mxn_gridspec(self.gs, 1, 3, 75, 100, 0, 100, 10, 17)
+        # gss["panel_param_sweep"] = self.get_axs(
+        #     ps_grid,
+        #     squeeze=True,
+        # )
 
         self.gss = gss
 
@@ -2381,9 +2429,11 @@ class FigureModularityColoring(ModularizerFigure):
 
         if self.data.get(key) is None or retrain:
             nonoverlap = self.train_eg_networks(
-                model_type=ms.ColoringModularizer, n_overlap=0
+                model_type=ms.ColoringModularizer, n_overlap=0, n_feats=8
             )
-            overlap = self.train_eg_networks(model_type=ms.ColoringModularizer)
+            overlap = self.train_eg_networks(
+                model_type=ms.ColoringModularizer, n_feats=5
+            )
             self.data[key] = (overlap, nonoverlap)
 
         c1_color = self.params.getcolor("con1_color")
@@ -2412,6 +2462,33 @@ class FigureModularityColoring(ModularizerFigure):
                         ma.compute_frac_contextual(models[i, j])
                     )
                 )
+
+    def panel_tuning(self, retrain=False):
+        key = "panel_tuning"
+        axs_overlap, axs_nonoverlap = self.gss[key]
+
+        key_egs = "panel_eg_networks"
+        if self.data.get(key_egs) is None or retrain:
+            self.panel_eg_networks()
+        out = self.data[key_egs]
+        (_, overlap_ms, overlap_hs), (_, nonoverlap_ms, nonoverlap_hs) = out
+
+        views = ((33, 33), None, (33, 45), None)
+        for i, j in u.make_array_ind_iterator(overlap_ms.shape):
+            net = overlap_ms[i, j]
+
+            weights = net.model.layers[1].weights[0].numpy().T
+            fdg = net.mix
+
+            mv.plot_selectivity_directions(
+                fdg,
+                weights,
+                net=net,
+                ax=axs_overlap[i, j],
+                view_init=views[i],
+                stim_ms=5,
+                single_context=False,
+            )
 
 
 class FigureModularityControlled(ModularizerFigure):
@@ -3407,3 +3484,120 @@ class FigureImageModularity(ModularizerFigure):
             axs_i[2].set_xlabel("context")
             axs_i[2].set_ylabel("inferred cluster")
             axs_i[2].set_yticks([0, 1, 2])
+
+
+class FigureSunData(ModularizerFigure):
+    def __init__(self, fwid=2.5, fig_key="sun_figure", colors=colors, **kwargs):
+        fsize = (3 * fwid, fwid * len(mla.ANIMALS))
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = (
+            "panel_decoding",
+            "panel_distance",
+            "panel_tuning",
+        )
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        h_gap = 2
+        v_gap = 2
+        n_rows = len(mla.ANIMALS)
+        dec_grid = pu.make_mxn_gridspec(self.gs, n_rows, 3, 0, 100, 0, 55, v_gap, h_gap)
+        dec_axs = self.get_axs(dec_grid, squeeze=True, sharey="all")
+        gss["panel_decoding"] = dec_axs
+
+        geom_grid = pu.make_mxn_gridspec(
+            self.gs, n_rows, 1, 0, 100, 60, 70, v_gap, h_gap
+        )
+        gss["panel_distance"] = self.get_axs(geom_grid, squeeze=True, sharey="all")
+
+        tune_grid = pu.make_mxn_gridspec(
+            self.gs, n_rows, 2, 0, 100, 75, 100, v_gap, h_gap
+        )
+        gss["panel_tuning"] = self.get_axs(
+            tune_grid, squeeze=False, sharey="horizontal", sharex="horizontal"
+        )
+
+        self.gss = gss
+
+    def get_fluor_maps(self):
+        if self.data.get("fluor") is None:
+            self.data["fluor"] = mla.make_all_fluor_maps()
+        return self.data["fluor"]
+
+    def panel_decoding(self):
+        key = "panel_decoding"
+        axs = self.gss[key]
+
+        n_trls = self.params.getint("n_trls")
+        if self.data.get(key) is None:
+            fluor = self.get_fluor_maps()
+            dec_out = mla.get_all_geometry_analysis(fluor, n_trls=n_trls)
+            self.data[key] = dec_out
+        dec_out = self.data[key]
+        for i, (animal, decs) in enumerate(dec_out.items()):
+            if i == 0:
+                titles = ("action", "context", "zone")
+            else:
+                titles = ("",) * 3
+            mla.plot_all_dec(
+                *decs,
+                chance_level=0,
+                one_row=True,
+                axs=axs[i : i + 1],
+                titles=titles,
+            )
+
+    def panel_distance(self):
+        key = "panel_distance"
+        axs = self.gss[key]
+
+        n_trls = self.params.getint("n_trls")
+        if self.data.get(key) is None:
+            fluor = self.get_fluor_maps()
+            out = {}
+            for animal, (xs, (f_N, _), (f_F, _)) in fluor.items():
+                distances = mla.get_geometry_tradeoff(xs, f_N, f_F, n_trls=n_trls)
+                out[animal] = distances
+            self.data[key] = out
+        distances = self.data[key]
+
+        for i, (animal, ((_, _, early), (_, _, late))) in enumerate(distances.items()):
+            axs[i].plot([0, 1], [early, late], "-o")
+            gpl.clean_plot(axs[i], 0)
+            gpl.clean_plot_bottom(axs[i])
+
+    def panel_tuning(self, recompute=False):
+        key = "panel_tuning"
+        axs = self.gss[key]
+
+        n_trls = self.params.getint("n_trls")
+
+        if self.data.get(key) is None or recompute:
+            fluor = self.get_fluor_maps()
+            tuning = {}
+            for animal, (xs, (f_N, _), (f_F, _)) in fluor.items():
+                out = mla.get_area_activity(xs, f_N, f_F, n_trls=n_trls)
+                f1_c1, f1_c2 = out["r1"]
+                f2_c1, f2_c2 = out["r2"]
+
+                f_c1 = np.max(np.stack((f1_c1, f2_c1), axis=0), axis=0)
+                f_c2 = np.max(np.stack((f1_c2, f2_c2), axis=0), axis=0)
+                tuning[animal] = (f_c1, f_c2)
+            self.data[key] = tuning
+        tuning = self.data[key]
+
+        begin = 0
+        end = -1
+        for i, (animal, (c1, c2)) in enumerate(tuning.items()):
+            axs[i, 0].scatter(c1[begin], c2[begin], s=1)
+            axs[i, 1].scatter(c1[end], c2[end], s=1)
+            axs[i, 0].set_aspect("equal")
+            axs[i, 1].set_aspect("equal")
+            gpl.clean_plot(axs[i, 0], 0)
+            gpl.clean_plot(axs[i, 1], 0)

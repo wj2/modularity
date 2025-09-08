@@ -15,7 +15,6 @@ import scipy.optimize as spo
 import tensorflow as tf
 
 import general.utility as u
-import general.stan_utility as su
 import general.neural_analysis as na
 import general.tasks.classification as gtc
 import general.tf.networks as gtn
@@ -859,26 +858,6 @@ def standardize_wm(wm, flat=True):
     std_wm = np.std(wm, axis=axis, keepdims=True)
     new_wm = (wm - mu_wm) / std_wm
     return new_wm
-
-
-def compute_prob_cluster(
-    wt, std_prior=1, model_path="modularity/wm_mixture.pkl", **kwargs
-):
-    n_units, n_groups, n_tasks = wt.shape
-    stan_dict = dict(N=n_units, M=n_groups, T=n_tasks, std_prior=std_prior, W=wt)
-    out = su.fit_model(stan_dict, model_path, arviz_convert=False, **kwargs)
-    fit, fit_az, diag = out
-    return out
-
-
-def likely_clusters(groups, w_matrix, std_prior=1, **kwargs):
-    w_reorg = _reorg_matrix(w_matrix, groups)
-    n_units, n_groups, n_tasks = w_reorg.shape
-    w_reorg = standardize_wm(w_reorg, flat=True)
-    out = compute_prob_cluster(w_reorg, std_prior=std_prior, **kwargs)
-    # overlap = np.identity(n_groups)*out
-    # return overlap, out
-    return out
 
 
 def make_group_matrix(groups):
@@ -3067,6 +3046,10 @@ def compute_alignment_index(
     rep = np.concatenate(rep_all, axis=0)
     cons = np.concatenate(cons_all, axis=0)
     return compute_alignment_index_samples(stim, rep, cons, rel_vars)
+
+
+def format_sun_data(f_raw, df):
+    pass
 
 
 def compute_silences(

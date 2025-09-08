@@ -269,10 +269,10 @@ class ImageDGWrapper(dg.DataGenerator):
         return self.use_dg.get_representation(o_samps)
 
 
-twod_file = "disentangled/datasets/" "dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz"
+twod_file = "disentangled/datasets/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz"
 twod_cache_file = "disentangled/datasets/shape_dataset.pkl"
 default_pre_net = (
-    "https://tfhub.dev/google/imagenet/" "mobilenet_v3_small_100_224/feature_vector/5"
+    "https://tfhub.dev/google/imagenet/mobilenet_v3_small_100_224/feature_vector/5"
 )
 
 
@@ -866,6 +866,10 @@ class Modularizer:
             out = self.loss(targ, out)
         return out
 
+    def get_target(self, x):
+        _, _, targ = self.get_x_true(true=x.astype(int))
+        return targ
+
     def get_x_true(
         self,
         x=None,
@@ -884,8 +888,10 @@ class Modularizer:
             raise IOError("need ground truth x")
         if true is None:
             true = self.sample_stim(n_train)
+            add = True
         else:
             n_train = true.shape[0]
+            add = False
         if group_inds is None and self.single_output:
             if self.continuous:
                 group_inds = np.argmax(true[:, -self.n_groups :], axis=1)
@@ -907,7 +913,13 @@ class Modularizer:
             to_add[trl_inds, group_inds] = 1
             if self.remove_last_inp:
                 to_add = to_add[:, :-1]
-        if self.single_output and self.integrate_context and not self.continuous:
+        add_cond = (
+            self.single_output
+            and self.integrate_context
+            and not self.continuous
+            and add
+        )
+        if add_cond:
             true = np.concatenate((true, to_add), axis=1)
         if fix_vars is not None:
             true[:, fix_vars] = fix_value
@@ -1707,7 +1719,6 @@ def make_and_train_mt_model_set_sequential(
         )
         flip_hist.append(h_flip_i)
     return fdg, (m_same, same_hist), (m_flip, flip_hist)
-
 
 
 def make_modularizer(
