@@ -40,6 +40,9 @@ dependencies = [
   "seaborn>=0.13.2",
 ]
 
+[project.scripts]
+activity_mod = "modularity.activity_mod_script:main"
+
 [project.urls]
 Documentation = "https://github.com/wj2/modularity#readme"
 Issues = "https://github.com/wj2/modularity/issues"

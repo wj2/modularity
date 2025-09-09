@@ -116,7 +116,7 @@ metric_methods = {
     'variance_index_sig': ma.compute_variance_specialization_signif,
 }
 
-if __name__ == '__main__':
+def main():
     parser = create_parser()
     args = parser.parse_args()
 
