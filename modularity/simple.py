@@ -7,6 +7,9 @@ import pickle
 import sklearn.preprocessing as skp
 import sklearn.decomposition as skd
 import numpy as np
+import scipy.stats as sts
+import scipy.linalg as spla
+import scipy.sparse as ss
 
 import general.utility as u
 import disentangled.auxiliary as da
@@ -14,7 +17,13 @@ import disentangled.disentanglers as dd
 import disentangled.data_generation as dg
 import modularity.auxiliary as maux
 import sklearn.metrics.pairwise as skmp
+import sklearn.metrics as skmet
+import sklearn.cluster as skcl
+import sklearn.manifold as skman
+from sklearn.utils.fixes import laplacian as csgraph_laplacian
 from general.tf.callbacks import CorrCallback
+import general.tf.networks as gtn
+import dbcv
 
 tfk = tf.keras
 tfkl = tf.keras.layers
@@ -1581,6 +1590,220 @@ class GatedLinearModularizerShell:
         inputs_all = self.make_input(rep, stim)
 
         self.gl_model.fit(inputs_all, targ, **kwargs)
+
+
+def _linear_gd_dynamics(X, y, lr=0.05, init=1e-20, n_steps=1000):
+    w_init = init * sts.norm(0, 1).rvs((y.shape[1], X.shape[1]))
+    C = X.T @ X / len(X)
+    S = y.T @ X / len(X)
+    ws = np.zeros((n_steps,) + w_init.shape)
+    ws[0] = w_init
+    ls = np.zeros(n_steps)
+
+    def _loss(w):
+        return np.mean(np.sum((y.T - w @ X.T) ** 2, axis=0))
+
+    ls[0] = _loss(w_init)
+    for i in range(1, n_steps):
+        ws[i] = ws[i - 1] + lr * (S - ws[i - 1] @ C)
+        ls[i] = _loss(ws[i])
+    sv = spla.svd(S @ spla.pinv(C))[1]
+    return ws, ls, sv
+
+
+def learning_transition_func(d, n=2):
+    # return 1 / (1 + n ** ((d / 2) - 1))
+    # return 1 / (1 + n ** ((d - 2)))
+    d = 0.5 + (np.sqrt(2) * n ** (d - 2) + 1) ** 2
+    f = np.sqrt(d**2 + 2)
+    t = -d + f
+    print(-d + f, -d - f)
+    return t
+    # return 1 / (-3 + n ** ((d)))
+
+
+def compute_weight_laplacian(
+    weights,
+    metric="rbf",
+    gamma=1.0,
+    degree=3,
+    coef0=1,
+    kernel_params=None,
+    **kwargs,
+):
+    if kernel_params is None:
+        kernel_params = {}
+    params = {"gamma": gamma, "degree": degree, "coef0": coef0}
+    kernel_params.update(params)
+    affinities = skmp.pairwise_kernels(
+        weights, metric=metric, filter_params=True, **kernel_params
+    )
+    return compute_laplacian_eigs(affinities, **kwargs)
+
+
+def optimal_clusters(ws, c_range=(2, 15), n_init=100, n_proc=8, **kwargs):
+    n_clusters = np.arange(*c_range)
+    scores = np.zeros(len(n_clusters))
+    for i, nc in enumerate(n_clusters):
+        m = skcl.SpectralClustering(nc, n_init=n_init, **kwargs)
+        ws_i = m.fit_predict(ws)
+        scores[i] = dbcv.dbcv(ws, ws_i, n_processes=n_proc)
+    return n_clusters, scores
+
+
+def spectral_silhouette(ws, c_range=(2, 15), n_init=100, n_proc=8, **kwargs):
+    n_clusters = np.arange(*c_range)
+    scores = np.zeros(len(n_clusters))
+    for i, nc in enumerate(n_clusters):
+        m = skcl.SpectralClustering(nc, n_init=n_init, **kwargs)
+        ws_i = m.fit_predict(ws)
+        emb = skman.SpectralEmbedding(nc, affinity="rbf", **kwargs)
+        ws_emb = emb.fit_transform(ws)
+        scores[i] = skmet.silhouette_score(ws_emb, ws_i)
+    return n_clusters, scores
+
+
+def compute_laplacian_eigs(
+    adjacency,
+    norm_laplacian=True,
+    n_components=None,
+    eigen_tol=0,
+):
+    laplacian, dd = csgraph_laplacian(
+        adjacency,
+        normed=norm_laplacian,
+        return_diag=True,
+    )
+    if norm_laplacian:
+        laplacian.flat[::len(laplacian) + 1] = 1
+    if n_components is None:
+        n_components = laplacian.shape[1] - 1
+    laplacian = laplacian * -1
+    lambdas, diffusion_map = ss.linalg.eigsh(
+        laplacian, k=n_components,
+        sigma=1.0,
+        which="LM", tol=eigen_tol
+    )
+    embedding = diffusion_map.T[n_components::-1]
+    if norm_laplacian:
+        embedding = embedding / dd[None]
+
+    # max_abs_rows = np.argmax(np.abs(embedding), axis=1)
+    # signs = np.sign(embedding[range(embedding.shape[0]), max_abs_rows])
+    # embedding *= signs[:, np.newaxis]
+    return lambdas, embedding.T
+
+
+def _train_comparison_network(X, y, n_units=500, w_init=None, **kwargs):
+    net = gtn.GenericFFNetwork.from_xy(
+        X, y, n_units, kernel_init=w_init, out_kernel_init=w_init, out_act=None
+    )
+    h = net.fit_xy(X, y, use_minibatches=False, track_reps=False, **kwargs)
+    r = net.get_representation(X)
+    return h.history["loss"], r
+
+
+def required_weight_norms(X, y, gates):
+    weights = 0
+    for gate in gates:
+        X_g = X[gate]
+        n = np.sqrt(np.sum(np.mean(X_g, axis=0) ** 2))
+        weights += 1 + 1 / n
+    return weights
+
+
+def comparative_learning_speed(
+    lvs,
+    y,
+    n_ts=100,
+    gates=None,
+    train=False,
+    n_epochs=1000,
+    n_units=500,
+):
+    if gates is None:
+        con_gates = (
+            np.logical_and(lvs[:, -1] == 1, y[:, 0] == 1),
+            np.logical_and(lvs[:, -1] == 1, y[:, 0] == -1),
+            np.logical_and(lvs[:, -1] == 0, y[:, 0] == 1),
+            np.logical_and(lvs[:, -1] == 0, y[:, 0] == -1),
+        )
+        high_gates = (y[:, 0] == 1, y[:, 0] == -1)
+        # high_gates = (np.ones(len(y), dtype=bool),)
+        gates = (con_gates, high_gates)
+
+    speeds = list(np.zeros((n_ts, len(g))) for g in gates)
+    diags = list(np.zeros((n_ts, len(g))) for g in gates)
+    losses = list(np.zeros((n_ts, n_epochs)) for g in gates)
+    reps = list(np.zeros((n_ts, len(lvs), n_units)) for g in gates)
+    norms = list(np.zeros(n_ts) for g in gates)
+    ts = np.linspace(0, 1, n_ts)
+    r_l = 2 * (lvs - 0.5)
+    r_l = r_l / np.sqrt(np.mean(np.sum(r_l**2, axis=1)))
+    r_n = np.identity(len(lvs))
+    learning_struct = (
+        lambda t: np.sqrt(t) * r_l,
+        lambda t: np.sqrt(1 - t) * r_n,
+    )
+    for i, gate in enumerate(gates):
+        for j, t in enumerate(ts):
+            X_ij = learning_struct[i](t)
+            speeds[i][j], diags[i][j] = gated_learning_speed(X_ij, y, gate)
+            norms[i][j] = required_weight_norms(X_ij, y, gate)
+            if train:
+                losses[i][j], reps[i][j] = _train_comparison_network(
+                    X_ij,
+                    y,
+                    epochs=n_epochs,
+                    n_units=n_units,
+                )
+    return ts, speeds, diags, norms, losses, reps
+
+
+def gated_learning_speed(
+    X,
+    y,
+    gates,
+):
+    n = len(y)
+    s_gs = np.zeros(len(gates))
+    d_gs = np.zeros(len(gates))
+    for i, gate in enumerate(gates):
+        r_use = X[gate]
+        y_use = y[gate]
+        e_xx = r_use.T @ r_use / n
+        e_xy = y_use.T @ r_use / n
+        u, s, v = spla.svd(e_xy, full_matrices=False)
+        d = v @ e_xx @ v.T
+        s_gs[i] = s[0]
+        d_gs[i] = d[0, 0]
+    return s_gs, d_gs
+
+
+def learning_speeds(X, y, n_ts=100, n_steps=1000, con_ind=-1, eps=0.01, y_proc=True):
+    if y_proc:
+        y = 2 * (y - 0.5)
+    c_mask = X[:, con_ind] == 1
+    o_mask = np.squeeze(y == 1)
+    X_11 = np.logical_and(c_mask, o_mask)
+    X_12 = np.logical_and(c_mask, ~o_mask)
+    X_21 = np.logical_and(~c_mask, o_mask)
+    X_22 = np.logical_and(~c_mask, ~o_mask)
+    X_lin = np.stack((X_11, X_12, X_21, X_22), axis=1, dtype=float)
+    X_nl = np.identity(len(X))
+
+    out = {}
+    ts = np.linspace(eps, 1 - eps, n_ts)
+    l_lin = np.zeros((n_ts, n_steps))
+    l_nl = np.zeros_like(l_lin)
+    sv_lin = np.zeros(n_ts)
+    sv_nl = np.zeros(n_ts)
+    for i, t in enumerate(ts):
+        _, l_lin[i], sv_lin[i] = _linear_gd_dynamics(X_lin * np.sqrt(t), y)
+        _, l_nl[i], sv_nl[i] = _linear_gd_dynamics(X_nl * np.sqrt(1 - t), y)
+    out["linear"] = l_lin, sv_lin
+    out["nonlinear"] = l_nl, sv_nl
+    return out, ts
 
 
 def make_and_train_mod_model_set(

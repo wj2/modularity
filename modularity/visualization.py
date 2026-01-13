@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import sklearn.decomposition as skd
+import sklearn.cluster as skcl
 import itertools as it
 import functools as ft
 
@@ -180,11 +181,12 @@ def plot_task_cube(
     ax=None,
     offset=-0.15,
     excl_color=(0.8,) * 3,
-    cmap="hsv",
+    line_cmap="hsv",
     line_color=None,
     exclusions=None,
     clusters=None,
     cluster_colors=None,
+    **kwargs,
 ):
     if exclusions is None:
         exclusions = ()
@@ -192,7 +194,7 @@ def plot_task_cube(
         clusters = ()
     if cluster_colors is None:
         cluster_colors = (None,) * len(clusters)
-    cm = plt.get_cmap(cmap)
+    cm = plt.get_cmap(line_cmap)
     lines = []
     colors = []
     linestyles = []
@@ -228,7 +230,7 @@ def plot_task_cube(
         pt_color = labels
     else:
         pt_color = "k"
-    ax.scatter(*stim.T, c=pt_color)
+    ax.scatter(*stim.T, c=pt_color, **kwargs)
     gpl.clean_3d_plot(ax)
     gpl.make_3d_bars(ax, center=(offset,) * 3, bar_len=0.5)
 
@@ -281,6 +283,72 @@ def plot_average_responses(fdg, net, *sgs, ax=None, **kwargs):
     ax.set_aspect("equal")
 
 
+def plot_selectivity_directions_and_clustering(
+    fdg,
+    weights,
+    n_clusters,
+    cluster_scores,
+    offset=-0.1,
+    excl_color=(0.8,) * 3,
+    net=None,
+    cmap="hsv",
+    axs=None,
+    ms=0.5,
+    sel_ms=None,
+    stim_ms=None,
+    fwid=3,
+    cluster_colors=None,
+    view_init=None,
+    task_ind=0,
+    unit_vectors=False,
+    bar_color=(.5,) * 3,
+    weight_pca=False,
+):
+    ncs = n_clusters[np.argmax(cluster_scores)]
+    if np.max(cluster_scores) < 0:
+        ncs = 1
+    if cluster_colors is None:
+        cluster_colors = (None,) * ncs
+    if axs is None:
+        f = plt.figure(figsize=(2 * fwid, fwid))
+        ax1 = f.add_subplot(1, 2, 1, projection="3d")
+        ax2 = f.add_subplot(1, 2, 2)
+        axs = (ax1, ax2)
+    ax1, ax2 = axs
+
+    _ = plot_clustered_selectivity_directions(
+        fdg,
+        weights,
+        ncs,
+        offset=offset,
+        net=net,
+        ms=ms,
+        sel_ms=sel_ms,
+        stim_ms=stim_ms,
+        cluster_colors=cluster_colors,
+        view_init=view_init,
+        task_ind=task_ind,
+        ax=ax1,
+        unit_vectors=unit_vectors,
+        weight_pca=weight_pca,
+    )
+
+    rectified_scores = np.ones_like(cluster_scores) * cluster_scores
+    # rectified_scores[rectified_scores < 0] = 0
+    ax2.bar(n_clusters, rectified_scores, color=bar_color)
+
+    gpl.make_yaxis_scale_bar(
+        ax2,
+        magnitude=0.1,
+        double=True,
+        label="cluster score",
+        text_buff=0.8,
+    )
+    gpl.add_hlines(0, ax2)
+    ax2.set_xlabel("number of clusters")
+    gpl.clean_plot(ax2, 0)
+
+
 def plot_selectivity_directions_and_counts(
     fdg,
     weights,
@@ -298,6 +366,8 @@ def plot_selectivity_directions_and_counts(
     cluster_colors=None,
     view_init=None,
     task_ind=0,
+    unit_vectors=False,
+    weight_pca=False,
 ):
     if exclusions is None:
         exclusions = ()
@@ -328,10 +398,19 @@ def plot_selectivity_directions_and_counts(
         task_ind=task_ind,
         ax=ax1,
         return_info=True,
+        unit_vectors=unit_vectors,
+        weight_pca=weight_pca,
     )
     counts, colors, side_ident = out[0]
+
+    counts = np.array(counts)
+    u_col, ind = np.unique(colors, axis=0, return_index=True)
+    # for i, col in enumerate(u_col):
+    #     mask = np.all(colors == col[None], axis=1)
+    #     count_i = np.sum(counts[mask])
+    #     ax2.bar([i], count_i, color=col)
     for i, si in enumerate(side_ident):
-        ax2.bar(i, counts[i], color=colors[i])
+        ax2.bar([i], counts[i], color=colors[i])
 
     gpl.make_yaxis_scale_bar(
         ax2,
@@ -345,11 +424,77 @@ def plot_selectivity_directions_and_counts(
 
 
 @gpl.ax_adder(three_dim=True)
+def plot_clustered_selectivity_directions(
+    fdg,
+    weights,
+    n_clusters,
+    offset=-0.1,
+    excl_color=(0.8,) * 3 + (1,),
+    net=None,
+    ax=None,
+    ms=0.5,
+    sel_ms=None,
+    stim_ms=None,
+    fwid=3,
+    cluster_colors=None,
+    view_init=None,
+    task_ind=0,
+    single_context=True,
+    unit_vectors=True,
+    weight_pca=False,
+):
+    if cluster_colors is None:
+        cluster_colors = (None,) * n_clusters
+
+    if stim_ms is None:
+        stim_ms = ms
+    lvs, rep = fdg.get_all_stim()
+    if not single_context:
+        mask = np.sum(lvs[:, -2:], axis=1) > 1
+        lvs = lvs[mask]
+        rep = rep[mask]
+    if unit_vectors:
+        weights = u.make_unit_vector(weights)
+
+    if net is None:
+        use_reps = (rep,)
+        colors = ("k",)
+    else:
+        targs = net.get_target(lvs)[:, task_ind]
+        u_ts = np.unique(targs)
+        use_reps = list(rep[ut == targs] for ut in u_ts)
+        colors = ("r", "b")
+
+    p = None
+    if weight_pca:
+        _, p = gpl.plot_highdim_points(weights, ax=ax, colors=colors, ms=0)
+
+    _, p = gpl.plot_highdim_points(*use_reps, ax=ax, colors=colors, ms=stim_ms, p=p)
+
+    m = skcl.SpectralClustering(n_clusters)
+    labels = m.fit_predict(weights)
+    u_ls = np.unique(labels)
+
+    for i, ul in enumerate(u_ls):
+        mask = labels == ul
+        gpl.plot_highdim_points(
+            weights[mask], color=cluster_colors[i], ax=ax, ms=ms, p=p
+        )
+    if view_init is not None:
+        ax.view_init(*view_init)
+    gpl.clean_3d_plot(ax)
+    gpl.make_3d_bars(ax, center=(-0.7 + offset,) * 3, bar_len=0.5)
+    ax.set_aspect("equal")
+    out = None
+    return out
+
+
+@gpl.ax_adder(three_dim=True)
 def plot_selectivity_directions(
     fdg,
     weights,
     offset=-0.1,
-    excl_color=(0.8,) * 3,
+    excl_color=(0.8,) * 3 + (1,),
     net=None,
     cmap="hsv",
     ax=None,
@@ -365,6 +510,7 @@ def plot_selectivity_directions(
     return_info=False,
     single_context=True,
     unit_vectors=True,
+    weight_pca=False,
 ):
     if exclusions is None:
         exclusions = ()
@@ -396,7 +542,11 @@ def plot_selectivity_directions(
         use_reps = list(rep[ut == targs] for ut in u_ts)
         colors = ("r", "b")
 
-    _, p = gpl.plot_highdim_points(*use_reps, ax=ax, colors=colors, ms=stim_ms)
+    p = None
+    if weight_pca:
+        _, p = gpl.plot_highdim_points(weights, ax=ax, colors=colors, ms=0)
+
+    _, p = gpl.plot_highdim_points(*use_reps, ax=ax, colors=colors, ms=stim_ms, p=p)
     col_div = len(side_ident) + 1
     counts = []
     colors = []
@@ -1224,6 +1374,7 @@ def plot_context_scatter_labels(
     ax=None,
     fwid=3,
     colors=None,
+    **kwargs,
 ):
     if ax is None:
         f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
@@ -1247,7 +1398,7 @@ def plot_context_scatter_labels(
     u_labels = u_labels[np.argsort(mean_diff)]
     for i, l_ in enumerate(u_labels):
         mask = labels == l_
-        ax.plot(act[mask, 0], act[mask, 1], "o", color=colors[i])
+        ax.plot(act[mask, 0], act[mask, 1], "o", color=colors[i], **kwargs)
     ax.set_xlabel(xy_labels[0])
     ax.set_ylabel(xy_labels[1])
     gpl.clean_plot(ax, 0)

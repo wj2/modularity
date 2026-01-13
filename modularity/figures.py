@@ -346,8 +346,9 @@ class ModularizerFigure(pu.Figure):
 
 
 class ArbitraryTaskFigure(ModularizerFigure):
-    def __init__(self, fig_key="arbitrary_task_figure", colors=colors, **kwargs):
-        fsize = (8, 6.5)
+    def __init__(
+        self, fig_key="arbitrary_task_figure", colors=colors, fsize=(8, 6.5), **kwargs
+    ):
         cf = u.ConfigParserColor()
         cf.read(config_path)
 
@@ -358,46 +359,66 @@ class ArbitraryTaskFigure(ModularizerFigure):
     def make_gss(self):
         gss = {}
 
-        n_cols = 4
+        n_cols = 7
         task_grid = pu.make_mxn_gridspec(self.gs, 1, n_cols, 0, 30, 0, 100, 5, 0)
         task_axs = self.get_axs(task_grid, squeeze=True, all_3d=True)
 
         selectivity_grid = pu.make_mxn_gridspec(
-            self.gs, 1, n_cols, 10, 85, 0, 100, 5, 0
+            self.gs, 1, n_cols, 10, 60, 0, 100, 5, 0
         )
-        selectivity_axs = self.get_axs(selectivity_grid, squeeze=True, all_3d=True)
+        selectivity_axs1 = self.get_axs(selectivity_grid, squeeze=True, all_3d=True)
 
-        sel_count_grid = pu.make_mxn_gridspec(self.gs, 1, n_cols, 55, 70, 5, 95, 5, 5)
-        sel_count_axs = self.get_axs(
+        sel_count_grid = pu.make_mxn_gridspec(self.gs, 1, n_cols, 45, 60, 5, 95, 5, 5)
+        sel_count_axs1 = self.get_axs(
             sel_count_grid, squeeze=True, sharey="all", sharex="all"
         )
 
-        avg_grid = pu.make_mxn_gridspec(self.gs, 1, n_cols, 85, 100, 5, 95, 5, 5)
-        plot_3ds = np.zeros((1, n_cols), dtype=bool)
-        plot_3ds[:, -1] = True
-        avg_axs = self.get_axs(
-            avg_grid, squeeze=True, sharey="all", sharex="all", plot_3ds=plot_3ds
+        selectivity_grid = pu.make_mxn_gridspec(
+            self.gs, 1, n_cols, 55, 100, 0, 100, 5, 0
         )
+        selectivity_axs2 = self.get_axs(selectivity_grid, squeeze=True, all_3d=True)
+
+        sel_count_grid = pu.make_mxn_gridspec(self.gs, 1, n_cols, 85, 100, 5, 95, 5, 5)
+        sel_count_axs2 = self.get_axs(
+            sel_count_grid, squeeze=True, sharey="all", sharex="all"
+        )
+        sel_axs = np.stack((selectivity_axs1, selectivity_axs2), axis=1)
+        sel_counts = np.stack((sel_count_axs1, sel_count_axs2), axis=1)
 
         gss["panel_arbitrary_tasks"] = zip(
-            task_axs, selectivity_axs, sel_count_axs, avg_axs
+            task_axs,
+            sel_axs,
+            sel_counts,
         )
         self.gss = gss
 
     def train_model(
-        self, task, n=2, k=3, hidden_rep=500, early_stopping=True, use_bias=True
+        self,
+        task,
+        n=2,
+        k=3,
+        hidden_rep=500,
+        early_stopping=True,
+        use_bias=True,
+        mix_strength=None,
+        n_inp_dims=200,
     ):
         n_train = self.params.getint("n_train")
         n_epochs = self.params.getint("n_epochs")
-        mix = self.params.getfloat("mix_strength")
+        if mix_strength is None:
+            mix_strength = self.params.getfloat("mix_strength")
 
-        fdg = dg.MixedDiscreteDataGenerator(k, n_vals=n, mix_strength=mix)
-        net = gtn.GenericFFNetwork(fdg, hidden_rep, tasks=task, use_bias=use_bias)
+        fdg = dg.MixedDiscreteDataGenerator(
+            k, n_vals=n, mix_strength=mix_strength, n_units=n_inp_dims
+        )
+        net = gtn.GenericFFNetwork(
+            fdg, hidden_rep, tasks=task, use_bias=use_bias, noise=0.1, inp_noise=0.01
+        )
         h = net.fit(n_train=n_train, epochs=n_epochs, use_early_stopping=early_stopping)
         weights = net.model.layers[1].weights[0].numpy().T
         return fdg, net, weights, h
 
-    def panel_arbitrary_tasks(self, retrain=False):
+    def panel_arbitrary_tasks(self, retrain=False, recompute_scores=False):
         key = "panel_arbitrary_tasks"
         task_axs = self.gss[key]
 
@@ -488,8 +509,16 @@ class ArbitraryTaskFigure(ModularizerFigure):
             (((1, 2), (0, 1)),),
             (((1, 2), (1, 1)),),
         )
-        clusters = (clusters1, clusters_con, clusters2, clusters3)
+        clusters = (None, None, clusters1, clusters_con, clusters2, clusters3, None)
         tasks = (
+            gtc.LinearTask.make_task_group(
+                n_tasks,
+                k,
+            ),
+            gtc.LinearTask.make_task_group(
+                n_tasks,
+                k - 1,
+            ),
             gtc.DiscreteOrderTaskStrict.make_task_group(
                 n_tasks,
                 k,
@@ -512,52 +541,48 @@ class ArbitraryTaskFigure(ModularizerFigure):
                 n_vals=n,
                 exclusion=exclusion3,
             ),
+            gtc.ParityTask.make_task_group(
+                n_tasks,
+                k,
+            ),
         )
         exclusions = (
+            None,
+            None,
             exclusion1,
             exclusion_con,
             exclusion2,
             exclusion3,
+            None,
         )
 
-        def _con_mask(stim):
-            m1 = stim[:, -1] == 0
-            return m1, np.logical_not(m1)
-
-        def _excl2_mask(stim):
-            mi = stim[:, 1] == 0
-            mj = stim[:, 2] == 1
-            m1 = np.logical_and(mi, mj)
-            return m1, np.logical_not(m1)
-
-        def _excl3_mask(stim):
-            m1i = stim[:, 1] == 0
-            m1j = stim[:, 2] == 1
-            m1 = np.logical_and(m1i, m1j)
-            m2i = stim[:, 1] == 1
-            m2j = stim[:, 2] == 1
-            m2 = np.logical_and(m2i, m2j)
-            m3 = np.logical_not(np.logical_and(m1, m2))
-            return m1, m2, m3
-
-        cluster_colors = plt.get_cmap("viridis")(np.linspace(0.2, 1, len(clusters[-1])))
-        mask_funcs = (
-            _con_mask,
-            _con_mask,
-            _excl2_mask,
-            _excl3_mask,
-        )
+        mixing = (0, 1)
+        n_reps = 20
         if self.data.get(key) is None or retrain:
-            out_weights = []
-            for i, task in enumerate(tasks):
-                fdg, net, weights, _ = self.train_model(task)
-                out_weights.append((fdg, net, task, weights))
-            self.data[key] = out_weights
+            out_full = []
+            for j, mix in enumerate(mixing):
+                out_weights = []
+                for i, task in enumerate(tasks):
+                    out_reps = []
+                    for k in range(n_reps):
+                        fdg, net, weights, h = self.train_model(task, mix_strength=mix)
+                        clusts = ms.optimal_clusters(weights)
+                        out_reps.append((fdg, net, task, clusts, weights))
+                    out_weights.append(out_reps)
+                out_full.append(out_weights)
+            self.data[key] = out_full
 
-        views = ((33, 33), None, (33, 45), None)
-        for i, (t_ax, s_ax, c_ax, a_ax) in enumerate(task_axs):
-            fdg, net, task, weights = self.data[key][i]
-            stim = fdg.get_all_stim()[0]
+        views = (None, (33, 65), (33, 33), (-10, 45), (33, 45), (33, 33), None)
+        stim = self.data[key][0][0][0][0].get_all_stim()[0]
+        for i, axs in enumerate(task_axs):
+            t_ax, s_axs, c_axs = axs
+
+            if clusters[i] is None:
+                n_clust = 1
+            else:
+                n_clust = len(clusters[i])
+
+            cluster_colors = plt.get_cmap("viridis")(np.linspace(0.2, 1, n_clust))
             mv.plot_task_cube(
                 stim,
                 ax=t_ax,
@@ -565,28 +590,44 @@ class ArbitraryTaskFigure(ModularizerFigure):
                 clusters=clusters[i],
                 cluster_colors=cluster_colors,
             )
-            mv.plot_selectivity_directions(
-                fdg,
-                weights,
-                axs=(s_ax, c_ax),
-                exclusions=exclusions[i],
-                clusters=clusters[i],
-                cluster_colors=cluster_colors,
-                view_init=views[i],
-            )
+            for j, _ in enumerate(mixing):
+                fdg, net, task, clusts, weights = self.data[key][j][i][0]
+                w_all = np.stack(list(x[-1] for x in self.data[key][j][i]))
+                ncs = clusts[0]
+                scores = np.stack(list(x[-2][1] for x in self.data[key][j][i]))
+                if recompute_scores:
+                    scores = []
+                    for ws_i in w_all:
+                        nc, scores_i = ms.optimal_clusters(ws_i, gamma=2)
+                        scores.append(scores_i)
+                    scores = np.stack(scores)
+                scores_mu = np.median(scores, axis=0)
+                n_clust = ncs[np.argmax(scores_mu)]
+                if np.max(scores_mu) < 0:
+                    n_clust = 1
+                cluster_colors = plt.get_cmap("viridis")(np.linspace(0.2, 1, n_clust))
+                mv.plot_selectivity_directions_and_clustering(
+                    fdg,
+                    weights,
+                    ncs,
+                    scores_mu,
+                    axs=(s_axs[j], c_axs[j]),
+                    cluster_colors=cluster_colors,
+                    view_init=views[i],
+                )
+                # mv.plot_selectivity_directions_and_counts(
+                #     fdg,
+                #     weights,
+                #     axs=(s_axs[j], c_axs[j]),
+                #     exclusions=exclusions[i],
+                #     clusters=clusters[i],
+                #     cluster_colors=cluster_colors,
+                #     view_init=views[i],
+                # )
 
-            sgs = mask_funcs[i](stim)
-            mv.plot_average_responses(
-                fdg,
-                net,
-                *sgs,
-                ax=a_ax,
-                color=(0.3,) * 3,
-            )
 
-
-class ColoringTaskFigure(ArbitraryTaskFigure):
-    def __init__(self, fig_key="coloring_task_figure", **kwargs):
+class TaskSelectivityFigure(ArbitraryTaskFigure):
+    def __init__(self, fig_key="task_selectivity_figure", **kwargs):
         super().__init__(fig_key=fig_key, **kwargs)
 
     def make_gss(self):
@@ -601,12 +642,17 @@ class ColoringTaskFigure(ArbitraryTaskFigure):
         ax = self.gss[key]
 
         k = 3
+        n_tasks = 200
 
         if self.data.get(key) is None or retrain:
             if task is None:
-                task = gtc.ColoringTask(np.arange(k))
+                task = gtc.ColoringTask.make_task_group(n_tasks, np.arange(k))
+                task = gtc.make_contextual_task(
+                    np.arange(k - 1), n_tasks=n_tasks, single_ind=True
+                )
+                # task = gtc.ParityTask(np.arange(k))
             fdg, net, weights, h = self.train_model(
-                task, k=k, use_bias=False, early_stopping=False
+                task, k=k, use_bias=True, early_stopping=False
             )
             self.data[key] = (task, fdg, net, weights, h)
         task, fdg, net, weights, h = self.data[key]
@@ -618,8 +664,260 @@ class ColoringTaskFigure(ArbitraryTaskFigure):
             net=net,
             ax=ax,
             stim_ms=5,
-            unit_vectors=False, 
+            unit_vectors=False,
         )
+
+
+def _make_all_sidelines(k, n=2):
+    stim = np.array(list(it.product(np.arange(n), repeat=k)))
+    lines = []
+    for i, s_i in enumerate(stim):
+        for j, s_j in enumerate(stim[i:]):
+            diff_ij = np.abs(s_i - s_j)
+            if np.sum(diff_ij) == 1:
+                ind = np.where(diff_ij)[0]
+                f_ind = []
+                v_ind = []
+                for z in range(k):
+                    if z != ind:
+                        f_ind.append(z)
+                        v_ind.append(s_j[z])
+                lines.append((tuple(f_ind), tuple(v_ind)))
+    return lines
+
+
+class PretrainedTaskFigure(ModularizerFigure):
+    def __init__(self, fig_key="pretrained_task_figure", **kwargs):
+        fsize = (8, 8)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        act_grid = pu.make_mxn_gridspec(self.gs, 1, 2, 0, 50, 0, 50, 5, 5)
+        act_axs = self.get_axs(act_grid, squeeze=True, sharex="all", sharey="all")
+        gss["panel_pretrained_activity"] = act_axs
+
+        sel_grid = pu.make_mxn_gridspec(self.gs, 1, 2, 40, 100, 0, 100, 0, 5)
+        sel_axs = self.get_axs(sel_grid, squeeze=True, all_3d=True)
+        gss["panel_selectivity"] = sel_axs
+
+        self.gss = gss
+
+    def _train_and_pretrain(
+        self,
+        task,
+        pre_task=None,
+        n=2,
+        k=3,
+        hidden_rep=500,
+        pretrain_epochs=50,
+        n_epochs=50,
+        mix_strength=0,
+        n_train=2000,
+        early_stopping=False,
+        use_bias=True,
+    ):
+        if pre_task is None:
+            pre_task = gtc.ColoringTask.make_task_group(len(task), np.arange(k))
+
+        fdg = dg.MixedDiscreteDataGenerator(k, n_vals=n, mix_strength=mix_strength)
+        stim, inp_reps = fdg.get_all_stim()
+
+        net = gtn.GenericFFNetwork(fdg, hidden_rep, tasks=pre_task, use_bias=use_bias)
+        h_pre = net.fit(
+            n_train=n_train, epochs=pretrain_epochs, use_early_stopping=early_stopping
+        )
+        reps_pre = net.get_representation(inp_reps).numpy()
+        weights_pre = net.model.layers[1].weights[0].numpy().T
+
+        net.tasks = task
+        h_post = net.fit(
+            n_train=n_train, epochs=n_epochs, use_early_stopping=early_stopping
+        )
+        reps_post = net.get_representation(inp_reps).numpy()
+        weights_post = net.model.layers[1].weights[0].numpy().T
+
+        return (
+            fdg,
+            net,
+            (stim, reps_pre, reps_post),
+            (weights_pre, weights_post),
+            (h_pre, h_post),
+        )
+
+    def panel_pretrained_activity(self, retrain=False):
+        key = "panel_pretrained_activity"
+        axs = self.gss[key]
+
+        k = self.params.getint("k")
+        n_tasks = self.params.getint("n_tasks")
+        task = gtc.make_contextual_task(k - 1, n_tasks, single_ind=True)
+        print(len(task))
+
+        if self.data.get(key) is None or retrain:
+            out = self._train_and_pretrain(task, k=k)
+            self.data[key] = out
+        out = self.data[key]
+        stim, r_pre, r_post = out[2]
+        c_dim = -1
+        c1 = stim[:, c_dim] == 0
+        c2 = stim[:, c_dim] == 1
+        axs[0].scatter(np.mean(r_pre[c1], axis=0), np.mean(r_pre[c2], axis=0))
+        axs[1].scatter(np.mean(r_post[c1], axis=0), np.mean(r_post[c2], axis=0))
+        list(gpl.clean_plot(ax, 0) for ax in axs)
+        list(ax.set_aspect("equal") for ax in axs)
+
+    def panel_selectivity(self, retrain=False):
+        key = "panel_selectivity"
+        axs = self.gss[key]
+
+        data_key = "panel_pretrained_activity"
+
+        if self.data.get(data_key) is None or retrain:
+            self.panel_pretrained_activity(retrain=retrain)
+        out = self.data[data_key]
+        fdg = out[0]
+        weights = out[-2]
+        for i, w_i in enumerate(weights):
+            mv.plot_selectivity_directions(
+                fdg,
+                w_i,
+                ax=axs[i],
+                stim_ms=0,
+                cmap="viridis",
+                unit_vectors=True,
+                weight_pca=True,
+            )
+
+
+class ColoringTaskFigure(ArbitraryTaskFigure):
+    def __init__(self, fig_key="coloring_task_figure", **kwargs):
+        fsize = (8, 8)
+        super().__init__(fsize=fsize, fig_key=fig_key, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        task_grid = pu.make_mxn_gridspec(self.gs, 1, 2, 0, 20, 0, 100, 2, 2)
+        sel_ax = self.get_axs(task_grid, all_3d=True, squeeze=True)
+        gss["panel_tasks"] = sel_ax
+
+        sel_grid = pu.make_mxn_gridspec(self.gs, 2, 2, 20, 80, 0, 100, 20, 0)
+        sel_ax = self.get_axs(sel_grid, all_3d=True)
+
+        count_grid = pu.make_mxn_gridspec(self.gs, 2, 2, 40, 100, 15, 85, 30, 30)
+        count_ax = self.get_axs(count_grid)
+        gss["panel_selectivity"] = np.stack((sel_ax, count_ax), axis=-1)
+
+        self.gss = gss
+
+    def panel_tasks(self):
+        key = "panel_tasks"
+        axs = self.gss[key]
+
+        k = self.params.getint("k_color")
+        n_vals = 2
+
+        task1 = gtc.ParityTask(np.arange(k))
+        stim = np.array(list(it.product(np.arange(n_vals), repeat=k)))
+        targ1 = task1(stim)
+
+        mv.plot_task_cube(
+            stim,
+            labels=targ1,
+            # line_color=(0.8,) * 3,
+            cmap="bwr",
+            line_cmap="viridis",
+            ax=axs[0],
+        )
+
+    def panel_selectivity(self, retrain=False, tasks=None):
+        key = "panel_selectivity"
+        axs = self.gss[key]
+
+        if self.data.get(key) is None or retrain:
+            k_color = self.params.getint("k_color")
+            k_con = self.params.getint("k_con")
+            n_tasks = self.params.getint("n_tasks")
+            mixing = self.params.getlist("mixing_levels", typefunc=float)
+
+            color_cluster = None
+
+            lines_con = _make_all_sidelines(k_con)
+            con_cluster = (
+                list(
+                    filter(lambda x: x[0][-1] == k_con - 1 and x[1][-1] == 0, lines_con)
+                ),
+                list(
+                    filter(lambda x: x[0][-1] == k_con - 1 and x[1][-1] == 1, lines_con)
+                ),
+            )
+            con_exclusions = list(filter(lambda x: x[0][-1] != k_con - 1, lines_con))
+            con_cluster_colors = plt.get_cmap("viridis")(
+                np.linspace(0.2, 1, len(con_cluster))
+            )
+            clusters = (color_cluster, con_cluster)
+            cluster_colors = (None, con_cluster_colors)
+            exclusions = (None, con_exclusions)
+
+            if tasks is None:
+                task_color = gtc.ColoringTask.make_task_group(
+                    n_tasks, np.arange(k_color)
+                )
+
+                inds = np.arange(k_con)
+                c1 = gtc.ColoringTask.make_task_group(n_tasks, inds[:2])
+                c2 = gtc.ColoringTask.make_task_group(n_tasks, inds[2:4])
+                task_concolor = gtc.ContextualTask(
+                    c1, c2, c_inds=inds[-1:], single_ind=True
+                )
+                tasks = (task_color, task_concolor)
+                ks = (k_color, k_con)
+            out = {}
+            for i, mix in enumerate(mixing):
+                for j, task in enumerate(tasks):
+                    fdg, net, weights, h = self.train_model(
+                        task,
+                        k=ks[j],
+                        use_bias=True,
+                        mix_strength=mix,
+                        early_stopping=False,
+                    )
+                    out[(i, j)] = (task, fdg, net, weights, h)
+            self.data[key] = (
+                (mixing, tasks),
+                out,
+                clusters,
+                cluster_colors,
+                exclusions,
+            )
+
+        views = (((15, 33), (33, 100)), (None, None))
+        (mixing, tasks), model_dict = self.data[key][:2]
+        clusters, cluster_colors, exclusions = self.data[key][2:]
+        for i, mix in enumerate(mixing):
+            for j, task in enumerate(tasks):
+                task, fdg, net, weights, h = model_dict[(i, j)]
+                mv.plot_selectivity_directions_and_counts(
+                    fdg,
+                    weights,
+                    net=net,
+                    axs=axs[i, j],
+                    stim_ms=0,
+                    cmap="viridis",
+                    unit_vectors=False,
+                    weight_pca=True,
+                    view_init=views[i][j],
+                    clusters=clusters[j],
+                    cluster_colors=cluster_colors[j],
+                    exclusions=exclusions[j],
+                )
 
 
 class NonlinearInputArbitraryTaskFigure(ArbitraryTaskFigure):
@@ -1530,8 +1828,8 @@ class FigureEmergence(ModularizerFigure):
         stable_gates = self.data[key]
         for i, nt in enumerate(nts):
             stims, targs, gates, ws, model_out = stable_gates[nt]
-            resp = model_out[1](stims)
-            mask_c1 = stims[:, -1] == 1
+            # resp = model_out[1](stims)
+            # mask_c1 = stims[:, -1] == 1
 
             # print(gates)
             # print(ws[:10])
@@ -1951,6 +2249,9 @@ class FigureModularityIsolated(ModularizerFigure):
             label=label,
             **kwargs,
         )
+        trs_theory = ms.learning_transition_func(lv)
+        gpl.add_vlines(trs_theory, ax_group[-1][0])
+        gpl.add_vlines(trs_theory, ax_group[-1][1])
 
     def _modularity_transition(
         self,
