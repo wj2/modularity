@@ -1,1 +1,2 @@
-# modularity
+# Studying the emergence of modularity in artificial neural networks #
+This code was used to run the simulations, analysis, and generate the figures for this [preprint](https://doi.org/10.1101/2024.09.30.615925). The dependencies are given in `pyproject.toml` and the repository should be installable via pip. This code depends on numerous other custom repositories as well as the broader environment for scientific computing in python. 
