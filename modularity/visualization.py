@@ -1,13 +1,15 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-import sklearn.decomposition as skd
-import sklearn.cluster as skcl
-import itertools as it
 import functools as ft
+import itertools as it
 
-import general.utility as u
+import disentangled.data_generation as dg
 import general.plotting as gpl
+import general.utility as u
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+import sklearn.cluster as skcl
+import sklearn.decomposition as skd
+
 import modularity.analysis as ma
 import modularity.auxiliary as maux
 
@@ -48,7 +50,7 @@ def plot_vs(
     disent_avg=False,
 ):
     if axs is None:
-        f, axs = plt.subplots(2, 1, figsize=(fwid, fwid * 2))
+        _, axs = plt.subplots(2, 1, figsize=(fwid, fwid * 2))
 
     if c1_col is None:
         c1_col = np.array((253, 86, 30)) / 256
@@ -301,7 +303,7 @@ def plot_selectivity_directions_and_clustering(
     view_init=None,
     task_ind=0,
     unit_vectors=False,
-    bar_color=(.5,) * 3,
+    bar_color=(0.5,) * 3,
     weight_pca=False,
 ):
     ncs = n_clusters[np.argmax(cluster_scores)]
@@ -908,7 +910,7 @@ def plot_order_run(
     ax.legend(frameon=False)
     gpl.clean_plot(ax, 0)
     ax.set_xlabel(x_key)
-    ax.set_ylabel("order explaining > {}".format(thr))
+    ax.set_ylabel(f"order explaining > {thr}")
     return ax
 
 
@@ -993,9 +995,7 @@ def visualize_training_dimensionality(
         labels = ("",) * len(mhs)
 
     for i, (m, h) in enumerate(mhs):
-        ax.plot(
-            h.history["dimensionality"], label=label_templ + " {}".format(labels[i])
-        )
+        ax.plot(h.history["dimensionality"], label=label_templ + f" {labels[i]}")
         c = m.n_groups
         l_ = m.group_size
         targ_lin = c * l_
@@ -1084,7 +1084,7 @@ def plot_task_object(
         axs[i].set_title(k)
         labelers = (axs[i].set_xlabel, axs[i].set_ylabel, axs[i].set_zlabel)
         for j, an in enumerate(ax_names):
-            labelers[j]("F{}".format(an))
+            labelers[j](f"F{an}")
 
 
 def plot_sequential_loss(hists, axs=None, cmap="Blues", fwid=2, con_seq=None):
@@ -1177,6 +1177,7 @@ def visualize_module_activity(
     fix_vars=None,
     fix_value=0,
     linestyle="solid",
+    limit_dim=None,
     **kwargs,
 ):
     inp_rep, stim, targ = model.get_x_true(
@@ -1185,12 +1186,21 @@ def visualize_module_activity(
         fix_vars=fix_vars,
         fix_value=fix_value,
     )
-    stim, ind = np.unique(stim, axis=0, return_index=True)
-    targ = targ[ind]
-    inp_rep = inp_rep[ind]
+    if limit_dim is not None:
+        stim_d = np.array(list(it.product(range(2), repeat=3)))
+        stim = np.zeros((stim_d.shape[0], stim.shape[-1]))
+        stim[:, :limit_dim] = stim_d
+        stim[:, -(model.n_groups + context)] = 1
+        inp_rep = model.mix.get_representation(stim)
+        targ = model.generate_target(stim, group_inds=context)
+        rel_stim = stim[:, :limit_dim]
+    else:
+        stim, ind = np.unique(stim, axis=0, return_index=True)
+        targ = targ[ind]
+        inp_rep = inp_rep[ind]
+        rel_stim = stim[:, model.groups[context]]
 
     rep = model.get_representation(inp_rep)
-    rel_stim = stim[:, model.groups[context]]
     centroids = np.unique(rel_stim, axis=0)
 
     ax, p = gpl.plot_highdim_trace(
@@ -1235,7 +1245,7 @@ def visualize_module_activity(
             )
 
     if plot_resp_cats:
-        cats = model.group_func[context](rel_stim)[:, task_ind]
+        cats = targ[:, task_ind] == 1
 
         ax, p = gpl.plot_highdim_trace(
             rep[cats],
@@ -1264,6 +1274,69 @@ def visualize_module_activity(
     ax.set_ylabel("PC 2")
     ax.set_zlabel("PC 3")
     return ax, p
+
+
+def input_structure_video(
+    path,
+    ts_bound=(0, 1),
+    n_ts=400,
+    ax=None,
+    lv1_color=None,
+    lv2_color=None,
+    gray_color=(0.7,) * 3,
+    gray_lw=1,
+    pt_color="k",
+    rotations=3,
+    t_set=1 / 3,
+    buff=75,
+):
+    ts = np.linspace(*ts_bound, n_ts)
+    ts = np.concatenate((np.zeros(buff), ts, np.ones(buff)))
+    lin = dg.MixedDiscreteDataGenerator(2, n_units=200)
+    nonlin = dg.MixedDiscreteDataGenerator(2, mix_strength=1, n_units=200)
+    stim, lin_reps = lin.get_all_stim()
+    _, nonlin_reps = nonlin.get_all_stim()
+    trs = skd.PCA(3)
+    comb = t_set * lin_reps + (1 - t_set) * nonlin_reps
+    mu = np.mean(comb, axis=0, keepdims=True)
+
+    trs.fit(comb - mu)
+
+    def func(t, ax=None, ind=0):
+        rep = (1 - t) * lin_reps + t * nonlin_reps
+        c1 = stim[:, -1] == 0
+        gpl.plot_highdim_trace(rep[c1], ax=ax, p=trs, color=lv1_color)
+        c2 = stim[:, -1] == 1
+        gpl.plot_highdim_trace(rep[c2], ax=ax, p=trs, color=lv1_color)
+        s1 = stim[:, 0] == 0
+        gpl.plot_highdim_trace(rep[s1], ax=ax, p=trs, color=lv2_color)
+        s2 = stim[:, 0] == 1
+        gpl.plot_highdim_trace(rep[s2], ax=ax, p=trs, color=lv2_color)
+
+        x1 = np.logical_xor(*(stim[:, (0, 1)] == 1).T)
+        gpl.plot_highdim_trace(
+            rep[x1], ax=ax, p=trs, color=gray_color, ls="dashed", lw=gray_lw
+        )
+        s2 = stim[:, 0] == 1
+        gpl.plot_highdim_trace(
+            rep[~x1], ax=ax, p=trs, color=gray_color, ls="dashed", lw=gray_lw
+        )
+
+        gpl.plot_highdim_points(rep, ax=ax, p=trs, color=pt_color)
+        gpl.clean_3d_plot(ax)
+        gpl.make_3d_bars(ax, center=(-0.5,) * 3, bar_len=0.3)
+
+    f, ax = plt.subplots(1, 1, subplot_kw={"projection": "3d"}, figsize=(2.5, 2.5))
+    gpl.animate_3d_plot(
+        f,
+        ax,
+        path,
+        ts,
+        func,
+        azim_range=(0, rotations * 360),
+        elev=30,
+        dpi=500,
+    )
 
 
 clustering_metrics_all = (
@@ -1360,10 +1433,22 @@ def plot_optimal_context_scatter_from_activity(
 
 
 def plot_context_scatter(
-    m, n_samps=1000, cluster_func=ma.infer_activity_clusters, from_layer=None, **kwargs
+    m,
+    n_samps=1000,
+    cluster_func=ma.infer_activity_clusters,
+    from_layer=None,
+    max_clusters=None,
+    use_std=False,
+    **kwargs,
 ):
     labels, act = cluster_func(
-        m, n_samps=n_samps, use_mean=True, ret_act=True, from_layer=from_layer
+        m,
+        n_samps=n_samps,
+        use_mean=True,
+        ret_act=True,
+        from_layer=from_layer,
+        max_clusters=max_clusters,
+        use_std=use_std,
     )
     return plot_context_scatter_labels(labels, act, **kwargs)
 
@@ -1374,27 +1459,34 @@ def plot_context_scatter_labels(
     ax=None,
     fwid=3,
     colors=None,
+    cmap=None,
     **kwargs,
 ):
     if ax is None:
-        f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
+        _, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
     xy_labels = ("ctx 1 activity", "ctx 2 activity")
     u_labels = np.unique(labels)
-    if colors is None:
+    if colors is None and cmap is not None:
+        n_clusts = len(u_labels)
+        if n_clusts == 1:
+            colors = cmap([0.5])
+        else:
+            colors = cmap(np.linspace(0.01, 0.99, n_clusts))
+    else:
         colors = (None,) * len(u_labels)
-    if len(u_labels) == 1:
-        colors = (colors[1],)
-    if len(u_labels) == 2:
-        colors = (colors[0], colors[-1])
+        if len(u_labels) == 1:
+            colors = (colors[1],)
+        if len(u_labels) == 2:
+            colors = (colors[0], colors[-1])
 
     if act.shape[1] > 2:
         p = skd.PCA(2)
         act = p.fit_transform(act)
         xy_labels = ("PC 1", "PC 2")
 
-    mean_diff = list(
+    mean_diff = [
         np.mean(act[labels == l_, 1] - act[labels == l_, 0]) for l_ in u_labels
-    )
+    ]
     u_labels = u_labels[np.argsort(mean_diff)]
     for i, l_ in enumerate(u_labels):
         mask = labels == l_
@@ -1438,19 +1530,91 @@ def visualize_ri_list(
     fwid=3,
 ):
     if ax is None:
-        f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
+        _, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
 
     quants = accumulate_run_quants(
         ri_list, quant_key=quant_key, templ=templ, legend_keys=legend_keys
     )
     print(quant_key)
     for k, (xs, qs) in quants.items():
-        l_text = list(
-            lk + " = {}".format(np.squeeze(k[i])) for i, lk in enumerate(legend_keys)
-        )
+        l_text = [lk + f" = {np.squeeze(k[i])}" for i, lk in enumerate(legend_keys)]
         l_text = "\n".join(l_text)
         gpl.plot_trace_werr(xs, qs.T, ax=ax, label=l_text)
     return ax
+
+
+def _make_stimulus_pair_mask(stim, targs, n_contexts, task_ind=0):
+    cons = np.argmax(stim[:, -n_contexts:], axis=1)
+    u_cons = np.unique(cons)
+    targ = targs[:, task_ind]
+    keep_inds = np.zeros(n_contexts * 2)
+    for i, con in enumerate(u_cons):
+        keep_inds[i * 2] = np.where(np.logical_and(targ == 0, con == cons))[0][0]
+        keep_inds[i * 2 + 1] = np.where(np.logical_and(targ == 1, con == cons))[0][0]
+    return np.isin(np.arange(len(stim)), keep_inds)
+
+
+@gpl.ax_adder(three_dim=True)
+def plot_training_traj(
+    stim,
+    traj,
+    n_contexts,
+    pre_traj=None,
+    targets=None,
+    skip=3,
+    ax=None,
+    colors=None,
+    ms=2,
+    lw=2,
+    dim_mask=None,
+    r1_color="r",
+    r2_color="b",
+    ctx_outlines=None,
+):
+    """
+    stim : an N x D array, N: number of stimuli, D: number of LVs
+    traj : a T x N x R array, T: number of training points, R: rep width
+    """
+    if ctx_outlines is None:
+        ctx_outlines = ()
+    con = np.argmax(stim[:, -n_contexts:], axis=1)
+    u_con = np.unique(con)
+    traj = np.swapaxes(traj, 0, 1)
+    traj_dr = traj
+    if dim_mask is not None:
+        traj_dr = traj[dim_mask]
+    _, p = gpl.plot_highdim_trace(*traj_dr, ax=ax, lw=0)
+    if colors is None:
+        colors = (None,) * len(u_con)
+    for c in u_con:
+        mask = con == c
+        traj_c = traj[mask]
+        gpl.plot_highdim_trace(
+            *traj_c,
+            color=colors[c],
+            p=p,
+            ax=ax,
+            lw=lw,
+            plot_outline=c in ctx_outlines,
+        )
+        if pre_traj is not None:
+            traj_pc = np.swapaxes(pre_traj, 0, 1)[mask]
+            gpl.plot_highdim_trace(
+                *traj_pc,
+                color=colors[c],
+                p=p,
+                ax=ax,
+                lw=lw,
+                ls="dashed",
+                plot_outline=c in ctx_outlines,
+            )
+        if targets is not None:
+            targets_c = targets[mask]
+            traj_r1c = traj_c[targets_c == 0][:, ::skip]
+            gpl.plot_highdim_points(*traj_r1c, color=r1_color, p=p, ax=ax, ms=ms)
+
+            traj_r2c = traj_c[targets_c == 1][:, ::skip]
+            gpl.plot_highdim_points(*traj_r2c, color=r2_color, p=p, ax=ax, ms=ms)
 
 
 def plot_context_clusters(
@@ -1465,7 +1629,7 @@ def plot_context_clusters(
     fontsize="small",
 ):
     if ax is None:
-        f, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
+        _, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
     labels = ma.infer_activity_clusters(
         m, n_samps=n_samps, use_mean=True, from_layer=from_layer
     )
@@ -1483,14 +1647,14 @@ def plot_context_clusters(
     # )
     # xts = np.arange(0, a_full.shape[1] + 1, 50)
     # ax.set_xticks(xts)
-    ax.imshow(a_full[:, sort_inds], aspect="auto", vmax=vmax, cmap=cmap)
+    ax.imshow(a_full[:, sort_inds], aspect="auto", vmax=vmax, vmin=0, cmap=cmap)
     for i, a in enumerate(activity):
         n_samps = a.shape[0]
         gpl.make_yaxis_scale_bar(
             ax,
             anchor=(n_samps / 2) + n_samps * i,
             magnitude=n_samps / 2 - gap,
-            label="ctx {}".format(i + 1),
+            label=f"ctx {i + 1}",
             color=context_colors[i],
             fontsize=fontsize,
         )
@@ -1501,7 +1665,7 @@ def plot_context_clusters(
 
 def plot_simple_tuning(m, xs, hist, ind=0, ax=None, thr=0.0001, xs_tr=None, ys=None):
     if ax is None:
-        f, ax = plt.subplots()
+        _, ax = plt.subplots()
     if xs_tr is None:
         xs_tr = xs
 
@@ -1520,7 +1684,7 @@ def plot_simple_tuning(m, xs, hist, ind=0, ax=None, thr=0.0001, xs_tr=None, ys=N
 
     if "weights" in hist.history:
         ws = hist.history["weights"]
-        w_traj = u.make_unit_vector(np.array(list(w[:, ind] for w in ws)))
+        w_traj = u.make_unit_vector(np.array([w[:, ind] for w in ws]))
         ax.plot(*w_traj.T, "o")
 
     ax.plot(*xs_in.T, "o", ms=5)
@@ -1535,7 +1699,7 @@ def plot_func_clusters(
 ):
     if ax is None:
         f, ax = plt.subplots(1, 1)
-    rep, stim, targ = m.get_x_true(n_train=n_samps_per_func * len(func_list))
+    rep, stim, _ = m.get_x_true(n_train=n_samps_per_func * len(func_list))
     rel_stim = maux.get_relevant_dims(stim, m)
     m_rep = m.get_representation(rep)
     func_resps = []
@@ -1543,7 +1707,7 @@ def plot_func_clusters(
         mask = f(rel_stim)
         func_resps.append(m_rep[mask])
     a_ms = np.concatenate(
-        list(np.mean(x, axis=0, keepdims=True) for x in func_resps), axis=0
+        [np.mean(x, axis=0, keepdims=True) for x in func_resps], axis=0
     )
     if n_clusters is None:
         n_clusters = len(func_list) + 1
@@ -1632,7 +1796,7 @@ def plot_model_list_activity(m_list, fwid=3, axs=None, f=None, cmap="Blues", **k
         plot_context_scatter(m, ax=axs[1, i], **kwargs)
         diff = ma.quantify_activity_clusters(m)
         axs[0, i].set_xlabel("units")
-        axs[1, i].set_title("cluster diff = {:.2f}".format(diff))
+        axs[1, i].set_title(f"cluster diff = {diff:.2f}")
         axs[1, i].set_xlabel("activity in context 1")
         axs[1, i].set_ylabel("activity in context 2")
     axs[0, 0].set_ylabel("stimuli")
@@ -1774,7 +1938,7 @@ def plot_clusters(*ms, axs=None, func=ma.quantify_clusters, fwid=3, **kwargs):
     min_all = np.min(mins)
     max_all = np.max(maxs)
     for i, (cluster, diff) in enumerate(outs):
-        axs[i].set_title("diff = {:.2f}".format(diff))
+        axs[i].set_title(f"diff = {diff:.2f}")
         axs[i].imshow(cluster, vmin=min_all, vmax=max_all)
     return axs
 

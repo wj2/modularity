@@ -1,24 +1,24 @@
 import itertools as it
-import numpy as np
-import scipy.stats as sts
-import scipy.special as ss
-import matplotlib.pyplot as plt
-import sklearn.decomposition as skd
 
-import modularity.simple as ms
-import modularity.analysis as ma
-import modularity.visualization as mv
-import modularity.auxiliary as maux
 import disentangled.data_generation as dg
-import general.tf.networks as gtn
-import general.tasks.classification as gtc
-
-import general.utility as u
 import general.paper_utilities as pu
 import general.plotting as gpl
-import modularity.learning_analysis as mla
+import general.tasks.classification as gtc
+import general.tf.networks as gtn
+import general.utility as u
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import numpy as np
+import scipy.special as ss
+import scipy.stats as sts
+import sklearn.decomposition as skd
 
-config_path = "modularity/modularity/figures.conf"
+import modularity.analysis as ma
+import modularity.auxiliary as maux
+import modularity.simple as ms
+import modularity.visualization as mv
+
+config_path = "modularity/figures.conf"
 
 colors = (
     np.array(
@@ -167,7 +167,7 @@ class ModularizerFigure(pu.Figure):
         out = (mix_sort, tasks_all, metric_dict)
         return out
 
-    def train_eg_networks(self, n_units=None, n_feats=None, **kwargs):
+    def train_eg_networks(self, n_reps=1, n_units=None, n_feats=None, **kwargs):
         n_tasks = self.params.getlist("eg_n_tasks", typefunc=int)
         nl_strengths = self.params.getlist("eg_nl_strs", typefunc=float)
         if n_units is None:
@@ -271,7 +271,7 @@ class ModularizerFigure(pu.Figure):
                     label="orthogonal tasks",
                     linestyle="dashed",
                 )
-            ax.set_ylabel("{}\ntask performance".format(plot_labels[i]))
+            ax.set_ylabel(f"{plot_labels[i]}\ntask performance")
             ax.set_xlabel("training epochs")
             gpl.add_hlines(0.5, ax)
 
@@ -1120,7 +1120,7 @@ class FigureWorldIntro(ModularizerFigure):
             oi_dim = np.array(list(ma.order_dim(rd, o) for rd in relevant_dims))
             mask = oi_dim > 0
             if o in label_orders:
-                label = "O = {} tasks".format(o)
+                label = f"O = {o} tasks"
             else:
                 label = ""
             ax_nonlin.plot(
@@ -2024,6 +2024,338 @@ class FigureControlled(ModularizerFigure):
         # )
 
 
+class FigureConsequencesAdd(ModularizerFigure):
+    def __init__(self, fig_key="controlled-add", colors=colors, **kwargs):
+        fsize = (6, 6)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = ("panel_eg_nulls",)
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        cons_grid = pu.make_mxn_gridspec(self.gs, 2, 3, 50, 100, 0, 100, 10, 7)
+        axs = self.get_axs(cons_grid, squeeze=True, sharey="all")
+        gss["panel_eg_related"] = axs[:, 1]
+        gss["panel_eg_unrelated"] = axs[:, 2]
+        gss["panel_eg_task"] = axs[:, 0]
+
+        vis_grid = pu.make_mxn_gridspec(self.gs, 2, 3, 0, 50, 0, 100, 0, 0)
+        axs = self.get_axs(vis_grid, squeeze=True, sharey="all", all_3d=True)
+        gss["panel_vis_related"] = axs[:, 1]
+        gss["panel_vis_unrelated"] = axs[:, 2]
+        gss["panel_vis_task"] = axs[:, 0]
+
+        self.gss = gss
+
+    def _train_ctx_sequence(self, key, func, retrain=False):
+        if self.data.get(key) is None or retrain:
+            n_tasks = self.params.getint("n_tasks")
+            mixes = self.params.getlist("mixes", typefunc=float)
+            train_epochs = self.params.getint("train_epochs")
+            lr = self.params.getfloat("lr")
+            inp_dim = self.params.getint("inp_dim")
+            total_groups = self.params.getint("total_groups")
+            new_samps = self.params.getint("new_samps")
+            rep_dim = self.params.getint("rep_dim")
+
+            outs = {}
+            for mix in mixes:
+                fdg = dg.MixedDiscreteDataGenerator(
+                    inp_dim,
+                    n_units=rep_dim,
+                    mix_strength=mix,
+                )
+
+                out = func(
+                    fdg,
+                    verbose=False,
+                    track_reps=True,
+                    group_size=inp_dim - total_groups,
+                    total_groups=total_groups,
+                    n_tasks=n_tasks,
+                    new_samps=new_samps,
+                    n_overlap=inp_dim - total_groups,
+                    train_epochs=train_epochs,
+                    lr=lr,
+                )
+                outs[mix] = out
+            self.data[key] = outs
+        return self.data[key]
+
+    def _plot_task_sequence(self, key, axs, views=None):
+        outs = self.data[key]
+        f1_color = self.params.getcolor("f1_color")
+        f2_color = self.params.getcolor("f2_color")
+        f3_color = self.params.getcolor("f2_color")
+
+        r1_color = self.params.getcolor("r1_color")
+        r2_color = self.params.getcolor("r2_color")
+        lw = self.params.getfloat("lw")
+        ms = self.params.getfloat("ms")
+        for i, (mix, out) in enumerate(outs.items()):
+            mv.visualize_module_activity(
+                out["seq_model"],
+                0,
+                line_colors=(f1_color, f2_color, f3_color),
+                resp_colors=(r1_color, r2_color),
+                ms=ms,
+                ax=axs[i],
+                limit_dim=3,
+                lw=lw,
+            )
+            if axs is not None:
+                axs[i].view_init(*views[i])
+
+    def _plot_ctx_sequence(
+        self, key, axs, ctx_outlines=None, use_dim_mask=False, views=None
+    ):
+        outs = self.data[key]
+        total_groups = self.params.getint("total_groups")
+        lw = self.params.getfloat("lw")
+        ms = self.params.getfloat("ms")
+
+        for i, (mix, out) in enumerate(outs.items()):
+            ir = out["initial_reps"]
+            stim = ir["stim"]
+            ctx = np.argmax(stim[:, -total_groups:], axis=1)
+            rep_init = ir["reps"]
+            tr = out["trained_reps"]
+            rep_train = tr["reps"]
+            targ_train = tr["targets"]
+            pmask = mv._make_stimulus_pair_mask(stim, targ_train, total_groups)
+
+            if use_dim_mask:
+                dim_mask = np.isin(ctx[pmask], (0, 1))
+            else:
+                dim_mask = None
+
+            colors = (
+                self.params.getcolor("con1_color"),
+                self.params.getcolor("con2_color"),
+                self.params.getcolor(f"{key.split('_')[-1]}_color"),
+            )
+
+            mv.plot_training_traj(
+                stim[pmask],
+                rep_train[:, pmask],
+                total_groups,
+                pre_traj=rep_init[:, pmask],
+                targets=targ_train[pmask][:, 0],
+                colors=colors,
+                ax=axs[i],
+                dim_mask=dim_mask,
+                ctx_outlines=ctx_outlines,
+                lw=lw,
+                ms=ms,
+                skip=20,
+            )
+            gpl.clean_3d_plot(axs[i])
+            gpl.make_3d_bars(axs[i], bar_len=1, center=(0, 0, -1.5))
+            axs[i].set_aspect("equal")
+            if views is not None:
+                axs[i].view_init(*views[i])
+
+    def panel_vis_related(self, retrain=False):
+        key = "panel_vis_related"
+        axs = self.gss[key]
+        self._train_ctx_sequence(key, ma.new_related_context_training, retrain=retrain)
+        views = (
+            (50, 50),
+            (50, -50),
+        )
+        self._plot_ctx_sequence(key, axs, ctx_outlines=(0,), views=views)
+
+    def panel_vis_unrelated(self, retrain=False):
+        key = "panel_vis_unrelated"
+        axs = self.gss[key]
+        self._train_ctx_sequence(key, ma.new_context_training, retrain=retrain)
+        views = (
+            (25, 50),
+            (50, 50),
+        )
+        self._plot_ctx_sequence(key, axs, views=views)
+
+    def panel_vis_task(self, retrain=False):
+        key = "panel_vis_task"
+        axs = self.gss[key]
+        self._train_ctx_sequence(key, ma.new_context_training, retrain=retrain)
+        views = (
+            (25, 50),
+            (50, 50),
+        )
+        self._plot_task_sequence(key, axs, views=views)
+
+    def _eg_nulls(self, axs, kind, func, retrain=False):
+        if self.data.get(kind) is None or retrain:
+            n_tasks = self.params.getint("n_tasks")
+            mixes = self.params.getlist("mixes", typefunc=float)
+            n_reps = self.params.getint("n_reps")
+            train_epochs = self.params.getint("train_epochs")
+            lr = self.params.getfloat("lr")
+            inp_dim = self.params.getint("inp_dim")
+            total_groups = self.params.getint("total_groups")
+            new_samps = self.params.getint("new_samps")
+            rep_dim = self.params.getint("rep_dim")
+            out = {}
+            trained_corr = {}
+            null_corr = {}
+            for mix in mixes:
+                out_mix = []
+                trained_mix_corr = []
+                null_mix_corr = []
+                for i in range(n_reps):
+                    fdg = dg.MixedDiscreteDataGenerator(
+                        inp_dim,
+                        n_units=rep_dim,
+                        mix_strength=mix,
+                    )
+
+                    out_i = func(
+                        fdg,
+                        verbose=False,
+                        track_reps=True,
+                        group_size=inp_dim - total_groups,
+                        total_groups=total_groups,
+                        n_tasks=n_tasks,
+                        new_samps=new_samps,
+                        n_overlap=inp_dim - total_groups,
+                        train_epochs=train_epochs,
+                        lr=lr,
+                    )
+                    trained_mix_corr.append(out_i["trained_corr"])
+                    null_mix_corr.append(out_i["null_corr"])
+                    out_mix.append(out_i)
+                out[mix] = out_mix
+                trained_corr[mix] = u.aggregate_dictionary(trained_mix_corr)
+                null_corr[mix] = u.aggregate_dictionary(null_mix_corr)
+            self.data[kind] = out, trained_corr, null_corr
+
+    def _eg_context_plotting(self, axs, kind):
+        _, trained_corr, null_corr = self.data[kind]
+
+        alpha = self.params.getfloat("alpha")
+        pretrained_color = self.params.getcolor("pretrained_color")
+        manip_color = self.params.getcolor(f"{kind}_color")
+        null_color = self.params.getcolor("null_color")
+        color_dict = {
+            0: pretrained_color,
+            1: pretrained_color,
+            2: manip_color,
+        }
+        label_dict = {
+            0: "pretrained ctx",
+            1: "",
+            2: f"{kind} ctx",
+        }
+        novel_context = 2
+        for i, (mix, tc) in enumerate(trained_corr.items()):
+            for ctx, corr in tc.items():
+                epochs = np.arange(corr.shape[1])
+                corr_avg = np.mean(corr, axis=-1)
+                gpl.plot_trace_werr(
+                    epochs,
+                    corr_avg,
+                    ax=axs[i],
+                    color=color_dict[ctx],
+                    label=label_dict[ctx] * (i < 1),
+                    confstd=True,
+                )
+                axs[i].plot(epochs, corr_avg.T, color=color_dict[ctx], alpha=alpha)
+            null_corr_m = null_corr[mix][novel_context]
+            ncm_avg = np.mean(null_corr_m, axis=-1)
+            gpl.plot_trace_werr(
+                epochs,
+                ncm_avg,
+                ax=axs[i],
+                color=null_color,
+                label="no pretraining" * (i < 1),
+                confstd=True,
+            )
+            axs[i].plot(epochs, ncm_avg.T, color=null_color, alpha=alpha)
+            gpl.add_hlines(0.5, axs[i])
+        axs[-1].set_xlabel("training epoch")
+
+    def _eg_task_plotting(self, axs, kind):
+        _, trained_corr, null_corr = self.data[kind]
+        n_tasks = self.params.getint("n_tasks")
+        all_tasks = set(range(n_tasks))
+        nov_task = {0}
+        pretrain_tasks = all_tasks.difference(nov_task)
+        nov_task = np.array(list(nov_task))
+        pretrain_tasks = np.array(list(pretrain_tasks))
+
+        alpha = self.params.getfloat("alpha")
+        pretrained_color = self.params.getcolor("pretrained_color")
+        manip_color = self.params.getcolor(f"{kind}_color")
+        null_color = self.params.getcolor("null_color")
+
+        for i, (mix, tc) in enumerate(trained_corr.items()):
+            tc_mix = np.stack(list(tc.values()))
+            pretrained_mu = np.mean(tc_mix[..., pretrain_tasks], axis=(0, -1))
+            epochs = np.arange(tc_mix.shape[2])
+            gpl.plot_trace_werr(
+                epochs,
+                pretrained_mu,
+                confstd=True,
+                ax=axs[i],
+                color=pretrained_color,
+                label="pretrained tasks" * (i == 0),
+            )
+            axs[i].plot(epochs, pretrained_mu.T, color=pretrained_color, alpha=alpha)
+
+            nov_mu = np.mean(tc_mix[..., nov_task], axis=(0, -1))
+            gpl.plot_trace_werr(
+                epochs,
+                nov_mu,
+                confstd=True,
+                ax=axs[i],
+                color=manip_color,
+                label="novel task" * (i == 0),
+            )
+            axs[i].plot(epochs, nov_mu.T, color=manip_color, alpha=alpha)
+
+            null_mix = np.stack(list(null_corr[mix].values()))
+            null_mu = np.mean(null_mix[..., nov_task], axis=(0, -1))
+            gpl.plot_trace_werr(
+                epochs,
+                null_mu,
+                confstd=True,
+                ax=axs[i],
+                color=null_color,
+                label="no pretraining" * (i == 0),
+            )
+            axs[i].plot(epochs, null_mu.T, color=null_color, alpha=alpha)
+            gpl.add_hlines(0.5, axs[i])
+            axs[i].set_ylabel("task performance")
+        axs[-1].set_xlabel("task performance")
+
+    def panel_eg_related(self, retrain=False):
+        kind = "related"
+        key = f"panel_eg_{kind}"
+        axs = self.gss[key]
+        self._eg_nulls(axs, kind, ma.new_related_context_training, retrain=retrain)
+        self._eg_context_plotting(axs, kind)
+
+    def panel_eg_unrelated(self, retrain=False):
+        kind = "unrelated"
+        key = f"panel_eg_{kind}"
+        axs = self.gss[key]
+        self._eg_nulls(axs, kind, ma.new_context_training, retrain=retrain)
+        self._eg_context_plotting(axs, kind)
+
+    def panel_eg_task(self, retrain=False):
+        kind = "task"
+        key = f"panel_eg_{kind}"
+        axs = self.gss[key]
+        self._eg_nulls(axs, kind, ma.new_task_training, retrain=retrain)
+        self._eg_task_plotting(axs, kind)
+
+
 class FigureConsequences(ModularizerFigure):
     def __init__(self, fig_key="controlled", colors=colors, **kwargs):
         fsize = (6, 5)
@@ -2069,7 +2401,6 @@ class FigureConsequences(ModularizerFigure):
         )
         ref_key = self.params.get("ref_key")
         if self.data.get(key) is None or recompute:
-            self.data[key]
             learning = self.load_and_organize_con_sweep(
                 plot_keys,
                 reload=recompute,
@@ -2086,7 +2417,7 @@ class FigureConsequences(ModularizerFigure):
 
         task_fix = self.params.getint("x_target")
         n_tasks_scatter = self.params.getlist("n_tasks_scatter", typefunc=int)
-        task_inds = list(np.where(task_sort == tf_i)[0][0] for tf_i in n_tasks_scatter)
+        task_inds = [np.where(task_sort == tf_i)[0][0] for tf_i in n_tasks_scatter]
 
         plot_mix = self.params.getlist("y_target", typefunc=int)
         trace_colors = (
@@ -2095,7 +2426,7 @@ class FigureConsequences(ModularizerFigure):
         )
         cm = plt.get_cmap(self.params.get("diverge_cmap"))
         labels = ("novel task", "related context", "unrelated context")
-        m_labels = ("modular", "unstructured")
+        # m_labels = ("modular", "unstructured")
 
         for i, pk in enumerate(plot_keys):
             pre_pk, null_pk = metric_dict[pk]
@@ -2140,7 +2471,7 @@ class FigureConsequences(ModularizerFigure):
                     epochs, pre_masked.T, color=trace_colors[j], alpha=0.1
                 )
                 if i == 0:
-                    label = "input structure = {}\n{}".format(1 - pm, m_labels[j])
+                    label = f"input structure = {1 - pm}"
                 else:
                     label = ""
                 gpl.plot_trace_werr(
@@ -2176,7 +2507,6 @@ def _combine_binary_arrs(binary_arrs, colors):
 class FigureModularityIsolated(ModularizerFigure):
     def __init__(self, fig_key="isolated_rep", colors=colors, **kwargs):
         fsize = (7.5, 6.5)
-        plt.figure
         cf = u.ConfigParserColor()
         cf.read(config_path)
         params = cf[fig_key]
@@ -2214,9 +2544,9 @@ class FigureModularityIsolated(ModularizerFigure):
 
         ax_group = self.gss[key]
         inds_templs = ("lv{}_lin", "lv{}_nli", "lv{}_nom")
-        inds_list = list(self.params.getlist(temp.format(lv)) for temp in inds_templs)
+        inds_list = [self.params.getlist(temp.format(lv)) for temp in inds_templs]
         self._modularity_transition(
-            "lv{}".format(lv),
+            f"lv{lv}",
             ax_group,
             inds_list,
             plot_training_trace=True,
@@ -2238,11 +2568,11 @@ class FigureModularityIsolated(ModularizerFigure):
         cm = plt.get_cmap("Greens")
         color = cm(lv / lv_norm)
         irrel = lv - lv_rel
-        label = "irrelevant variables = {}".format(irrel)
+        label = f"irrelevant variables = {irrel}"
 
-        inds_list = list(self.params.getlist(temp.format(lv)) for temp in inds_templs)
+        inds_list = [self.params.getlist(temp.format(lv)) for temp in inds_templs]
         self._modularity_transition(
-            "lv{}".format(lv),
+            f"lv{lv}",
             ax_group,
             inds_list,
             color=color,
@@ -2404,7 +2734,7 @@ class FigureModularityIsolated(ModularizerFigure):
             )
             lin_label = ""
             nonlin_label = ""
-            axs_eg[i].set_title("input structure = {:.2f}".format(struct[mi]))
+            axs_eg[i].set_title(f"input structure = {struct[mi]:.2f}")
             if i < len(mix_inds) - 1:
                 gpl.clean_plot_bottom(axs_eg[i])
 
@@ -2450,7 +2780,7 @@ class FigureModularityIsolated(ModularizerFigure):
                 ax=axs[i],
                 colors=colors,
             )
-            axs[i].set_title("input structure = {:.2f}".format(1 - mix))
+            axs[i].set_title(f"input structure = {1 - mix:.2f}")
 
 
 class FigureTasks(ModularizerFigure):
@@ -2511,7 +2841,7 @@ class FigureTasks(ModularizerFigure):
             ai_plot = np.zeros_like(ai)
             ai_plot[ai > 0] = ai[ai > 0]
             gpl.plot_trace_werr(
-                nts, ai_plot.T, ax=ax, label="LV = {}".format(lv), color=colors[i]
+                nts, ai_plot.T, ax=ax, label=f"LV = {lv}", color=colors[i]
             )
         ax.set_ylabel("subspace\nspecialization")
         ax.set_xlabel("number of outputs")
@@ -2543,10 +2873,8 @@ class FigureTasks(ModularizerFigure):
 
         for i, g in enumerate(group_sizes):
             dims = ma.task_dim_analytic(g, n_tasks)
-            ax_dim.plot(n_tasks, dims, color=colors[i], label="D = {}".format(g))
-            ax_exc.plot(
-                n_tasks, n_tasks - dims, color=colors[i], label="D = {}".format(g)
-            )
+            ax_dim.plot(n_tasks, dims, color=colors[i], label=f"D = {g}")
+            ax_exc.plot(n_tasks, n_tasks - dims, color=colors[i], label=f"D = {g}")
         g_color = (0.8,) * 3
         ax_exc.plot(n_tasks, np.zeros_like(n_tasks), color=g_color)
         ax_dim.plot(n_tasks, n_tasks, color=g_color, label="task dimensions")
@@ -2571,7 +2899,7 @@ class FigureTasks(ModularizerFigure):
 
         for i, g in enumerate(group_sizes):
             elims = ma.prob_eliminate(g, n_tasks)
-            ax.plot(n_tasks, g * (1 - elims), color=colors[i], label="D = {}".format(g))
+            ax.plot(n_tasks, g * (1 - elims), color=colors[i], label=f"D = {g}")
         gpl.clean_plot(ax, 0)
         ax.set_xticks([n_tasks[0], 10, n_tasks[-1]])
         ax.legend(frameon=False)
@@ -2753,16 +3081,8 @@ class FigureModularityColoring(ModularizerFigure):
                     ax=axs[j, i + k * 2],
                     colors=colors,
                 )
-                print(
-                    "subspace      {:.2f}".format(
-                        ma.compute_alignment_index(models[i, j])
-                    )
-                )
-                print(
-                    "subpopulation {:.2f}".format(
-                        ma.compute_frac_contextual(models[i, j])
-                    )
-                )
+                print(f"subspace      {ma.compute_alignment_index(models[i, j]):.2f}")
+                print(f"subpopulation {ma.compute_frac_contextual(models[i, j]):.2f}")
 
     def panel_tuning(self, retrain=False):
         key = "panel_tuning"
@@ -2790,6 +3110,278 @@ class FigureModularityColoring(ModularizerFigure):
                 stim_ms=5,
                 single_context=False,
             )
+
+
+class FigureContextActivityCorrelation(ModularizerFigure):
+    def __init__(self, fig_key="activity-correlation-mixed", colors=colors, **kwargs):
+        fsize = (7.5, 3)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = (
+            "panel_eg_networks",
+            "panel_activity_correlation_sweep",
+        )
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        eg_grid = pu.make_mxn_gridspec(self.gs, 1, 5, 0, 55, 0, 100, 10, 4)
+        eg_axs = self.get_axs(eg_grid, squeeze=True, sharex="all", sharey="all")
+        gss["panel_eg_networks"] = eg_axs
+
+        ps_grid = pu.make_mxn_gridspec(self.gs, 1, 1, 75, 100, 20, 80, 10, 17)
+        gss["panel_task_correlation_sweep"] = self.get_axs(
+            ps_grid,
+            squeeze=False,
+        )[0, 0]
+
+        self.gss = gss
+
+    def _get_activity_correlation_sweep(self, retrain=False):
+        key = "task_correlation_sweep"
+        if self.data.get(key) is None or retrain:
+            n_tasks = self.params.getlist("n_tasks", typefunc=int)
+            mixing = self.params.getfloat("mixing")
+            group_size = self.params.getint("group_size")
+            n_reps = self.params.getint("n_reps")
+
+            reps_all = []
+            ais = np.zeros((len(n_tasks), n_reps))
+            for i, nt in enumerate(n_tasks):
+                models, (stim, _, _, rep_tc) = ma.train_n_activity_models(
+                    mixing,
+                    n_tasks=nt,
+                    track_reps=False,
+                    n_reps=n_reps,
+                    early_stopping=False,
+                    group_size=(group_size,),
+                )[:2]
+                ais[i] = [ma.compute_alignment_index(mod) for mod in models]
+                reps_all.append(rep_tc)
+            self.data[key] = n_tasks, stim, np.stack(reps_all, axis=0), ais
+        return self.data[key]
+
+    def _c_masks(self, stim):
+        m_c1 = stim[..., -1] == 0
+        m_c2 = stim[..., -1] == 1
+        return m_c1, m_c2
+
+    def panel_eg_networks(self, retrain=False):
+        key = "panel_eg_networks"
+        axs = self.gss[key]
+
+        n_tasks, stim, reps, _ = self._get_activity_correlation_sweep(retrain=retrain)
+        n_egs = len(axs)
+        inds = np.round(np.linspace(0, len(n_tasks) - 1, n_egs)).astype(int)
+        m_c1, m_c2 = self._c_masks(stim)
+        cmap = self.params.getcmap("magma")
+        for i, ind in enumerate(inds):
+            r_c1 = np.mean(reps[ind][:, m_c1], axis=1)
+            r_c2 = np.mean(reps[ind][:, m_c2], axis=1)
+            for j, r_c1_j in enumerate(r_c1):
+                axs[i].scatter(r_c1_j, r_c2[j], s=0.25, color=cmap(j / (len(r_c1) + 1)))
+            gpl.clean_plot(axs[i], i)
+            axs[i].set_title(f"N outputs = {n_tasks[ind]}")
+            axs[i].set_aspect("equal")
+            axs[i].set_xlabel("ctx 1 activity")
+            if i == 0:
+                axs[i].set_ylabel("ctx 2 activity")
+
+    def panel_task_correlation_sweep(self, retrain=False):
+        key = "panel_task_correlation_sweep"
+        ax = self.gss[key]
+        ax_twin = ax.twinx()
+        n_tasks, stim, reps, ais = self._get_activity_correlation_sweep(retrain=retrain)
+
+        m_c1, m_c2 = self._c_masks(stim)
+        corrs = np.zeros(reps.shape[:2])
+        for i, rep in enumerate(reps):
+            r_c1 = np.mean(rep[:, m_c1], axis=1)
+            r_c2 = np.mean(rep[:, m_c2], axis=1)
+            corrs[i] = [
+                np.corrcoef(r_c1_i, r_c2[i])[1, 0] for i, r_c1_i in enumerate(r_c1)
+            ]
+        cm_ss = plt.get_cmap("Oranges")(0.8)
+        cm_corr = plt.get_cmap("Greens")(0.8)
+        gpl.plot_trace_werr(
+            n_tasks, corrs.T, ax=ax, confstd=True, color=cm_corr, clean_ax=False
+        )
+        gpl.plot_trace_werr(
+            n_tasks, ais.T, ax=ax_twin, confstd=True, color=cm_ss, clean_ax=False
+        )
+        ax.set_ylabel("activity\ncorrelation", color=cm_corr)
+        ax_twin.set_ylabel("subspace\nspecialization", color=cm_ss)
+        ax.set_xlabel("number of outputs")
+
+
+class FigureTaskCorrelation(ModularizerFigure):
+    def __init__(self, fig_key="task-correlation", colors=colors, **kwargs):
+        fsize = (7.5, 3)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = (
+            "panel_eg_networks",
+            "panel_task_correlation_sweep",
+        )
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        eg_grid = pu.make_mxn_gridspec(self.gs, 1, 5, 0, 55, 0, 100, 10, 4)
+        eg_axs = self.get_axs(eg_grid, squeeze=True, sharex="all", sharey="all")
+        gss["panel_eg_networks"] = eg_axs
+
+        ps_grid = pu.make_mxn_gridspec(self.gs, 1, 1, 75, 100, 20, 80, 10, 17)
+        gss["panel_task_correlation_sweep"] = self.get_axs(
+            ps_grid,
+            squeeze=False,
+        )[0, 0]
+
+        self.gss = gss
+
+    def _get_task_correlation_sweep(self, retrain=False):
+        key = "task_correlation_sweep"
+        if self.data.get(key) is None or retrain:
+            n_steps = self.params.getint("n_steps")
+            sweep = np.linspace(-1, 1, n_steps)
+            n_tasks = self.params.getint("n_tasks")
+            mixing = self.params.getfloat("mixing")
+            group_size = self.params.getint("group_size")
+
+            reps_all = []
+            for tc in sweep:
+                stim, _, _, rep_tc = ma.train_n_activity_models(
+                    mixing,
+                    n_tasks=n_tasks,
+                    track_reps=False,
+                    early_stopping=False,
+                    group_size=(group_size,),
+                    task_correlation=tc,
+                )[1]
+                reps_all.append(rep_tc)
+            self.data[key] = sweep, stim, np.stack(reps_all, axis=0)
+        return self.data[key]
+
+    def _c_masks(self, stim):
+        m_c1 = stim[..., -1] == 0
+        m_c2 = stim[..., -1] == 1
+        return m_c1, m_c2
+
+    def panel_eg_networks(self, retrain=False):
+        key = "panel_eg_networks"
+        axs = self.gss[key]
+
+        thr = self.params.getfloat("thr_frac")
+
+        tcs, stim, reps = self._get_task_correlation_sweep(retrain=retrain)
+        n_egs = len(axs)
+        inds = np.round(np.linspace(0, len(tcs) - 1, n_egs)).astype(int)
+        m_c1, m_c2 = self._c_masks(stim)
+        cmap = self.params.getcmap("magma")
+        for i, ind in enumerate(inds):
+            r_c1 = np.mean(reps[ind][:, m_c1], axis=1)
+            r_c2 = np.mean(reps[ind][:, m_c2], axis=1)
+            for j, r_c1_j in enumerate(r_c1):
+                axs[i].scatter(r_c1_j, r_c2[j], s=0.25, color=cmap(j / (len(r_c1) + 1)))
+            gpl.clean_plot(axs[i], i)
+            gpl.add_hlines(thr, axs[i])
+            gpl.add_vlines(thr, axs[i])
+            axs[i].set_title(f"task sim = {tcs[ind]:.2f}")
+            axs[i].set_aspect("equal")
+            axs[i].set_xlabel("ctx 1 activity")
+            if i == 0:
+                axs[i].set_ylabel("ctx 2 activity")
+
+    def panel_task_correlation_sweep(self, retrain=False):
+        key = "panel_task_correlation_sweep"
+        ax = self.gss[key]
+        tcs, stim, reps = self._get_task_correlation_sweep(retrain=retrain)
+        thr = self.params.getfloat("thr_frac")
+
+        m_c1, m_c2 = self._c_masks(stim)
+        fracs = np.zeros(reps.shape[:2])
+        for i, rep in enumerate(reps):
+            r_c1 = np.mean(rep[:, m_c1], axis=1)
+            r_c2 = np.mean(rep[:, m_c2], axis=1)
+            fracs[i] = ma.compute_frac_mu_reps(r_c1, r_c2, thr=thr)
+        gpl.plot_trace_werr(tcs, fracs.T, ax=ax, confstd=True)
+        ax.set_ylabel("contextual fraction")
+        ax.set_xlabel("task similarity")
+
+
+class FigureModularityActivation(ModularizerFigure):
+    def __init__(self, fig_key="modularity_sigmoid", colors=colors, **kwargs):
+        fsize = (6, 4.4)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = (
+            "panel_eg_networks",
+            "panel_param_sweep",
+        )
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        eg_grid = pu.make_mxn_gridspec(self.gs, 2, 4, 0, 55, 0, 100, 10, 10)
+        eg_axs = self.get_axs(eg_grid, squeeze=True)
+        gss["panel_eg_networks"] = eg_axs
+
+        ps_grid = pu.make_mxn_gridspec(self.gs, 1, 3, 75, 100, 0, 100, 10, 17)
+        gss["panel_param_sweep"] = self.get_axs(
+            ps_grid,
+            squeeze=True,
+        )
+
+        self.gss = gss
+
+    def panel_eg_networks(self, retrain=False):
+        key = "panel_eg_networks"
+        axs = self.gss[key]
+
+        if self.data.get(key) is None or retrain:
+            self.data[key] = self.train_eg_networks()
+
+        c1_color = self.params.getcolor("con1_color")
+        c2_color = self.params.getcolor("con2_color")
+        neutral_color = self.params.getcolor("noncon_color")
+        max_clusters = 6
+        cmap = mpl.colors.LinearSegmentedColormap.from_list(
+            "", [c1_color, neutral_color, c2_color]
+        )
+
+        (n_tasks, nl_strengths), models, hists = self.data[key]
+        for i, j in u.make_array_ind_iterator(models.shape):
+            n_t = n_tasks[i]
+            n_l = nl_strengths[j]
+            print("n_tasks", n_t, "      nl_str", n_l)
+            print("loss", hists[i, j].history["loss"][-1])
+            mv.plot_optimal_context_scatter(
+                models[i, j],
+                ax=axs[j, i * 2],
+                cmap=cmap,
+                max_clusters=max_clusters,
+            )
+            mv.plot_optimal_context_scatter(
+                models[i, j],
+                ax=axs[j, i * 2 + 1],
+                cmap=cmap,
+                max_clusters=max_clusters,
+                use_std=True,
+            )
+            print("implicit", ma.compute_alignment_index(models[i, j]))
+            print("explicit", ma.compute_frac_contextual(models[i, j]))
 
 
 class FigureModularityControlled(ModularizerFigure):
@@ -2941,8 +3533,8 @@ class FigureModularityControlled(ModularizerFigure):
         nl_loaded, task_loaded = self.data[key]
         plot_key = "model_frac"
         label_key = "tasks_per_group"
-        for k, (quants, order, args) in task_loaded.items():
-            label = "T = {}".format(args[label_key][0])
+        for quants, order, args in task_loaded.values():
+            label = f"T = {args[label_key][0]}"
             gpl.plot_trace_werr(order, quants[plot_key].T, ax=ax, label=label)
 
 
@@ -2998,7 +3590,7 @@ class FigureGeometryConsequences(ModularizerFigure):
             out = ma.apply_geometry_model_list([ident_modu], fdg)
             self.data[key] = (ident_modu, modu, out)
 
-        ident_modu, (modu, modu_h), (shatter, w_ccgp, _) = self.data[key]
+        ident_modu, (modu, _), (shatter, w_ccgp, _) = self.data[key]
 
         dg_color = self.params.getcolor("dg_color")
         mod_color = self.params.getcolor("partition_color")
@@ -3108,7 +3700,7 @@ class FigureGeometryConsequences(ModularizerFigure):
             self.data[key] = (mod, out)
 
         mod, out = self.data[key]
-        (weights, corrs), u_inds, clusts = out
+        (weights, _), _, clusts = out
         ws_mu = np.mean(weights, axis=2)
         n_feats = weights.shape[1]
         ms = 1
@@ -3207,7 +3799,7 @@ class FigureGeometryConsequences(ModularizerFigure):
         n_tasks = self.params.getint("n_tasks")
 
         all_tasks = set(np.arange(n_tasks))
-        nov_task = set([0])
+        nov_task = {0}
         pretrain_tasks = all_tasks.difference(nov_task)
         if self.data.get(key) is None:
             out_two = self.train_modularizer(
@@ -3287,7 +3879,7 @@ class FigureIntro(ModularizerFigure):
         key = self.panel_keys[3]
         ax_hist, ax_dim = np.squeeze(self.gss[key])
 
-        nets, hist_dicts, labels = self.make_modularizers()
+        nets, hist_dicts, _ = self.make_modularizers()
         hist_dicts = hist_dicts[:1]
         for i, h_dict in enumerate(hist_dicts):
             hist = h_dict.history["val_loss"]
@@ -3312,7 +3904,7 @@ class FigureIntro(ModularizerFigure):
         axs, axs_abl = self.gss[key]
         axs_abl = axs_abl[0, 0]
 
-        nets, _, labels = self.make_modularizers()
+        nets, _, _ = self.make_modularizers()
 
         mv.plot_model_list_activity(nets[:1], axs=axs, cmap="Blues")
         axs[1, 0].set_title("")
@@ -3420,7 +4012,7 @@ def _get_last_dim(dims):
     """
     mask = np.isnan(dims)
     change_mask = np.diff(mask, axis=2)
-    out = dims[..., :-1][change_mask].reshape((dims.shape[:2]))
+    out = dims[..., :-1][change_mask].reshape(dims.shape[:2])
     return out
 
 
@@ -3496,7 +4088,7 @@ class FigureOtherCases(ModularizerFigure):
             l_ = l_o_out[-1]["group_size"][0]
             o = (l_, 0)
 
-            out_dim, out_pv = ma.task_dimensionality(l_, o, l_o_out[1], c, n_reps=20)
+            out_dim, _ = ma.task_dimensionality(l_, o, l_o_out[1], c, n_reps=20)
 
             runs = ((l_o_out, l_no_out), (nl_o_out, nl_no_out))
             self.data[key] = (runs, out_dim)
@@ -3510,7 +4102,7 @@ class FigureOtherCases(ModularizerFigure):
 
         for i, group in enumerate(run_groups):
             for j, run in enumerate(group):
-                run_data, order, args = run
+                run_data, order, _ = run
 
                 model_frac = run_data["model_frac"].T
                 fdg_frac = run_data["fdg_frac"].T
@@ -3575,7 +4167,7 @@ class FigureOtherCases(ModularizerFigure):
             if self.data[key].get((l_, o)) is None:
                 c = args["n_groups"]
                 models = {"coloring": ms.ColoringModularizer}
-                out_dim, out_pv = ma.task_dimensionality(
+                out_dim, _ = ma.task_dimensionality(
                     l_, o, order, c, n_reps=10, models=models
                 )
 
@@ -3677,7 +4269,7 @@ class FigureHiddenLayers(ModularizerFigure):
 
         inds = self.params.getlist("hidden_layer_inds", typefunc=int)
 
-        nets, _, labels = self.make_hidden_modularizers()
+        nets, _, _ = self.make_hidden_modularizers()
         for i, ind in enumerate(inds):
             mv.plot_model_list_activity(nets, axs=axs_hid[:, i : i + 1], from_layer=ind)
 
@@ -3785,120 +4377,3 @@ class FigureImageModularity(ModularizerFigure):
             axs_i[2].set_xlabel("context")
             axs_i[2].set_ylabel("inferred cluster")
             axs_i[2].set_yticks([0, 1, 2])
-
-
-class FigureSunData(ModularizerFigure):
-    def __init__(self, fwid=2.5, fig_key="sun_figure", colors=colors, **kwargs):
-        fsize = (3 * fwid, fwid * len(mla.ANIMALS))
-        cf = u.ConfigParserColor()
-        cf.read(config_path)
-
-        params = cf[fig_key]
-        self.fig_key = fig_key
-        self.panel_keys = (
-            "panel_decoding",
-            "panel_distance",
-            "panel_tuning",
-        )
-        super().__init__(fsize, params, colors=colors, **kwargs)
-
-    def make_gss(self):
-        gss = {}
-
-        h_gap = 2
-        v_gap = 2
-        n_rows = len(mla.ANIMALS)
-        dec_grid = pu.make_mxn_gridspec(self.gs, n_rows, 3, 0, 100, 0, 55, v_gap, h_gap)
-        dec_axs = self.get_axs(dec_grid, squeeze=True, sharey="all")
-        gss["panel_decoding"] = dec_axs
-
-        geom_grid = pu.make_mxn_gridspec(
-            self.gs, n_rows, 1, 0, 100, 60, 70, v_gap, h_gap
-        )
-        gss["panel_distance"] = self.get_axs(geom_grid, squeeze=True, sharey="all")
-
-        tune_grid = pu.make_mxn_gridspec(
-            self.gs, n_rows, 2, 0, 100, 75, 100, v_gap, h_gap
-        )
-        gss["panel_tuning"] = self.get_axs(
-            tune_grid, squeeze=False, sharey="horizontal", sharex="horizontal"
-        )
-
-        self.gss = gss
-
-    def get_fluor_maps(self):
-        if self.data.get("fluor") is None:
-            self.data["fluor"] = mla.make_all_fluor_maps()
-        return self.data["fluor"]
-
-    def panel_decoding(self):
-        key = "panel_decoding"
-        axs = self.gss[key]
-
-        n_trls = self.params.getint("n_trls")
-        if self.data.get(key) is None:
-            fluor = self.get_fluor_maps()
-            dec_out = mla.get_all_geometry_analysis(fluor, n_trls=n_trls)
-            self.data[key] = dec_out
-        dec_out = self.data[key]
-        for i, (animal, decs) in enumerate(dec_out.items()):
-            if i == 0:
-                titles = ("action", "context", "zone")
-            else:
-                titles = ("",) * 3
-            mla.plot_all_dec(
-                *decs,
-                chance_level=0,
-                one_row=True,
-                axs=axs[i : i + 1],
-                titles=titles,
-            )
-
-    def panel_distance(self):
-        key = "panel_distance"
-        axs = self.gss[key]
-
-        n_trls = self.params.getint("n_trls")
-        if self.data.get(key) is None:
-            fluor = self.get_fluor_maps()
-            out = {}
-            for animal, (xs, (f_N, _), (f_F, _)) in fluor.items():
-                distances = mla.get_geometry_tradeoff(xs, f_N, f_F, n_trls=n_trls)
-                out[animal] = distances
-            self.data[key] = out
-        distances = self.data[key]
-
-        for i, (animal, ((_, _, early), (_, _, late))) in enumerate(distances.items()):
-            axs[i].plot([0, 1], [early, late], "-o")
-            gpl.clean_plot(axs[i], 0)
-            gpl.clean_plot_bottom(axs[i])
-
-    def panel_tuning(self, recompute=False):
-        key = "panel_tuning"
-        axs = self.gss[key]
-
-        n_trls = self.params.getint("n_trls")
-
-        if self.data.get(key) is None or recompute:
-            fluor = self.get_fluor_maps()
-            tuning = {}
-            for animal, (xs, (f_N, _), (f_F, _)) in fluor.items():
-                out = mla.get_area_activity(xs, f_N, f_F, n_trls=n_trls)
-                f1_c1, f1_c2 = out["r1"]
-                f2_c1, f2_c2 = out["r2"]
-
-                f_c1 = np.max(np.stack((f1_c1, f2_c1), axis=0), axis=0)
-                f_c2 = np.max(np.stack((f1_c2, f2_c2), axis=0), axis=0)
-                tuning[animal] = (f_c1, f_c2)
-            self.data[key] = tuning
-        tuning = self.data[key]
-
-        begin = 0
-        end = -1
-        for i, (animal, (c1, c2)) in enumerate(tuning.items()):
-            axs[i, 0].scatter(c1[begin], c2[begin], s=1)
-            axs[i, 1].scatter(c1[end], c2[end], s=1)
-            axs[i, 0].set_aspect("equal")
-            axs[i, 1].set_aspect("equal")
-            gpl.clean_plot(axs[i, 0], 0)
-            gpl.clean_plot(axs[i, 1], 0)

@@ -10,6 +10,7 @@ import numpy as np
 import scipy.stats as sts
 import scipy.linalg as spla
 import scipy.sparse as ss
+import scipy.optimize as sopt
 
 import general.utility as u
 import disentangled.auxiliary as da
@@ -99,11 +100,16 @@ def generate_linear_tasks(
         intercepts = np.zeros((n_tasks, 1))
     if use_inters is not None:
         intercepts = np.array(use_inters)
+    if len(task.shape) < 2:
+        if n_tasks == 1:
+            task = np.expand_dims(task, 0)
+        if n_inp == 1:
+            task = np.expand_dims(task, -1)
     return task, intercepts
 
 
 def apply_continuous_task(x, task=None):
-    out = np.stack(list(t(x) for t in task), axis=1)
+    out = np.stack([t(x) for t in task], axis=1)
     return out
 
 
@@ -544,8 +550,10 @@ class Modularizer:
         inp_noise=0.01,
         include_history=0,
         relational_history=False,
+        lr=1e-3,
         **kwargs,
     ):
+        self.lr = lr
         self.rng = np.random.default_rng()
         self.continuous = False
         self.use_early_stopping = use_early_stopping
@@ -567,7 +575,7 @@ class Modularizer:
                 inp_dims_anc - sub_context, group_size, n_groups, n_overlap=n_overlap
             )
         if n_common_tasks > 0:
-            all_dims = set(list(range(inp_dims_anc - sub_context)))
+            all_dims = set(range(inp_dims_anc - sub_context))
             potential_dims = all_dims.difference(np.unique(groups))
             self.ct_group = self.rng.choice(
                 potential_dims, size=n_common_dims, replace=False
@@ -580,10 +588,10 @@ class Modularizer:
                 (groups, np.tile(ai_group, (len(groups), 1))), axis=1
             )
         if augmented_inputs > 0:
-            self.ai_funcs = list(
+            self.ai_funcs = [
                 make_ai_func(inp_dims, augmented_input_dep, augmented_input_func)
                 for i in range(augmented_inputs)
-            )
+            ]
         else:
             self.ai_funcs = None
         if mixer_kwargs is None:
@@ -606,7 +614,6 @@ class Modularizer:
             inp_net = inp_net + n_groups
             out_dims = tasks_per_group
         elif single_output and integrate_context:
-            inp_net = inp_net
             out_dims = tasks_per_group
             inp_dims = inp_dims - n_groups
         if include_history > 0 and not relational_history:
@@ -626,9 +633,9 @@ class Modularizer:
         irrel_vars = set(np.arange(inp_dims))
         self.irrel_vars = np.array(list(irrel_vars.difference(self.rel_vars)))
 
-        self.hidden_dims = int(round(len(groups) * group_width))
+        self.hidden_dims = round(len(groups) * group_width)
         self.out_group_labels = np.concatenate(
-            list((i,) * tasks_per_group for i in range(n_groups))
+            [(i,) * tasks_per_group for i in range(n_groups)]
         )
 
         out = self.make_model(
@@ -765,9 +772,9 @@ class Modularizer:
             out = (true, x, rep, targ)
         return out
 
-    def _compile(self, optimizer=None, loss=None, ignore_nan=True, lr=1e-3):
+    def _compile(self, optimizer=None, loss=None, ignore_nan=True):
         if optimizer is None:
-            optimizer = tf.optimizers.Adam(learning_rate=lr)
+            optimizer = tf.optimizers.Adam(learning_rate=self.lr)
         if loss is None:
             if ignore_nan:
                 loss = mse_nanloss
@@ -797,10 +804,9 @@ class Modularizer:
                 out = np.expand_dims(out, axis=1)
             ys[i] = out
         if self.single_output and group_inds is None:
-            raise IOError("need to provide group_inds if single_output is True")
+            raise OSError("need to provide group_inds if single_output is True")
         elif self.single_output:
             trl_inds = np.arange(len(xs))
-
             ys = ys[group_inds, trl_inds]
         else:
             ys = np.concatenate(ys, axis=1)
@@ -850,7 +856,7 @@ class Modularizer:
     ):
         if not self.compiled:
             self._compile()
-        x, true, targ = self.get_x_true(
+        x, _, targ = self.get_x_true(
             n_train=n_samps, group_inds=group_ind, only_groups=only_groups
         )
         if layer is None:
@@ -1334,6 +1340,20 @@ class LinearIdentityModularizer(IdentityModularizer):
         self.no_output = False
 
 
+def make_correlated_vector_pairs(n_pairs, dim, sim):
+    t1 = u.make_unit_vector(sts.norm(0, 1).rvs((n_pairs, dim)))
+    t2_init = u.make_unit_vector(sts.norm(0, 1).rvs((n_pairs, dim))).flatten()
+
+    def _min(t2):
+        t2 = np.reshape(t2, (n_pairs, dim))
+        sim_star = np.sum(t1 * u.make_unit_vector(t2), axis=1)
+        return np.sum((sim_star - sim) ** 2)
+
+    res = sopt.minimize(_min, t2_init)
+    t2_opt = u.make_unit_vector(np.reshape(res.x, (n_pairs, dim)))
+    return t1, t2_opt
+
+
 class LinearModularizer(Modularizer):
     def _make_linear_task_func(
         self,
@@ -1427,6 +1447,8 @@ group_maker_dict = {
 }
 act_func_dict = {
     "relu": tf.nn.relu,
+    "sigmoid": tf.nn.sigmoid,
+    "tanh": tf.nn.tanh,
 }
 model_type_dict = {
     "coloring": ColoringModularizer,
@@ -1576,7 +1598,9 @@ class GatedLinearModularizerShell:
             outs[k] = rm(input_rm)
         return outs
 
-    def _compile(self, optimizer=None, loss=tf.losses.MeanSquaredError()):
+    def _compile(self, optimizer=None, loss=None):
+        if loss is None:
+            loss = tf.losses.MeanSquaredError()
         if optimizer is None:
             optimizer = tf.optimizers.Adam(learning_rate=1e-3)
         self.gl_model.compile(optimizer, loss)
@@ -1675,14 +1699,12 @@ def compute_laplacian_eigs(
         return_diag=True,
     )
     if norm_laplacian:
-        laplacian.flat[::len(laplacian) + 1] = 1
+        laplacian.flat[:: len(laplacian) + 1] = 1
     if n_components is None:
         n_components = laplacian.shape[1] - 1
     laplacian = laplacian * -1
     lambdas, diffusion_map = ss.linalg.eigsh(
-        laplacian, k=n_components,
-        sigma=1.0,
-        which="LM", tol=eigen_tol
+        laplacian, k=n_components, sigma=1.0, which="LM", tol=eigen_tol
     )
     embedding = diffusion_map.T[n_components::-1]
     if norm_laplacian:
@@ -1948,7 +1970,7 @@ def make_modularizer(
     *args,
     **kwargs,
 ):
-    m, h = train_modularizer(*args, train_epochs=0, **kwargs)
+    m, _ = train_modularizer(*args, train_epochs=0, **kwargs)
     return m
 
 
@@ -1962,6 +1984,7 @@ def train_modularizer(
     model_type_dict=model_type_dict,
     track_dimensionality=True,
     track_reps=False,
+    track_corr=False,
     only_groups=None,
     only_tasks=None,
     val_only_groups=None,
@@ -1984,7 +2007,7 @@ def train_modularizer(
         act_reg = params.getfloat("act_reg")
         group_width = params.getint("group_width")
         use_mixer = params.getboolean("use_mixer")
-        act_func = act_func_dict[params.get("act_func")]
+        act_func = act_func_dict[params.get("act_func", "relu")]
         hiddens = params.getlist("hiddens", typefunc=int)
         if hiddens is None:
             hiddens = ()
@@ -1994,6 +2017,7 @@ def train_modularizer(
         integrate_context = params.getboolean("integrate_context")
         model_type = model_type_dict[params.get("model_type")]
         n_train = params.getint("modu_train_egs")
+        lr = params.getfloat("learning_rate", 1e-3)
 
         config_dict = {
             "group_size": group_size,
@@ -2015,6 +2039,7 @@ def train_modularizer(
             "model_type": model_type,
             "n_train": n_train,
             "batch_size": batch_size,
+            "lr": lr,
         }
     else:
         config_dict = {
@@ -2037,6 +2062,10 @@ def train_modularizer(
         fix_irrel_vars = m.irrel_vars[:fix_n_irrel_vars]
     else:
         fix_irrel_vars = None
+    if track_corr:
+        track_corr = get_ctx_inp_targets(m)
+    else:
+        track_corr = None
 
     if train_epochs > 0:
         h = m.fit(
@@ -2054,7 +2083,18 @@ def train_modularizer(
             fix_value=fix_irrel_value,
             track_rep_sim=track_rep_sim,
             track_reps=track_reps,
+            track_corr=track_corr,
         )
     else:
         h = None
     return m, h
+
+def get_ctx_inp_targets(model):
+    n_cons = model.n_groups
+    stim, reps, targs = model.get_all_stim()
+    cons = np.argmax(stim[:, -n_cons:], axis=1)
+    out_dict = {}
+    for con in range(n_cons):
+        m = con == cons
+        out_dict[con] = (reps[m], targs[m])
+    return out_dict

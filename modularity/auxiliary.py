@@ -457,12 +457,14 @@ def load_run(
     gen = u.load_folder_regex_generator(folder, f_template, file_target=file_name)
     args = None
     for fp, gd, model_dict in gen:
-        model_dict = pickle.load(open(fp, "rb"))
+        with open(fp, "rb") as f_:
+            model_dict = pickle.load(f_)
         args = vars(model_dict["args"])
         ordering.append(ordering_func(model_dict))
+        print(model_dict.keys())
         for k in take_keys:
             l_ = out_dict.get(k, [])
-            if k in model_dict.keys() and model_dict[k] is not None:
+            if model_dict.get(k) is not None:
                 md_k = np.squeeze(model_dict[k])
                 md_k = np.stack(list(md_k), axis=0)
 

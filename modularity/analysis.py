@@ -1,29 +1,32 @@
 import functools as ft
-import numpy as np
-import sklearn.preprocessing as skp
-import sklearn.linear_model as sklm
-import sklearn.cluster as skcl
-import sklearn.mixture as skmx
-import sklearn.svm as skm
-import sklearn.model_selection as skms
-import sklearn.pipeline as sklpipe
-import sklearn.feature_selection as skfs
 import itertools as it
-import scipy.stats as sts
-import scipy.special as ss
-import scipy.optimize as spo
-import tensorflow as tf
 
-import general.utility as u
+import composite_tangling.code_creation as cc
+import disentangled.data_generation as dg
 import general.neural_analysis as na
 import general.tasks.classification as gtc
 import general.tf.networks as gtn
-import modularity.simple as ms
-import modularity.auxiliary as maux
-import disentangled.data_generation as dg
-import composite_tangling.code_creation as cc
+import general.utility as u
+import numpy as np
+import scipy.optimize as spo
+import scipy.special as ss
+import scipy.stats as sts
+import sklearn.cluster as skcl
+import sklearn.decomposition as skd
+import sklearn.feature_selection as skfs
+import sklearn.linear_model as sklm
 import sklearn.metrics.pairwise as skmp
+import sklearn.mixture as skmx
+import sklearn.model_selection as skms
 import sklearn.neighbors as sknn
+import sklearn.pipeline as sklpipe
+import sklearn.preprocessing as skp
+import sklearn.metrics as skmet
+import sklearn.svm as skm
+import tensorflow as tf
+
+import modularity.auxiliary as maux
+import modularity.simple as ms
 
 tfk = tf.keras
 
@@ -49,7 +52,7 @@ class ModularizerCode(cc.Code):
         elif dg_model is None and source_distr is not None:
             self.n_feats_all = source_distr.rvs(1).shape[1]
         else:
-            raise IOError("one of dg_model or source_distr must be provided")
+            raise OSError("one of dg_model or source_distr must be provided")
         self.group_ind = group_ind
         if self.group_ind is not None:
             self.group = model.groups[group_ind]
@@ -71,7 +74,7 @@ class ModularizerCode(cc.Code):
         self.stim = self._get_all_stim()
 
     def _get_avg_power(self, n_avg=10000):
-        samps, inp_reps = self.sample_dg_reps(n_avg)
+        _, inp_reps = self.sample_dg_reps(n_avg)
         reps = self.model.get_representation(inp_reps, layer=self.use_layer)
         pwr = np.mean(np.sum(reps**2, axis=1), axis=0)
         return pwr
@@ -231,9 +234,7 @@ class ModularizerCode(cc.Code):
             and train_dim in self.group
             and np.all(np.isin(gen_dim, self.group))
         )
-        if cond:
-            ref_stim = self.get_random_full_stim(non_nan=all_dim)
-        elif ref_stim is None:
+        if cond or ref_stim is None:
             ref_stim = self.get_random_full_stim(non_nan=all_dim)
         tr_stim = np.mod(
             np.array(
@@ -325,8 +326,8 @@ def lasso_selectivity(
     alpha=1e-2,
     mix=0,
     train_net=True,
-    min_prop=.05,
-    r_thr=.1,
+    min_prop=0.05,
+    r_thr=0.1,
     **kwargs,
 ):
     task = gtc.make_contextual_task(k - 1, n_tasks, single_ind=True, axis_aligned=True)
@@ -346,8 +347,8 @@ def lasso_selectivity(
         out["fdg"] = fdg
         out["net_reps"] = rep.numpy()
         out["weights"] = net.rep_model.weights[0].numpy()
-    
-    y = 2 * (task(lvs) - .5)
+
+    y = 2 * (task(lvs) - 0.5)
     linear_mat = get_all_linear_groups(stim)
     m = sklm.Lasso(alpha=alpha, fit_intercept=False)
     m.fit(linear_mat, y)
@@ -393,6 +394,95 @@ def selectivity_manifold(fdg, weights, n_pts=50):
     return np.stack(idents, axis=0), clustered
 
 
+def train_n_activity_models(
+    mix_strength,
+    n_tasks=1,
+    input_dim=6,
+    n_contexts=2,
+    only_linear=False,
+    only_nonlinear=False,
+    rep_dim=400,
+    mixing_order=None,
+    group_size=(3,),
+    group_maker=ms.overlap_groups,
+    n_reps=5,
+    group_width=100,
+    act_reg=0,
+    train_noise=0.1,
+    input_noise=0.01,
+    group_overlap=None,
+    model_batch_size=100,
+    model_epochs=40,
+    const_init=None,
+    remove_last_inp=False,
+    kernel_init_std=None,
+    out_kernel_init_std=None,
+    model_layers=(),
+    n_model_train=1000,
+    early_stopping=True,
+    track_reps=False,
+    total_power=None,
+    task_correlation=None,
+    **kwargs,
+):
+    if group_overlap is None:
+        group_overlap = group_size
+    inp_dim = input_dim + n_contexts
+
+    if only_linear and only_nonlinear:
+        raise OSError("both only_linear and only_nonlinear cannot be true")
+    elif only_linear:
+        total_power = 1 - mix_strength
+        mix_strength = 0
+    elif only_nonlinear:
+        total_power = mix_strength
+        mix_strength = 1
+    fdg = dg.MixedDiscreteDataGenerator(
+        inp_dim,
+        n_units=rep_dim,
+        mix_strength=mix_strength,
+        mixing_order=mixing_order,
+        total_power=total_power,
+    )
+
+    m_constructor = ms.LinearModularizer
+    out = train_variable_models(
+        group_size,
+        n_tasks,
+        group_maker,
+        m_constructor,
+        n_reps=n_reps,
+        fdg=fdg,
+        n_groups=n_contexts,
+        group_width=group_width,
+        act_reg_weight=act_reg,
+        noise=train_noise,
+        constant_init=const_init,
+        inp_noise=input_noise,
+        n_overlap=group_overlap,
+        single_output=True,
+        integrate_context=True,
+        batch_size=model_batch_size,
+        epochs=model_epochs,
+        remove_last_inp=remove_last_inp,
+        kernel_init=kernel_init_std,
+        out_kernel_init=out_kernel_init_std,
+        additional_hidden=model_layers,
+        n_train=n_model_train,
+        use_early_stopping=early_stopping,
+        track_reps=track_reps,
+        task_correlation=task_correlation,
+        **kwargs,
+    )
+    models, histories = out
+    models = np.squeeze(models)
+    histories = np.squeeze(histories)
+
+    reps = get_reps(fdg, models)
+    proc_histories = process_histories(histories, model_epochs)
+    return models, reps, proc_histories, histories
+
+
 @u.arg_list_decorator
 def train_variable_models(
     group_size,
@@ -427,6 +517,22 @@ def train_variable_models(
         )
         out_ms[i, j, k, l_, m], out_hs[i, j, k, l_, m] = out
     return out_ms, out_hs
+
+
+def get_reps(fdg, models, n_cons=2):
+    out_reps = None
+    out_targs = None
+    lvs, inp_rep = fdg.get_all_stim(con_dims=np.arange(-n_cons, 0))
+    for ind in u.make_array_ind_iterator(models.shape):
+        m_ind = models[ind]
+        reps = m_ind.get_representation(inp_rep).numpy()
+        targs = m_ind.get_target(lvs)
+        if out_reps is None:
+            out_reps = np.zeros(models.shape + reps.shape)
+            out_targs = np.zeros(models.shape + targs.shape)
+        out_reps[ind] = reps
+        out_targs[ind] = targs
+    return lvs, inp_rep, np.squeeze(out_targs), np.squeeze(out_reps)
 
 
 def avg_corr(k, n=2):
@@ -510,7 +616,7 @@ target_fields = ["gm", "shattering", "within_ccgp", "across_ccgp"]
 
 def explain_clustering(df, target_fields=target_fields, explainer_fields=exp_fields):
     targ = df[target_fields]
-    targ = targ  # - np.mean(targ, axis=0)
+    # targ = targ  # - np.mean(targ, axis=0)
     ohe = skp.OneHotEncoder()
     preds = ohe.fit_transform(df[explainer_fields])
     fnames = ohe.get_feature_names_out(explainer_fields)
@@ -692,7 +798,7 @@ def train_n_models(
     n_reps=2,
     n_groups=5,
     group_maker=ms.random_groups,
-    model_type=ms.ColoringModularizer,
+    model_type=ms.LinearModularizer,
     epochs=5,
     verbose=False,
     act_reg_weight=0,
@@ -707,8 +813,14 @@ def train_n_models(
     out_kernel_init=None,
     additional_hidden=(),
     use_early_stopping=True,
+    act_func="relu",
+    task_correlation=None,
+    use_tasks=None,
+    lr=1e-3,
     **training_kwargs,
 ):
+    act_func = ms.act_func_dict[act_func]
+
     if fdg is None:
         use_mixer = False
     else:
@@ -717,6 +829,10 @@ def train_n_models(
     out_ms = []
     out_hs = []
     for i in range(n_reps):
+        if task_correlation is not None:
+            use_tasks = ms.make_correlated_vector_pairs(
+                tasks_per_group, group_size, task_correlation
+            )
         m_i = model_type(
             inp_dim,
             group_size=group_size,
@@ -738,6 +854,9 @@ def train_n_models(
             out_kernel_init=out_kernel_init,
             additional_hidden=additional_hidden,
             use_early_stopping=use_early_stopping,
+            act_func=act_func,
+            lr=lr,
+            use_tasks=use_tasks,
         )
         h_i = m_i.fit(epochs=epochs, verbose=verbose, **training_kwargs)
         out_ms.append(m_i)
@@ -913,6 +1032,7 @@ def sample_all_contexts(
     from_layer=None,
     cluster_funcs=None,
     layer=None,
+    use_std=False, 
 ):
     if from_layer is None and layer is not None:
         from_layer = layer
@@ -931,7 +1051,9 @@ def sample_all_contexts(
             mask = cluster_funcs[i](rel_dim)
             reps_i = reps_i[mask]
             samps_i = samps_i[mask]
-        if use_mean:
+        if use_std:
+            reps_i = np.std(reps_i, axis=0, keepdims=True)
+        elif use_mean:
             reps_i = np.mean(reps_i, axis=0, keepdims=True)
         out_act_i = m.model(samps_i)
 
@@ -979,7 +1101,7 @@ def _fit_optimal_clusters(
     max_components,
     model=skmx.GaussianMixture,
     use_init=False,
-    demean=True,
+    demean=False,
     ret_scores=False,
 ):
     if demean:
@@ -1007,7 +1129,7 @@ def _fit_optimal_clusters(
 
 
 def _fit_clusters(
-    act, n_components, model=skmx.GaussianMixture, use_init=False, demean=True
+    act, n_components, model=skmx.GaussianMixture, use_init=False, demean=False
 ):
     if use_init and n_components > 1:
         means_init = np.identity(n_components)[:, : n_components - 1]
@@ -1321,10 +1443,14 @@ def new_task_training(
     n_tasks=10,
     novel_tasks=1,
     train_epochs=10,
-    train_samps=5000,
-    new_samps=1000,
+    total_groups=2,
+    train_samps=800,
+    new_samps=None,
+    track_corr=True,
     **kwargs,
 ):
+    if new_samps is None:
+        new_samps = train_samps
     all_tasks = set(range(n_tasks))
     nov_task = set(range(novel_tasks))
     pretrain_tasks = all_tasks.difference(nov_task)
@@ -1334,44 +1460,60 @@ def new_task_training(
         fdg,
         params=params,
         verbose=verbose,
-        train_epochs=len(pretrain_tasks) * train_epochs,
-        n_train=len(pretrain_tasks) * train_samps,
+        train_epochs=train_epochs,
+        n_train=train_samps * total_groups,
         tasks_per_group=n_tasks,
+        n_groups=total_groups,
         only_tasks=pretrain_tasks,
+        track_corr=track_corr,
         **kwargs,
     )
     out_dict = {}
     out_dict["initial_hist"] = out_two[1]
     out_dict["initial_modularity"] = compute_frac_contextual(out_two[0])
     out_dict["initial_subspace"] = compute_alignment_index(out_two[0])
+    if track_corr:
+        out_dict["initial_corr"] = get_tracked_corr(out_two[1], train_epochs)
+        track_corr_dict = ms.get_ctx_inp_targets(out_two[0])
+    else:
+        track_corr_dict = None
 
     h_next = out_two[0].fit(
         track_dimensionality=True,
         epochs=train_epochs,
-        n_train=new_samps * len(nov_task),
+        n_train=new_samps * total_groups,
         verbose=False,
+        only_tasks=nov_task,
         val_only_tasks=nov_task,
         track_mean_tasks=False,
+        track_corr=track_corr_dict,
     )
     out_dict["trained_hist"] = h_next
     out_dict["trained_modularity"] = compute_frac_contextual(out_two[0])
     out_dict["trained_subspace"] = compute_alignment_index(out_two[0])
+    if track_corr:
+        out_dict["trained_corr"] = get_tracked_corr(h_next, train_epochs)
 
-    print("single task model")
     out_one = ms.train_modularizer(
         fdg,
         params=params,
         verbose=verbose,
         train_epochs=train_epochs,
-        n_train=new_samps * len(nov_task),
+        n_train=new_samps * total_groups,
+        n_groups=total_groups,
         tasks_per_group=n_tasks,
         only_tasks=nov_task,
+        val_only_tasks=nov_task,
         track_mean_tasks=False,
+        track_corr=track_corr,
         **kwargs,
     )
     out_dict["null_hist"] = out_one[1]
     out_dict["null_modularity"] = compute_frac_contextual(out_one[0])
     out_dict["null_subspace"] = compute_alignment_index(out_one[0])
+    if track_corr:
+        out_dict["null_corr"] = get_tracked_corr(out_one[1], train_epochs)
+
     return out_dict
 
 
@@ -1742,12 +1884,12 @@ def zero_shot_training(
     model, hist = out
 
     irrel = model.irrel_vars[:fix_n_irrel_vars]
-    irep, true, targ = model.get_x_true(n_train=test_samps, fix_vars=irrel, fix_value=1)
+    irep, _, targ = model.get_x_true(n_train=test_samps, fix_vars=irrel, fix_value=1)
     resps = model.out_model(model.get_representation(irep))
     errs_ood = (resps > 0.5) == (targ > 0.5)
 
     irrel = model.irrel_vars[:fix_n_irrel_vars]
-    irep, true, targ = model.get_x_true(n_train=test_samps, fix_vars=irrel, fix_value=0)
+    irep, _, targ = model.get_x_true(n_train=test_samps, fix_vars=irrel, fix_value=0)
     resps = model.out_model(model.get_representation(irep))
     errs_ind = (resps > 0.5) == (targ > 0.5)
 
@@ -1757,18 +1899,21 @@ def zero_shot_training(
 def new_context_training(
     fdg,
     params=None,
-    verbose=True,
+    verbose=False,
     total_groups=3,
     novel_groups=1,
     n_tasks=10,
     train_epochs=10,
-    train_samps=5000,
-    new_samps=1000,
+    train_samps=800,
+    new_samps=None,
     untrained_tasks=0,
     separate_untrained=False,
     track_reps=False,
+    track_corr=True,
     **kwargs,
 ):
+    if new_samps is None:
+        new_samps = train_samps
     all_tasks = set(range(n_tasks))
     untrained_task = set(range(untrained_tasks))
     train_tasks = all_tasks.difference(untrained_task)
@@ -1779,31 +1924,20 @@ def new_context_training(
 
     all_groups = list(range(total_groups))
     kwargs["single_output"] = True
-    # print(
-    #     "arguments",
-    #     fdg,
-    #     verbose,
-    #     params,
-    #     total_groups,
-    #     all_groups[:-novel_groups],
-    #     (total_groups - novel_groups) * train_epochs,
-    #     (total_groups - novel_groups) * train_samps,
-    #     n_tasks,
-    #     separate_tasks,
-    # )
-    # print(kwargs)
+
     out_two = ms.train_modularizer(
         fdg,
         verbose=verbose,
         params=params,
         n_groups=total_groups,
         only_groups=all_groups[:-novel_groups],
-        train_epochs=(total_groups - novel_groups) * train_epochs,
+        train_epochs=train_epochs,
         n_train=(total_groups - novel_groups) * train_samps,
         tasks_per_group=n_tasks,
         separate_tasks=separate_tasks,
         track_mean_tasks=False,
         track_reps=track_reps,
+        track_corr=track_corr,
         **kwargs,
     )
     con_inds = all_groups[:-novel_groups]
@@ -1817,6 +1951,16 @@ def new_context_training(
         out_two[0],
         con_inds=con_inds,
     )
+    if track_reps:
+        out_dict["initial_reps"] = get_tracked_activity(
+            out_two[1],
+            train_epochs,
+        )
+    if track_corr:
+        out_dict["initial_corr"] = get_tracked_corr(out_two[1], train_epochs)
+        track_corr_dict = ms.get_ctx_inp_targets(out_two[0])
+    else:
+        track_corr_dict = None
     if untrained_tasks > 0:
         only_tasks = train_tasks
         val_only_tasks = untrained_task
@@ -1827,30 +1971,37 @@ def new_context_training(
         track_dimensionality=True,
         epochs=train_epochs,
         n_train=new_samps * novel_groups,
-        verbose=False,
+        verbose=verbose,
         only_groups=all_groups[-novel_groups:],
         val_only_groups=all_groups[-novel_groups:],
         only_tasks=only_tasks,
         track_mean_tasks=False,
         val_only_tasks=val_only_tasks,
         track_reps=track_reps,
+        track_corr=track_corr_dict,
     )
     out_dict["trained_hist"] = h_next
     out_dict["trained_modularity"] = compute_frac_contextual(out_two[0])
     out_dict["trained_subspace"] = compute_alignment_index(out_two[0])
+    if track_reps:
+        out_dict["trained_reps"] = get_tracked_activity(h_next, train_epochs)
+    if track_corr:
+        out_dict["trained_corr"] = get_tracked_corr(h_next, train_epochs)
 
     out_one = ms.train_modularizer(
         fdg,
         verbose=verbose,
         params=params,
         n_groups=total_groups,
-        only_groups=all_groups[:novel_groups],
+        only_groups=all_groups[-novel_groups:],
         train_epochs=train_epochs,
         n_train=new_samps * novel_groups,
         tasks_per_group=n_tasks,
         only_tasks=only_tasks,
         val_only_tasks=val_only_tasks,
         track_mean_tasks=False,
+        track_reps=track_reps,
+        track_corr=track_corr,
         **kwargs,
     )
     out_dict["seq_model"] = out_two[0]
@@ -1858,26 +2009,12 @@ def new_context_training(
     out_dict["null_hist"] = out_one[1]
     out_dict["null_modularity"] = compute_frac_contextual(out_one[0])
     out_dict["null_subspace"] = compute_alignment_index(out_one[0])
+    if track_reps:
+        out_dict["null_reps"] = get_tracked_activity(out_one[1], train_epochs)
+    if track_corr:
+        out_dict["null_corr"] = get_tracked_corr(out_one[1], train_epochs)
+
     return out_dict
-
-
-def infer_optimal_activity_clusters(
-    m,
-    n_samps=1000,
-    use_mean=True,
-    ret_act=False,
-    model=skmx.GaussianMixture,
-    from_layer=None,
-    order=True,
-):
-    activity = sample_all_contexts(
-        m, n_samps=n_samps, use_mean=use_mean, from_layer=from_layer
-    )
-    act_full = np.concatenate(activity, axis=0)
-    out = infer_optimal_clusters_from_mean_activity(act_full, order=order)
-    if ret_act:
-        out = (out, act_full.T)
-    return out
 
 
 def _make_mean_activity(stim, activity, n_contexts=2):
@@ -1895,14 +2032,16 @@ def infer_optimal_clusters_from_activity(
     stim, activity, n_contexts=2, order=True, ret_act=False
 ):
     act_full = _make_mean_activity(stim, activity, n_contexts=n_contexts)
-    out = infer_optimal_clusters_from_mean_activity(act_full, order=order)
+    out = infer_optimal_clusters(act_full, order=order)
     if ret_act:
         out = (out, act_full.T)
     return out
 
 
-def infer_optimal_clusters_from_mean_activity(activity, order=True):
-    _, out = _fit_optimal_clusters(activity, len(activity) + 1)
+def infer_optimal_clusters(activity, order=True, max_clusters=None):
+    if max_clusters is None:
+        max_clusters = len(activity) + 1
+    _, out = _fit_optimal_clusters(activity, max_clusters)
     if order:
         u_clust = np.unique(out)
         m_diff = activity[0] - activity[1]
@@ -1915,6 +2054,27 @@ def infer_optimal_clusters_from_mean_activity(activity, order=True):
         for i, uc in enumerate(u_clust):
             new_out[out == uc] = ranks[i]
         out = new_out
+    return out
+
+
+def infer_optimal_activity_clusters(
+    m,
+    n_samps=1000,
+    use_mean=True,
+    ret_act=False,
+    model=skmx.GaussianMixture,
+    from_layer=None,
+    order=True,
+    max_clusters=None,
+    use_std=False,
+):
+    activity = sample_all_contexts(
+        m, n_samps=n_samps, use_mean=use_mean, use_std=use_std, from_layer=from_layer
+    )
+    act_full = np.concatenate(activity, axis=0)
+    out = infer_optimal_clusters(act_full, order=order, max_clusters=max_clusters)
+    if ret_act:
+        out = (out, act_full.T)
     return out
 
 
@@ -2008,15 +2168,135 @@ def apply_clusters_model_list(ml, func=quantify_clusters, **kwargs):
     return mats, diffs
 
 
+def get_tracked_corr(hs, n_epochs):
+    hs = np.array(hs)
+    ind = (0,) * len(hs.shape)
+    ctx_dict = hs[ind].history["corr_tracking"]
+    ctx_shape = ctx_dict[0].shape
+    out_corr = {k: np.zeros(hs.shape + ctx_shape) for k in ctx_dict}
+    for ind in u.make_array_ind_iterator(hs.shape):
+        for k, ctx_corr in hs[ind].history["corr_tracking"].items():
+            out_corr[k][ind] = ctx_corr
+    return out_corr
+
+
+def get_tracked_activity(hs, n_epochs):
+    hs = np.array(hs)
+    ind = (0,) * len(hs.shape)
+    stim, inp_rep, targ, reps = hs[ind].history["tracked_activity"]
+    stim_all = np.zeros(hs.shape + stim.shape)
+    inp_rep_all = np.zeros(hs.shape + inp_rep.shape)
+    targ_all = np.zeros(hs.shape + targ.shape)
+    reps_all = np.zeros(hs.shape + (n_epochs + 1,) + reps.shape[1:])
+    stim_all[:] = np.nan
+    inp_rep_all[:] = np.nan
+    targ_all[:] = np.nan
+    reps_all[:] = np.nan
+    for ind in u.make_array_ind_iterator(hs.shape):
+        stim_all[ind], inp_rep_all[ind], targ_all[ind], reps = hs[ind].history[
+            "tracked_activity"
+        ]
+        ind_epochs = reps.shape[0]
+        reps_all[ind][:ind_epochs] = reps
+    return {
+        "stim": stim_all,
+        "input_reps": inp_rep_all,
+        "targets": targ_all,
+        "reps": reps_all,
+    }
+
+
+def _get_ctx(stim, n_contexts):
+    return np.argmax(stim[:, -n_contexts:], axis=1)
+
+
+def _get_variance_frac(p1, p2):
+    return np.sum(np.var(p1, axis=0)) / np.sum(np.var(p2, axis=0))
+
+
+def _get_distance(p1, axis=1):
+    return np.mean(np.sqrt(np.sum(np.diff(p1, axis=axis) ** 2, axis=(axis, -1))))
+
+
+def _get_distance_frac(p1, p2, axis=1):
+    return _get_distance(p1, axis=axis) / _get_distance(p2, axis=axis)
+
+
+def _trs(xs, p=None):
+    return np.stack([p.transform(x) for x in xs])
+
+
+def quantify_training_overlap(
+    stim,
+    rep_initial,
+    rep_trained,
+    initial_ctxs=(0, 1),
+    train_ctxs=(2,),
+    n_contexts=3,
+    n_pcs=10,
+):
+    ctx = _get_ctx(stim, n_contexts)
+    rep_initial = np.swapaxes(rep_initial, 0, 1)
+    rep_trained = np.swapaxes(rep_trained, 0, 1)
+
+    tr_mask = np.isin(ctx, initial_ctxs)
+    te_mask = np.isin(ctx, train_ctxs)
+    rep_initial = rep_initial - rep_initial[:, 0:1]
+    rep_trained = rep_trained - rep_trained[:, 0:1]
+
+    # traj_initial_tr = np.concatenate(rep_initial[tr_mask])
+    # traj_initial_te = np.concatenate(rep_initial[te_mask])
+    # traj_trained_tr = np.concatenate(rep_trained[tr_mask])
+    # traj_trained_te = np.concatenate(rep_trained[te_mask])
+
+    traj_initial_tr = rep_initial[tr_mask]
+    traj_initial_te = rep_initial[te_mask]
+    traj_trained_tr = rep_trained[tr_mask]
+    traj_trained_te = rep_trained[te_mask]
+
+    p = skd.PCA(n_pcs)
+    # traj_initial_tr_red = p.fit_transform(traj_initial_tr)
+    # frac_initial_tr = _get_variance_frac(traj_initial_tr_red, traj_initial_tr)
+    # frac_initial_te = _get_variance_frac(p.transform(traj_initial_te), traj_initial_te)
+
+    # frac_trained_tr = _get_variance_frac(p.transform(traj_trained_tr), traj_trained_tr)
+    # frac_trained_te = _get_variance_frac(p.transform(traj_trained_te), traj_trained_te)
+
+    p.fit(np.concatenate(traj_initial_tr))
+    trs = ft.partial(_trs, p=p)
+
+    init_tr_dist_red = _get_distance(trs(traj_initial_tr))
+    init_te_dist_red = _get_distance(trs(traj_initial_te))
+    init_tr_dist = _get_distance(traj_initial_tr)
+    init_te_dist = _get_distance(traj_initial_te)
+
+    train_tr_dist_red = _get_distance(trs(traj_trained_tr))
+    train_te_dist_red = _get_distance(trs(traj_trained_te))
+    train_tr_dist = _get_distance(traj_trained_tr)
+    train_te_dist = _get_distance(traj_trained_te)
+
+    out = {
+        "tr_full": (init_tr_dist, train_tr_dist),
+        "tr_red": (init_tr_dist_red, train_tr_dist_red),
+        "te_full": (init_te_dist, train_te_dist),
+        "te_red": (init_te_dist_red, train_te_dist_red),
+    }
+    return out
+
+
 def process_histories(
-    hs, n_epochs, keep_keys=("loss", "val_loss", "dimensionality", "corr_rate")
+    hs,
+    n_epochs,
+    keep_keys=("loss", "val_loss", "dimensionality", "corr_rate"),
 ):
     hs = np.array(hs)
     ind = (0,) * len(hs.shape)
-    # n_epochs = hs[ind].params['epochs']
     out_dict = {}
+    keep_keys = [k for k in keep_keys if k in hs[ind].history]
+
     for key in keep_keys:
         out_dict[key] = np.zeros(hs.shape + (n_epochs + 1,))
+
         out_dict[key][:] = np.nan
     for ind in u.make_array_ind_iterator(hs.shape):
         for i, key in enumerate(keep_keys):
@@ -2362,11 +2642,13 @@ def _make_metric_mat(
     groups,
     con_inds=(-2, -1),
     flip_groups=None,
-    merger=ft.partial(np.concatenate, axis=1),
+    merger=None,
     metric=skmp.euclidean_distances,
     collapse_dim=None,
 ):
-    c_masks = list(stim[:, ci] == 1 for ci in con_inds)
+    if merger is None:
+        merger = ft.partial(np.concatenate, axis=1)
+    c_masks = [stim[:, ci] == 1 for ci in con_inds]
 
     group_size = len(groups[0])
     group_stim = np.zeros((len(groups), len(stim), group_size))
@@ -2462,7 +2744,7 @@ def task_masks(splits, n_vals=2):
         str_ident = []
         for s, v in prod:
             mask = ft.partial(_mask_func, k=s, i=v, comp_func=mask)
-            str_ident.append("F{} = {}".format(s, v))
+            str_ident.append(f"F{s} = {v}")
         full_ident = " and ".join(str_ident)
         mask_funcs[full_ident] = mask
     return mask_funcs
@@ -2508,9 +2790,9 @@ def _flatten_splits_helper(
                 k_dicts.append(k_i_dict)
 
         if len(k_dicts) > 0:
-            key_pairs = it.product(*list(kd_i.keys() for kd_i in k_dicts))
+            key_pairs = it.product(*[kd_i.keys() for kd_i in k_dicts])
             for key_g in key_pairs:
-                kg_list = list(k_dicts[i][key_g[i]] for i in range(len(k_dicts)))
+                kg_list = [k_dicts[i][key_g[i]] for i in range(len(k_dicts))]
                 if len(leaf_dict) > 0:
                     kg_list = kg_list + [leaf_dict[comb_key]]
 
@@ -2904,9 +3186,9 @@ def _get_unit_std(
     else:
         use_ind = 2
 
-    mod_reps = list(
+    mod_reps = [
         mod.sample_reps(n_samps, context=i, layer=layer)[use_ind] for i in range(n_g)
-    )
+    ]
     mod_rep = np.stack(mod_reps, axis=0)
     if use_rotation:
         trs = sts.ortho_group.rvs(mod_rep.shape[2])
@@ -3084,6 +3366,12 @@ def compute_silences(
             mod_rep = np.abs(mod_rep)
         active_units[i] = np.mean(mod_rep / unit_norms, axis=0) > thr
     return active_units
+
+
+def compute_frac_mu_reps(rep_c1, rep_c2, thr=1e-2):
+    m_c1 = (rep_c1 > thr).astype(int)
+    m_c2 = (rep_c2 > thr).astype(int)
+    return np.sum(m_c1 + m_c2 == 1, axis=-1) / rep_c1.shape[-1]
 
 
 def compute_alignment(reps, samps, n_contexts=2, n_folds=10):
