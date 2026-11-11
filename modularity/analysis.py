@@ -423,6 +423,7 @@ def train_n_activity_models(
     track_reps=False,
     total_power=None,
     task_correlation=None,
+    flip_tasks=False,
     **kwargs,
 ):
     if group_overlap is None:
@@ -472,6 +473,7 @@ def train_n_activity_models(
         use_early_stopping=early_stopping,
         track_reps=track_reps,
         task_correlation=task_correlation,
+        flip_tasks=flip_tasks,
         **kwargs,
     )
     models, histories = out
@@ -815,6 +817,7 @@ def train_n_models(
     use_early_stopping=True,
     act_func="relu",
     task_correlation=None,
+    flip_tasks=False,
     use_tasks=None,
     lr=1e-3,
     **training_kwargs,
@@ -833,6 +836,8 @@ def train_n_models(
             use_tasks = ms.make_correlated_vector_pairs(
                 tasks_per_group, group_size, task_correlation
             )
+        elif flip_tasks:
+            use_tasks = ms.make_flipped_task(tasks_per_group, group_size)
         m_i = model_type(
             inp_dim,
             group_size=group_size,

@@ -26,7 +26,7 @@ classifiers = [
 ]
 dependencies = [
   "numpy>=1.26.4",
-  "pandas>=2.2.2",
+  "pandas<2",
   "matplotlib>=3.9.2",
   "scikit-learn>=1.5.1",
   "tensorboard>=2.16.2",
@@ -38,7 +38,6 @@ dependencies = [
   "keras>=3.4.1",
   "seaborn>=0.13.2",
   "mne",
-  "zarr>=3",
   "gcsfs>=2026",
   "dbcv @ git+https://github.com/FelSiq/DBCV",
   "general @ git+https://github.com/wj2/general-neural.git",
@@ -46,12 +45,13 @@ dependencies = [
   "composite_tangling @ git+https://github.com/wj2/composite_tangling.git",
   "superposition_codes @ git+https://github.com/wj2/superposition_codes.git",
   "disentangled @ git+https://github.com/wj2/disentangled.git",
-  "vr2p @ file://{root}/../vr2p-public",
   "setuptools<82",
   "hydra-core",
   "jupyter",
   "notebook",
   "ipympl",
+  "suite2p",
+  "zarr<3",
 ]
 
 [project.scripts]

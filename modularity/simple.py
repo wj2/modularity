@@ -1340,6 +1340,12 @@ class LinearIdentityModularizer(IdentityModularizer):
         self.no_output = False
 
 
+def make_flipped_task(n_pairs, dim):
+    t1 = u.make_unit_vector(sts.norm(0, 1).rvs((n_pairs, dim)))
+    t2 = -t1
+    return t1, t2
+
+
 def make_correlated_vector_pairs(n_pairs, dim, sim):
     t1 = u.make_unit_vector(sts.norm(0, 1).rvs((n_pairs, dim)))
     t2_init = u.make_unit_vector(sts.norm(0, 1).rvs((n_pairs, dim))).flatten()
