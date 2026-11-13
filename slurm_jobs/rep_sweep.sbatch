@@ -23,4 +23,4 @@ activity_reg=0
 group_overlap=$group_size
 n_reps=30
 
-time rep_mod --n_reps $n_reps --output_subfolder rep_sweep_$part\_nls$nl_strength --group_size $group_size --n_groups $n_groups --model_epochs $model_epochs --group_overlap $group_overlap --activity_reg $activity_reg --group_width $group_width --tasks_per_group $part --input_dim $inp --rep_dim $rep_dim --dm_input_mixing_denom $nl_denom "$@"
+time rep_mod --n_reps $n_reps --group_size $group_size --n_groups $n_groups --model_epochs $model_epochs --group_overlap $group_overlap --activity_reg $activity_reg --group_width $group_width --tasks_per_group $part --input_dim $inp --rep_dim $rep_dim --dm_input_mixing_denom $nl_denom "$@"
