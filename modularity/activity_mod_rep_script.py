@@ -1,4 +1,5 @@
-import argparse  # noqa: I001
+import argparse
+import os
 import tensorflow as tf
 import datetime as dt
 
@@ -12,9 +13,14 @@ tfk = tf.keras
 def create_parser():
     parser = argparse.ArgumentParser(description="fit several modularizers")
     parser.add_argument(
-        "-o",
-        "--output_folder",
-        default="mod_rep",
+        "--output_subfolder",
+        default="rep-sweep",
+        type=str,
+        help="folder to save the output in",
+    )
+    parser.add_argument(
+        "--output_mainfolder",
+        default=".",
         type=str,
         help="folder to save the output in",
     )
@@ -127,4 +133,6 @@ def main():
     if args.track_reps:
         all_save["reps_dynamic"] = ma.get_tracked_activity(histories, args.model_epochs)
 
-    maux.save_model_information(models, args.output_folder, args=args, **all_save)
+    subfolder = "_".join(args.output_subfolder, f"tasks-{tasks_per_group}", f"mix-{mix_strength:.2f}")
+    output_folder = os.path.join(args.output_mainfolder, output_subfolder)
+    maux.save_model_information(models, output_folder, args=args, **all_save)
