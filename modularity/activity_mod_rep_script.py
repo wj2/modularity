@@ -12,9 +12,14 @@ tfk = tf.keras
 def create_parser():
     parser = argparse.ArgumentParser(description="fit several modularizers")
     parser.add_argument(
-        "-o",
-        "--output_folder",
+        "--output_subfolder",
         default="mod_rep",
+        type=str,
+        help="folder to save the output in",
+    )
+    parser.add_argument(
+        "--output_mainfolder",
+        default=".",
         type=str,
         help="folder to save the output in",
     )
@@ -127,4 +132,5 @@ def main():
     if args.track_reps:
         all_save["reps_dynamic"] = ma.get_tracked_activity(histories, args.model_epochs)
 
-    maux.save_model_information(models, args.output_folder, args=args, **all_save)
+    output_folder = os.path.join(args.output_mainfolder, args.output_subfolder)
+    maux.save_model_information(models, output_folder, args=args, **all_save)
