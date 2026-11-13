@@ -7,7 +7,7 @@ name = "modularity"
 dynamic = ["version"]
 description = ''
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.15"
 license = "MIT"
 keywords = []
 authors = [
@@ -39,19 +39,19 @@ dependencies = [
   "seaborn>=0.13.2",
   "mne",
   "gcsfs>=2026",
+  "setuptools<82",
   "dbcv @ git+https://github.com/FelSiq/DBCV",
   "general @ git+https://github.com/wj2/general-neural.git",
   "mixedselectivity_theory @ git+https://github.com/wj2/nms_error-correction.git",
   "composite_tangling @ git+https://github.com/wj2/composite_tangling.git",
   "superposition_codes @ git+https://github.com/wj2/superposition_codes.git",
   "disentangled @ git+https://github.com/wj2/disentangled.git",
-  "setuptools<82",
   "hydra-core",
   "jupyter",
   "notebook",
   "ipympl",
   "suite2p",
-  "zarr<3",
+  "zarr",
 ]
 
 [project.scripts]
