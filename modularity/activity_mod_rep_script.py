@@ -1,11 +1,12 @@
 import argparse
-import os
-import tensorflow as tf
 import datetime as dt
+import os
 
-import modularity.simple as ms
+import tensorflow as tf
+
 import modularity.analysis as ma
 import modularity.auxiliary as maux
+import modularity.simple as ms
 
 tfk = tf.keras
 
@@ -75,6 +76,7 @@ def create_parser():
     parser.add_argument("--only_linear", default=False, action="store_true")
     parser.add_argument("--no_early_stopping", default=False, action="store_true")
     parser.add_argument("--track_reps", default=False, action="store_true")
+    parser.add_argument("--act_func", default="relu")
     return parser
 
 
@@ -125,6 +127,7 @@ def main():
         n_model_train=args.n_model_train,
         early_stopping=not args.no_early_stopping,
         track_reps=args.track_reps,
+        act_func=args.act_func,
     )
 
     all_save = {}
@@ -133,6 +136,8 @@ def main():
     if args.track_reps:
         all_save["reps_dynamic"] = ma.get_tracked_activity(histories, args.model_epochs)
 
-    subfolder = "_".join(args.output_subfolder, f"tasks-{tasks_per_group}", f"mix-{mix_strength:.2f}")
-    output_folder = os.path.join(args.output_mainfolder, output_subfolder)
+    subfolder = "_".join(
+        args.output_subfolder, f"tasks-{tasks_per_group}", f"mix-{mix_strength:.2f}"
+    )
+    output_folder = os.path.join(args.output_mainfolder, subfolder)
     maux.save_model_information(models, output_folder, args=args, **all_save)
