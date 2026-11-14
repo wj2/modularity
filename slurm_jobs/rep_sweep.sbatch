@@ -4,7 +4,7 @@
 #SBATCH --error=.logs/rep_sweep_%a_%A.err                            
 #SBATCH --cpus-per-task=4
 #SBATCH --mem 15gb
-#SBATCH --array=1
+#SBATCH --array=1-20
 #SBATCH --time=11:59:59
 
 # NL_STRENGTH SHOULD BE EXTERNALLY PROVIDED
