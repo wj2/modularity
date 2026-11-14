@@ -133,6 +133,6 @@ def main():
     if args.track_reps:
         all_save["reps_dynamic"] = ma.get_tracked_activity(histories, args.model_epochs)
 
-    subfolder = "_".join(args.output_subfolder, f"tasks-{tasks_per_group}", f"mix-{mix_strength:.2f}")
-    output_folder = os.path.join(args.output_mainfolder, output_subfolder)
+    subfolder = "_".join((args.output_subfolder, f"tasks-{'-'.join(tasks_per_group)}", f"mix-{mix_strength:.2f}"))
+    output_folder = os.path.join(args.output_mainfolder, subfolder)
     maux.save_model_information(models, output_folder, args=args, **all_save)
