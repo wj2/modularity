@@ -1,6 +1,11 @@
 #!/bin/bash
 
 current_datetime=`date +"%Y-%m-%d_%T"`
+
+echo "$@"
+if [ ! -z "$@" ]; then
+    current_datetime="$@"_$current_datetime
+fi
 out_folder=/mnt/fac/CX500139_DS1/results/modularity_sweeps/$current_datetime
 echo $out_folder
 mkdir $out_folder
