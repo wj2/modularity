@@ -1,15 +1,14 @@
-import pickle
-import numpy as np
-import os
-import re
-import pandas as pd
 import itertools as it
+import os
+import pickle
+import re
 
 import general.utility as u
 import mne
+import numpy as np
+import pandas as pd
 
 from modularity.mt_package.dataprep import Data_Prep as DP
-
 
 mt_run_pattern = "mt(-.*)*_rw(?P<rw>[0-9\\.]+)_nms(?P<nms>[0-9\\.]+)_{runind}\\.pkl"
 
@@ -65,14 +64,14 @@ def process_ns_meg_data(
     ch_n_dict = {"mag": 102, "grad": 204}
     ch_n = ch_n_dict.get(ch_pick)
     if ch_n is None:
-        raise IOError(
-            "ch_pick must be on of {}, not {}".format(ch_n_dict.keys(), ch_pick)
+        raise OSError(
+            f"ch_pick must be on of {ch_n_dict.keys()}, not {ch_pick}"
         )
     timing_dict = {"pretest": 1, "posttest": 2, "training": 0, "combined test": 3}
     test = timing_dict.get(timing)
     if test is None:
-        raise IOError(
-            "timing must be on of {}, not {}".format(timing_dict.keys(), timing)
+        raise OSError(
+            f"timing must be on of {timing_dict.keys()}, not {timing}"
         )
 
     if test == 0:
@@ -118,7 +117,7 @@ def process_ns_meg_data(
     # The behavioural data file is called "data"
 
     ch_pos = np.vstack(
-        [epochs_selected.info["chs"][ch]["loc"][0:3] for ch in range(0, ch_n)]
+        [epochs_selected.info["chs"][ch]["loc"][0:3] for ch in range(ch_n)]
     )
     # matrix with the position of each sensor in the helmet
 
@@ -157,6 +156,50 @@ def save_mt_subject_data(
 def process_and_save_subject(*args, save_folder=".", **kwargs):
     data_dict = process_ns_meg_data(*args, **kwargs)
     return save_mt_subject_data(data_dict, folder=save_folder)
+
+
+def load_rep_sweep(
+    folder,
+    pattern="rep-sweep_tasks-(?P<tasks>[0-9]*)_mix-(?P<mix>[0-9\\.]*)",
+    arg_keys=("dm_input_mixing", "tasks_per_group"),
+    rep_key="reps",
+):
+    gen = u.load_folder_regex_generator(
+        folder, pattern, file_target="model_results.pkl"
+    )
+    args_all = {k: [] for k in arg_keys}
+    reps_all = []
+    targ_all = []
+    for fp, gd, results in gen:
+        args = vars(results["args"])
+        print(results["loss"][0])
+        [v.append(args[k]) for k, v in args_all.items()]
+        stim, _, targ, rep = results[rep_key]
+        targ_all.append(targ)
+        reps_all.append(rep)
+    return args_all, (stim, reps_all, targ_all)
+
+
+def organize_rep_sweep(args, *results):
+    inds = {k: np.unique(a) for k, a in args.items()}
+    shape = tuple(len(x) for x in inds.values())
+    outs = []
+    for res in results:
+        shape_r = shape + res[0].shape
+        outs.append(np.zeros(shape_r))
+    for ind in u.make_array_ind_iterator(shape):
+        for i, res in enumerate(results):
+            targs = {k: a_i[ind[j]] for j, (k, a_i) in enumerate(inds.items())}
+            targ_ind = np.where(
+                np.logical_and(*[t == np.squeeze(args[k]) for k, t in targs.items()])
+            )[0]
+            if len(targ_ind) == 1:
+                outs[i][ind] = res[targ_ind[0]]
+            elif len(targ_ind) > 1:
+                raise AttributeError(f"too many elements, {len(targ_ind)}")
+            else:
+                outs[i][ind] = np.nan
+    return inds, outs
 
 
 def get_relevant_dims(samps, m, preserve_order_if_same=True):
@@ -224,11 +267,11 @@ def load_consequence_runs(
     for fl in fls:
         m = re.match(use_templ, fl)
         if m is not None:
-            try: 
+            try:
                 fp = os.path.join(folder, fl, file_name)
                 data_fl = pickle.load(open(fp, "rb"))
             except FileNotFoundError:
-                print("did not find {}".format(fp))
+                print(f"did not find {fp}")
                 continue
             data_fl["args"] = vars(data_fl["args"])
             ki = data_fl["args"][ref_key]
@@ -402,40 +445,42 @@ def _diff_max_corr_ablation(d):
 
 
 default_take_keys = (
-        "within_ccgp",
-        "across_ccgp",
-        "shattering",
-        "within_act_ablation",
-        "across_act_ablation",
-        "diff_act_ablation",
-        "diff_graph_ablation",
-        "gm",
-        "within_graph_ablation",
-        "across_graph_ablation",
-        "within_max_corr_ablation",
-        "across_max_corr_ablation",
-        "max_corr",
-        "dimensionality",
-        "corr_rate",
-        "val_loss",
-        "loss",
-        "model_frac",
-        "fdg_frac",
-        "alignment_index",
-        "alignment_index_targets",
+    "within_ccgp",
+    "across_ccgp",
+    "shattering",
+    "within_act_ablation",
+    "across_act_ablation",
+    "diff_act_ablation",
+    "diff_graph_ablation",
+    "gm",
+    "within_graph_ablation",
+    "across_graph_ablation",
+    "within_max_corr_ablation",
+    "across_max_corr_ablation",
+    "max_corr",
+    "dimensionality",
+    "corr_rate",
+    "val_loss",
+    "loss",
+    "model_frac",
+    "fdg_frac",
+    "alignment_index",
+    "alignment_index_targets",
     # "weights",
     # "group_members",
-        "groups",
-        "related context",
-        "related context tasks",
-        "related context inference",
-        "related context inference tasks",
-        "new context",
-        "new context tasks",
-        "new task",
-        "new task tasks",
-        "zero shot",
+    "groups",
+    "related context",
+    "related context tasks",
+    "related context inference",
+    "related context inference tasks",
+    "new context",
+    "new context tasks",
+    "new task",
+    "new task tasks",
+    "zero shot",
 )
+
+
 def load_run(
     run_ind,
     folder="modularity/simulation_data/",
@@ -513,7 +558,10 @@ def load_nls_param_sweep(template, nl_inds, plot_keys, default_n_reps=30, **kwar
         if len(pk_shape) == 1:
             use_shape = arr_shape
         else:
-            use_shape = (len(mix_sorted), len(nt_sorted),) + pk_shape
+            use_shape = (
+                len(mix_sorted),
+                len(nt_sorted),
+            ) + pk_shape
         arr = np.zeros(use_shape)
         arr[:] = np.nan
         for i, j in u.make_array_ind_iterator((len(mix_sorted), len(nt_sorted))):
