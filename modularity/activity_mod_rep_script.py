@@ -77,6 +77,7 @@ def create_parser():
     parser.add_argument("--no_early_stopping", default=False, action="store_true")
     parser.add_argument("--track_reps", default=False, action="store_true")
     parser.add_argument("--act_func", default="relu")
+    parser.add_argument("--learning_rate", default=1e-3, type=float)
     return parser
 
 
@@ -128,6 +129,7 @@ def main():
         early_stopping=not args.no_early_stopping,
         track_reps=args.track_reps,
         act_func=args.act_func,
+        lr=args.learning_rate,
     )
 
     all_save = {}

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-current_datetime=`date +"%Y-%m-%d_%T"`
+current_datetime=`date +"%Y-%m-%d_%s"`
 
 if [ ! -z "$@" ]; then
     current_datetime="$@"_$current_datetime

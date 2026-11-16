@@ -1037,7 +1037,7 @@ def sample_all_contexts(
     from_layer=None,
     cluster_funcs=None,
     layer=None,
-    use_std=False, 
+    use_std=False,
 ):
     if from_layer is None and layer is not None:
         from_layer = layer
@@ -3307,6 +3307,11 @@ def compute_alignment_index_samples(stim, rep, cons, rel_vars, eps=1e-5):
     return ss
 
 
+def compute_subspace_specialization(stim, reps, n_cons=2, rvs=3, **kwargs):
+    cons = np.argmax(stim[:, np.arange(-n_cons, 0)], axis=1)
+    return compute_alignment_index_samples(stim, reps, cons, np.arange(rvs), **kwargs)
+
+
 def compute_alignment_index_targets(*args, **kwargs):
     return compute_alignment_index(*args, **kwargs, use_targets=True)
 
@@ -3376,7 +3381,22 @@ def compute_silences(
 def compute_frac_mu_reps(rep_c1, rep_c2, thr=1e-2):
     m_c1 = (rep_c1 > thr).astype(int)
     m_c2 = (rep_c2 > thr).astype(int)
-    return np.sum(m_c1 + m_c2 == 1, axis=-1) / rep_c1.shape[-1]
+    return np.sum((m_c1 + m_c2) == 1, axis=-1) / rep_c1.shape[-1]
+
+
+def compute_frac_reps_std(*args, **kwargs):
+    return compute_frac_reps(*args, func=np.std, **kwargs)
+
+
+def compute_frac_reps(stim, reps, n_cons=2, func=np.mean, **kwargs):
+    if n_cons > 2:
+        raise AttributeError(
+            "this way of calculating modularity is not defined for greater than "
+            "two contexts"
+        )
+    else:
+        mask = stim[:, -1] == 1
+    return compute_frac_mu_reps(func(reps[mask], axis=0), func(reps[~mask], axis=0))
 
 
 def compute_alignment(reps, samps, n_contexts=2, n_folds=10):

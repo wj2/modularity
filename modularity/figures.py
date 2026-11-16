@@ -3383,6 +3383,39 @@ class FigureModularityActivation(ModularizerFigure):
             print("implicit", ma.compute_alignment_index(models[i, j]))
             print("explicit", ma.compute_frac_contextual(models[i, j]))
 
+    def panel_param_sweep(self, reload_=False):
+        key = "panel_param_sweep"
+        axs = self.gss[key]
+
+        funcs = {
+            "mean fraction": ma.compute_frac_reps,
+            "variance fraction": ma.compute_frac_reps_std,
+            "subspace specialization": ma.compute_subspace_specialization,
+        }
+        if self.data.get(key) is None or reload_:
+            folder = self.params.get("sweep_folder")
+            params_all, (stim, reps_all, _) = maux.load_rep_sweep(folder)
+            params, (reps,) = maux.organize_rep_sweep(params_all, reps_all)
+
+            sweeps = {}
+            for i, (kf, func) in enumerate(funcs.items()):
+                sweep_f = np.zeros(reps.shape[:2] + (reps.shape[2],))
+                for ind in u.make_array_ind_iterator(reps.shape[:2]):
+                    rep_ind = reps[ind]
+                    sweep_f[ind] = [func(stim, ri) for ri in rep_ind]
+                sweeps[kf] = sweep_f
+            
+            self.data[key] = (params, sweeps)
+
+        params, sweeps = self.data[key]
+        for i, (kf, sweep_f) in enumerate(sweeps.items()):
+            gpl.pcolormesh(
+                params["tasks_per_group"],
+                params["dm_input_mixing"] / 100,
+                np.mean(sweep_f, axis=-1),
+                ax=axs[i],
+            )
+
 
 class FigureModularityControlled(ModularizerFigure):
     def __init__(self, fig_key="controlled_rep", colors=colors, **kwargs):
