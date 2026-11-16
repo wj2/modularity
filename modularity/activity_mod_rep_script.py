@@ -139,7 +139,7 @@ def main():
     subfolder = "_".join(
         (
             args.output_subfolder,
-            f"tasks-{'-'.join(tasks_per_group)}",
+            f"tasks-{'-'.join([str(n) for n in tasks_per_group])}",
             f"mix-{mix_strength:.2f}",
         )
     )
