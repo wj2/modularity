@@ -2,7 +2,6 @@
 
 current_datetime=`date +"%Y-%m-%d_%s"`
 
-echo "$@"
 if [ ! -z "$@" ]; then
     current_datetime="$@"_$current_datetime
 fi
