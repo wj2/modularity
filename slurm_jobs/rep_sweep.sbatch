@@ -15,7 +15,7 @@ nl_denom=100
 
 inp=6
 rep_dim=500
-model_epochs=20
+model_epochs=100
 group_size=3
 n_groups=2
 group_width=100
@@ -24,4 +24,4 @@ group_overlap=$group_size
 n_reps=30
 learning_rate=.01
 
-time rep_mod --n_reps $n_reps --group_size $group_size --n_groups $n_groups --model_epochs $model_epochs --group_overlap $group_overlap --activity_reg $activity_reg --group_width $group_width --tasks_per_group $part --input_dim $inp --rep_dim $rep_dim --dm_input_mixing_denom $nl_denom --learning_rate $learning_rate "$@"
+time rep_mod --n_reps $n_reps --group_size $group_size --n_groups $n_groups --model_epochs $model_epochs --group_overlap $group_overlap --activity_reg $activity_reg --group_width $group_width --tasks_per_group $part --input_dim $inp --rep_dim $rep_dim --dm_input_mixing_denom $nl_denom --no_early_stopping --learning_rate $learning_rate "$@"

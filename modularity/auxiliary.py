@@ -172,7 +172,6 @@ def load_rep_sweep(
     targ_all = []
     for fp, gd, results in gen:
         args = vars(results["args"])
-        print(results["loss"][0])
         [v.append(args[k]) for k, v in args_all.items()]
         stim, _, targ, rep = results[rep_key]
         targ_all.append(targ)
