@@ -3319,6 +3319,155 @@ class FigureTaskCorrelation(ModularizerFigure):
         ax.set_xlabel("task similarity")
 
 
+class SIFigureNullDistributions(ModularizerFigure):
+    def __init__(self, fig_key="null-distributions", colors=colors, **kwargs):
+        fsize = (6, 4.4)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = ("panel_nulls",)
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        n_funcs = len(self.params.getlist("act_funcs"))
+        ps_grid = pu.make_mxn_gridspec(self.gs, n_funcs, 2, 0, 100, 0, 100, 10, 17)
+        gss["panel_nulls"] = self.get_axs(
+            ps_grid,
+            squeeze=True,
+        )
+
+        self.gss = gss
+
+    def panel_nulls(self, recompute=False):
+        key = "panel_nulls"
+        axs = self.gss[key]
+
+        n_inp = self.params.getint("n_input")
+        n_mixes = self.params.getint("n_mixes")
+        mixes = np.linspace(0, 1, n_mixes)
+        act_funcs = self.params.getlist("act_funcs")
+        if self.data.get(key) is None or recompute:
+            out = {}
+            for func in act_funcs:
+                nulls_ss = np.stack(
+                    [
+                        ma.generate_null_distribution(n_inp, mix=mix, act_func=func)
+                        for mix in mixes
+                    ],
+                    axis=-1,
+                )
+                nulls_cf = np.stack(
+                    [
+                        ma.generate_null_distribution(
+                            n_inp,
+                            func=ma.compute_contextual_fraction,
+                            act_func=func,
+                            mix=mix,
+                        )
+                        for mix in mixes
+                    ],
+                    axis=-1,
+                )
+                out[func] = (nulls_ss, nulls_cf)
+            self.data[key] = out
+
+        null_dict = self.data[key]
+        for i, (func, (null_ss, null_cf)) in enumerate(null_dict):
+            gpl.plot_trace_werr(
+                mixes,
+                null_cf,
+                ax=axs[i, 0],
+                confstd=True,
+                color=plt.get_cmap("Blues")(0.5),
+            )
+            gpl.plot_trace_werr(
+                mixes,
+                null_ss,
+                ax=axs[i, 1],
+                confstd=True,
+                color=plt.get_cmap("Oranges")(0.5),
+            )
+
+
+class SIFigureMultipleThresholds(ModularizerFigure):
+    def __init__(self, fig_key="multiple-thresholds", colors=colors, **kwargs):
+        fsize = (6, 4.4)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = ("panel_param_sweeps",)
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        n_thresh = self.params.getint("n_thresholds")
+        ps_grid = pu.make_mxn_gridspec(self.gs, n_thresh, 3, 0, 100, 0, 100, 10, 17)
+        gss["panel_param_sweep"] = self.get_axs(
+            ps_grid,
+            squeeze=True,
+        )
+
+        self.gss = gss
+
+    def panel_param_sweeps(self, reload_=False):
+        key = "panel_param_sweep"
+        axs = self.gss[key]
+
+        thr_bounds = self.params.getlist("thr_bounds", typefunc=float)
+        n_thr = self.params.getint("n_thresholds")
+        thrs = np.linspace(*thr_bounds, n_thr)
+        ai_keep_bounds = self.params.getlist("ai_keep_bounds", typefunc=float)
+        ai_keeps = np.linspace(*ai_keep_bounds, n_thr)
+        funcs = {
+            "mean fraction": ma.compute_frac_reps,
+            "variance fraction": ma.compute_frac_reps_std,
+            "subspace specialization": ma.compute_subspace_specialization,
+        }
+        if self.data.get(key) is None or reload_:
+            folder = self.params.get("sweep_folder")
+            params_all, (stim, reps_all, _, _) = maux.load_rep_sweep(folder)
+            params, (reps,) = maux.organize_rep_sweep(params_all, reps_all)
+
+            sweeps = {}
+            for i, thr in enumerate(thrs):
+                for kf, func in funcs.items():
+                    if kf.split(" ")[-1] == "fraction":
+                        kwargs = {"thr": thr}
+                    else:
+                        kwargs = {"ai_keep": ai_keeps[i]}
+                    sweep_f = np.zeros(reps.shape[:2] + (reps.shape[2],))
+                    for ind in u.make_array_ind_iterator(reps.shape[:2]):
+                        rep_ind = reps[ind]
+                        sweep_f[ind] = [func(stim, ri, **kwargs) for ri in rep_ind]
+                    sweeps[(i, kf)] = sweep_f
+            self.data[key] = (params, sweeps)
+
+        cmaps = {"subspace specialization": "Oranges"}
+        params, sweeps = self.data[key]
+        for j, kf in enumerate(funcs):
+            for i, thr in enumerate(thrs):
+                sweep_f = sweeps[(i, kf)]
+                cb_m = gpl.pcolormesh(
+                    params["tasks_per_group"],
+                    1 - params["dm_input_mixing"] / 100,
+                    np.mean(sweep_f, axis=-1),
+                    ax=axs[i, j],
+                    cmap=cmaps.get(kf, "Blues"),
+                )
+                self.f.colorbar(cb_m, ax=axs[i, j])
+                axs[i, j].set_xticks([1, 10, 20])
+                axs[i, j].set_yticks([0, 0.5, 1])
+                axs[i, j].set_xlabel("number of outputs")
+                axs[i, j].set_ylabel("input structure")
+
+
 class FigureModularityActivation(ModularizerFigure):
     def __init__(self, fig_key="modularity_sigmoid", colors=colors, **kwargs):
         fsize = (6, 4.4)
@@ -3473,11 +3622,11 @@ class SIFigureLossDynamics(ModularizerFigure):
         for i1, i2 in u.make_array_ind_iterator(axs.shape):
             l_i12 = losses[inds1[i1], inds2[i2]]
             lin = 1 - params["dm_input_mixing"][inds1[i1]] / 100
-            axs[i1, i2].plot(l_i12[:, :max_epochs].T, color=cmap(lin), lw=1)
+            axs[i1, i2].plot(l_i12[:, :max_epochs].T, color=cmap(lin), lw=0.5)
             if i1 == 0 and i2 == 0:
                 gpl.make_yaxis_scale_bar(
                     axs[i1, i2],
-                    magnitude=0.05,
+                    magnitude=0.1,
                     double=False,
                     anchor=0,
                     label="loss",
@@ -3488,7 +3637,7 @@ class SIFigureLossDynamics(ModularizerFigure):
             elif i2 == 0 and i1 == len(inds1) - 1:
                 gpl.make_xaxis_scale_bar(
                     axs[i1, i2],
-                    magnitude=2,
+                    magnitude=10,
                     double=False,
                     anchor=0,
                     label="epoch",
@@ -3552,6 +3701,7 @@ class SIFigureAlignmentIndexNoise(ModularizerFigure):
 
         mixing, n_tasks, noiseless, noisy = self.data[key]
         for i, j in u.make_array_ind_iterator(axs.shape):
+            print(noisy[i, j])
             ax_ij = axs[i, j]
             gpl.plot_trace_werr(
                 noise_levels,

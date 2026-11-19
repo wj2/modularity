@@ -78,6 +78,7 @@ def create_parser():
     parser.add_argument("--track_reps", default=False, action="store_true")
     parser.add_argument("--act_func", default="relu")
     parser.add_argument("--learning_rate", default=1e-3, type=float)
+    parser.add_argument("--separate_context", default=False, action="store_true")
     return parser
 
 
@@ -130,6 +131,7 @@ def main():
         track_reps=args.track_reps,
         act_func=args.act_func,
         lr=args.learning_rate,
+        separate_context=args.separate_context,
     )
 
     all_save = {}

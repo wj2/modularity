@@ -21,7 +21,6 @@ import sklearn.model_selection as skms
 import sklearn.neighbors as sknn
 import sklearn.pipeline as sklpipe
 import sklearn.preprocessing as skp
-import sklearn.metrics as skmet
 import sklearn.svm as skm
 import tensorflow as tf
 
@@ -424,11 +423,13 @@ def train_n_activity_models(
     total_power=None,
     task_correlation=None,
     flip_tasks=False,
+    separate_context=False,
     **kwargs,
 ):
     if group_overlap is None:
         group_overlap = group_size
-    inp_dim = input_dim + n_contexts
+    if separate_context and remove_last_inp:
+        raise AttributeError("both separate_context and remove_last_inp cannot be true")
 
     if only_linear and only_nonlinear:
         raise OSError("both only_linear and only_nonlinear cannot be true")
@@ -438,13 +439,30 @@ def train_n_activity_models(
     elif only_nonlinear:
         total_power = mix_strength
         mix_strength = 1
-    fdg = dg.MixedDiscreteDataGenerator(
-        inp_dim,
-        n_units=rep_dim,
-        mix_strength=mix_strength,
-        mixing_order=mixing_order,
-        total_power=total_power,
-    )
+    if separate_context:
+        d_lvs = dg.MixedDiscreteDataGenerator(
+            input_dim,
+            n_units=rep_dim,
+            mix_strength=mix_strength,
+            mixing_order=mixing_order,
+            total_power=total_power,
+        )
+        d_ctx = dg.MixedDiscreteDataGenerator(
+            n_contexts,
+            n_units=rep_dim,
+            total_power=total_power,
+        )
+        fdg = dg.CompositeMDDG(d_lvs, d_ctx, weights=[input_dim, n_contexts])
+        print("blah")
+    else:
+        inp_dim = input_dim + n_contexts - remove_last_inp
+        fdg = dg.MixedDiscreteDataGenerator(
+            inp_dim,
+            n_units=rep_dim,
+            mix_strength=mix_strength,
+            mixing_order=mixing_order,
+            total_power=total_power,
+        )
 
     m_constructor = ms.LinearModularizer
     out = train_variable_models(
@@ -802,7 +820,7 @@ def train_n_models(
     group_maker=ms.random_groups,
     model_type=ms.LinearModularizer,
     epochs=5,
-    verbose=False,
+    verbose=True,
     act_reg_weight=0,
     noise=0.1,
     inp_noise=0.01,
@@ -3281,7 +3299,8 @@ def average_target_specialization(
     return out_ss
 
 
-def _alignment_index(s1, s2, keep=0.99, norm=True):
+def _alignment_index(s1, s2, keep=0.9, norm=True):
+    """to make noise robust, need to incorporate CV, probably beyond scope"""
     if len(s1.shape) == 2:
         s1 = np.expand_dims(s1, 0)
         s2 = np.expand_dims(s2, 0)
@@ -3297,15 +3316,12 @@ def _alignment_index(s1, s2, keep=0.99, norm=True):
         p2.fit(s2_i)
         u1 = p1.components_.T
         u2 = p2.components_.T
-
         norm = min(u1.shape[1], u2.shape[1])
         ais[i] = np.trace(u1.T @ u2 @ u2.T @ u1) / norm
     return ais
 
 
-def compute_alignment_index_samples(
-    stim, rep, cons, rel_vars, eps=1e-5, ai_keep=0.9, **kwargs
-):
+def compute_alignment_index_samples(stim, rep, cons, rel_vars, ai_keep=0.9, **kwargs):
     con_ais = []
     con_inds = np.unique(cons)
     for i, j in it.combinations(con_inds, 2):
@@ -3327,9 +3343,7 @@ def compute_alignment_index_samples(
         except np.linalg.LinAlgError:
             rv_ais_i = np.nan
         rv_ais[i] = rv_ais_i
-    # ss = max(np.log((np.mean(rv_ais) + eps) / (np.mean(con_ais) + eps)), 0)
     ss = np.mean(rv_ais) - np.mean(con_ais)
-    print(rv_ais, con_ais)
     return ss
 
 

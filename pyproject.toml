@@ -45,7 +45,7 @@ dependencies = [
   "mixedselectivity_theory @ git+https://github.com/wj2/nms_error-correction.git",
   "composite_tangling @ git+https://github.com/wj2/composite_tangling.git",
   "superposition_codes @ git+https://github.com/wj2/superposition_codes.git",
-  "disentangled @ git+https://github.com/wj2/disentangled.git",
+  "disentangled @ git+https://github.com/wj2/disentangled.git@f77387cfbc12e1a594b64d2ff933f33b711446b1", 
   "hydra-core",
   "jupyter",
   "notebook",
