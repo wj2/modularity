@@ -64,15 +64,11 @@ def process_ns_meg_data(
     ch_n_dict = {"mag": 102, "grad": 204}
     ch_n = ch_n_dict.get(ch_pick)
     if ch_n is None:
-        raise OSError(
-            f"ch_pick must be on of {ch_n_dict.keys()}, not {ch_pick}"
-        )
+        raise OSError(f"ch_pick must be on of {ch_n_dict.keys()}, not {ch_pick}")
     timing_dict = {"pretest": 1, "posttest": 2, "training": 0, "combined test": 3}
     test = timing_dict.get(timing)
     if test is None:
-        raise OSError(
-            f"timing must be on of {timing_dict.keys()}, not {timing}"
-        )
+        raise OSError(f"timing must be on of {timing_dict.keys()}, not {timing}")
 
     if test == 0:
         epochs_cleaned, data, events_n, events = DP.Load_Data(
@@ -163,6 +159,7 @@ def load_rep_sweep(
     pattern="rep-sweep_tasks-(?P<tasks>[0-9]*)_mix-(?P<mix>[0-9\\.]*)",
     arg_keys=("dm_input_mixing", "tasks_per_group"),
     rep_key="reps",
+    loss_key="loss",
 ):
     gen = u.load_folder_regex_generator(
         folder, pattern, file_target="model_results.pkl"
@@ -170,13 +167,40 @@ def load_rep_sweep(
     args_all = {k: [] for k in arg_keys}
     reps_all = []
     targ_all = []
+    loss_all = []
     for fp, gd, results in gen:
         args = vars(results["args"])
         [v.append(args[k]) for k, v in args_all.items()]
         stim, _, targ, rep = results[rep_key]
+        loss_all.append(results[loss_key])
+        if len(targ.shape) == 2:
+            targ = np.expand_dims(targ, -1)
         targ_all.append(targ)
         reps_all.append(rep)
-    return args_all, (stim, reps_all, targ_all)
+    return args_all, (stim, reps_all, targ_all, loss_all)
+
+
+def organize_targ_sweep(args, targs):
+    inds = {k: np.unique(a) for k, a in args.items()}
+    shape = tuple(len(x) for x in inds.values())
+    max_shape = np.max(np.stack([t.shape for t in targs]), axis=0)
+    targs_all = np.zeros(shape + tuple(max_shape))
+    for ind in u.make_array_ind_iterator(shape):
+        ind_targs_dict = {k: a_i[ind[j]] for j, (k, a_i) in enumerate(inds.items())}
+        targ_ind = np.where(
+            np.logical_and(
+                *[t == np.squeeze(args[k]) for k, t in ind_targs_dict.items()]
+            )
+        )[0]
+        if len(targ_ind) == 1:
+            t_ind = targs[targ_ind[0]]
+            targs_all[ind][..., :t_ind.shape[-1]] = t_ind
+            targs_all[ind][..., t_ind.shape[-1]:] = np.nan
+        elif len(targ_ind) > 1:
+            raise AttributeError(f"too many elements, {len(targ_ind)}")
+        else:
+            targs_all[ind] = np.nan
+    return inds, targs_all
 
 
 def organize_rep_sweep(args, *results):

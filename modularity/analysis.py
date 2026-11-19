@@ -3281,14 +3281,38 @@ def average_target_specialization(
     return out_ss
 
 
-def compute_alignment_index_samples(stim, rep, cons, rel_vars, eps=1e-5):
+def _alignment_index(s1, s2, keep=0.99, norm=True):
+    if len(s1.shape) == 2:
+        s1 = np.expand_dims(s1, 0)
+        s2 = np.expand_dims(s2, 0)
+    ais = np.zeros(len(s1))
+    for i, s1_i in enumerate(s1):
+        s2_i = s2[i]
+        if norm:
+            s1_i = skp.StandardScaler().fit_transform(s1_i)
+            s2_i = skp.StandardScaler().fit_transform(s2_i)
+        p1 = skd.PCA(keep)
+        p1.fit(s1_i)
+        p2 = skd.PCA(keep)
+        p2.fit(s2_i)
+        u1 = p1.components_.T
+        u2 = p2.components_.T
+
+        norm = min(u1.shape[1], u2.shape[1])
+        ais[i] = np.trace(u1.T @ u2 @ u2.T @ u1) / norm
+    return ais
+
+
+def compute_alignment_index_samples(
+    stim, rep, cons, rel_vars, eps=1e-5, ai_keep=0.9, **kwargs
+):
     con_ais = []
     con_inds = np.unique(cons)
     for i, j in it.combinations(con_inds, 2):
         m1 = cons == i
         m2 = cons == j
         try:
-            ai_ij = u.alignment_index(rep[m1], rep[m2])
+            ai_ij = _alignment_index(rep[m1], rep[m2], keep=ai_keep, **kwargs)
         except np.linalg.LinAlgError:
             ai_ij = np.nan
         con_ais.append(ai_ij)
@@ -3299,17 +3323,75 @@ def compute_alignment_index_samples(stim, rep, cons, rel_vars, eps=1e-5):
         m1 = stim[:, rv] == 0
         m2 = stim[:, rv] == 1
         try:
-            rv_ais_i = u.alignment_index(rep[m1], rep[m2])
+            rv_ais_i = _alignment_index(rep[m1], rep[m2], keep=ai_keep, **kwargs)
         except np.linalg.LinAlgError:
             rv_ais_i = np.nan
         rv_ais[i] = rv_ais_i
-    ss = max(np.log((np.mean(rv_ais) + eps) / (np.mean(con_ais) + eps)), 0)
+    # ss = max(np.log((np.mean(rv_ais) + eps) / (np.mean(con_ais) + eps)), 0)
+    ss = np.mean(rv_ais) - np.mean(con_ais)
+    print(rv_ais, con_ais)
     return ss
 
 
-def compute_subspace_specialization(stim, reps, n_cons=2, rvs=3, **kwargs):
+def _get_con_reps(n_inp, mix=0, n_cons=2, n_units=600):
+    fdg = dg.MixedDiscreteDataGenerator(n_inp, mix_strength=mix, n_units=n_units)
+    inp, sreps = fdg.get_all_stim()
+    c_mask = np.sum(inp[:, -n_cons:], axis=1) == 1
+    inp = inp[c_mask]
+    sreps = sreps[c_mask]
+    return inp, sreps
+
+
+def rep_null(n_inp, proj_dims=200, mix=0, n_cons=2, act_func="relu"):
+    inp, sreps = _get_con_reps(n_inp, mix=mix, n_cons=n_cons)
+    mat = sts.norm(0, 1).rvs((sreps.shape[-1], proj_dims))
+    pre = sreps @ mat
+    act = ms.act_func_dict[act_func](pre).numpy()
+    return inp, act
+
+
+def compute_subspace_specialization_null(stim, reps, n_cons=2, **kwargs):
+    try:
+        assert n_cons == 2
+    except AssertionError:
+        raise AttributeError(
+            "this null calculation is only implemented for two contexts"
+        )
+    stim_red = stim[:, :-1]
+    cons = stim_red[:, -1]
+    rel_vars = np.arange(stim_red.shape[-1] - 1)
+    ss_true = compute_alignment_index_samples(stim_red, reps, cons, rel_vars, **kwargs)
+    ss_nulls = []
+    rvs_all = np.arange(stim_red.shape[-1])
+    for i in range(stim_red.shape[-1] - 1):
+        cons_i = stim[:, i]
+        rvs_i = list(rvs_all[:i]) + list(rvs_all[i:])
+        ss_i = compute_alignment_index_samples(stim_red, reps, cons_i, rvs_i, **kwargs)
+        ss_nulls.append(ss_i)
+    return ss_true, ss_nulls
+
+
+def compute_subspace_specialization(
+    stim, reps, targs=None, n_cons=2, rvs=None, **kwargs
+):
+    if rvs is None:
+        rvs = stim.shape[-1] - n_cons
     cons = np.argmax(stim[:, np.arange(-n_cons, 0)], axis=1)
+    if targs is not None:
+        col_mask = ~np.all(np.isnan(targs), axis=0)
+        stim = targs[:, col_mask]
+        rvs = stim.shape[1]
     return compute_alignment_index_samples(stim, reps, cons, np.arange(rvs), **kwargs)
+
+
+def generate_null_distribution(
+    n_inp, n_reps=1000, func=compute_subspace_specialization, **kwargs
+):
+    null = np.zeros(n_reps)
+    for i in range(n_reps):
+        inp, act = rep_null(n_inp, **kwargs)
+        null[i] = func(inp, act)
+    return null
 
 
 def compute_alignment_index_targets(*args, **kwargs):
@@ -3388,15 +3470,30 @@ def compute_frac_reps_std(*args, **kwargs):
     return compute_frac_reps(*args, func=np.std, **kwargs)
 
 
-def compute_frac_reps(stim, reps, n_cons=2, func=np.mean, **kwargs):
+def compute_frac_reps_null(stim, reps, **kwargs):
+    frac = compute_frac_reps(stim, reps, con_ind=-1, **kwargs)
+    frac_null = []
+    for i in range(stim.shape[-1] - 2):
+        frac_null.append(compute_frac_reps(stim, reps, con_ind=i, **kwargs))
+    return frac, frac_null
+
+
+def compute_frac_reps(
+    stim, reps, n_cons=2, con_ind=-1, func=np.mean, norm=True, **kwargs
+):
     if n_cons > 2:
         raise AttributeError(
             "this way of calculating modularity is not defined for greater than "
             "two contexts"
         )
     else:
-        mask = stim[:, -1] == 1
-    return compute_frac_mu_reps(func(reps[mask], axis=0), func(reps[~mask], axis=0))
+        stim_red = stim[:, :-1]
+        mask = stim_red[:, con_ind] == 1
+    if norm:
+        reps = reps / np.max(reps, axis=0, keepdims=True)
+    return compute_frac_mu_reps(
+        func(reps[mask], axis=0), func(reps[~mask], axis=0), **kwargs
+    )
 
 
 def compute_alignment(reps, samps, n_contexts=2, n_folds=10):

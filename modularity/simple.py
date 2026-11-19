@@ -170,7 +170,9 @@ def random_groups(inp_dims, group_size, n_groups, *args, **kwargs):
     return out
 
 
-def overlap_groups(inp_dims, group_size, n_groups, *args, n_overlap=1, **kwargs):
+def _random_overlap_groups(
+    inp_dims, group_size, n_groups, *args, n_overlap=1, **kwargs
+):
     rng = np.random.default_rng()
     g_size = (n_groups, group_size - n_overlap)
     samp_dims = n_groups * g_size[1]
@@ -179,6 +181,17 @@ def overlap_groups(inp_dims, group_size, n_groups, *args, n_overlap=1, **kwargs)
     g_o = rng.choice(range(samp_dims, inp_dims), size=(1, n_overlap), replace=False)
     groups_over = np.tile(g_o, (n_groups, 1))
     groups = np.concatenate((groups, groups_over), axis=1).astype(int)
+    return groups
+
+
+def overlap_groups(inp_dims, group_size, n_groups, *args, n_overlap=1, **kwargs):
+    if n_overlap == group_size:
+        assert group_size <= inp_dims
+        groups = (np.arange(group_size),) * n_groups
+    else:
+        groups = _random_overlap_groups(
+            inp_dims, group_size, n_groups, *args, n_overlap=1, **kwargs
+        )
     return groups
 
 
@@ -2094,6 +2107,7 @@ def train_modularizer(
     else:
         h = None
     return m, h
+
 
 def get_ctx_inp_targets(model):
     n_cons = model.n_groups

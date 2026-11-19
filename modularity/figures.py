@@ -1,3 +1,4 @@
+import functools as ft
 import itertools as it
 
 import disentangled.data_generation as dg
@@ -12,6 +13,7 @@ import numpy as np
 import scipy.special as ss
 import scipy.stats as sts
 import sklearn.decomposition as skd
+import sklearn.preprocessing as skp
 
 import modularity.analysis as ma
 import modularity.auxiliary as maux
@@ -3387,14 +3389,15 @@ class FigureModularityActivation(ModularizerFigure):
         key = "panel_param_sweep"
         axs = self.gss[key]
 
+        thr = self.params.getfloat("thr")
         funcs = {
-            "mean fraction": ma.compute_frac_reps,
-            "variance fraction": ma.compute_frac_reps_std,
+            "mean fraction": ft.partial(ma.compute_frac_reps, thr=thr),
+            "variance fraction": ft.partial(ma.compute_frac_reps_std, thr=thr),
             "subspace specialization": ma.compute_subspace_specialization,
         }
         if self.data.get(key) is None or reload_:
             folder = self.params.get("sweep_folder")
-            params_all, (stim, reps_all, _) = maux.load_rep_sweep(folder)
+            params_all, (stim, reps_all, _, _) = maux.load_rep_sweep(folder)
             params, (reps,) = maux.organize_rep_sweep(params_all, reps_all)
 
             sweeps = {}
@@ -3404,17 +3407,160 @@ class FigureModularityActivation(ModularizerFigure):
                     rep_ind = reps[ind]
                     sweep_f[ind] = [func(stim, ri) for ri in rep_ind]
                 sweeps[kf] = sweep_f
-            
+
             self.data[key] = (params, sweeps)
 
+        cmaps = {"subspace specialization": "Oranges"}
         params, sweeps = self.data[key]
         for i, (kf, sweep_f) in enumerate(sweeps.items()):
-            gpl.pcolormesh(
+            cb_m = gpl.pcolormesh(
                 params["tasks_per_group"],
-                params["dm_input_mixing"] / 100,
+                1 - params["dm_input_mixing"] / 100,
                 np.mean(sweep_f, axis=-1),
                 ax=axs[i],
+                cmap=cmaps.get(kf, "Blues"),
             )
+            self.f.colorbar(cb_m, ax=axs[i])
+            axs[i].set_xticks([1, 10, 20])
+            axs[i].set_yticks([0, 0.5, 1])
+            axs[i].set_xlabel("number of outputs")
+            axs[i].set_ylabel("input structure")
+
+
+def get_equally_spaced_inds(total, num):
+    return np.round(np.linspace(0, total - 1, num)).astype(int)
+
+
+class SIFigureLossDynamics(ModularizerFigure):
+    def __init__(self, fig_key="loss-dynamics", colors=colors, **kwargs):
+        fsize = (6, 4.4)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = ("panel_loss_sweep",)
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        ps_grid = pu.make_mxn_gridspec(self.gs, 5, 5, 0, 100, 0, 100, 2, 2)
+        gss["panel_loss_sweep"] = self.get_axs(
+            ps_grid,
+            squeeze=True,
+        )
+
+        self.gss = gss
+
+    def panel_loss_sweep(self, reload_=False):
+        key = "panel_loss_sweep"
+        axs = self.gss[key]
+
+        if self.data.get(key) is None or reload_:
+            folder = self.params.get("sweep_folder")
+            params_all, (_, _, _, loss_all) = maux.load_rep_sweep(folder)
+            params, (losses,) = maux.organize_rep_sweep(params_all, loss_all)
+
+            self.data[key] = (params, losses)
+
+        params, losses = self.data[key]
+        loss_avg = np.nanmean(losses, axis=-2)
+        inds1 = get_equally_spaced_inds(loss_avg.shape[0], axs.shape[0])
+        inds2 = get_equally_spaced_inds(loss_avg.shape[1], axs.shape[1])
+        max_epochs = self.params.getint("max_epochs")
+        cmap = self.structured_unstructured_cmap
+        for i1, i2 in u.make_array_ind_iterator(axs.shape):
+            l_i12 = losses[inds1[i1], inds2[i2]]
+            lin = 1 - params["dm_input_mixing"][inds1[i1]] / 100
+            axs[i1, i2].plot(l_i12[:, :max_epochs].T, color=cmap(lin), lw=1)
+            if i1 == 0 and i2 == 0:
+                gpl.make_yaxis_scale_bar(
+                    axs[i1, i2],
+                    magnitude=0.05,
+                    double=False,
+                    anchor=0,
+                    label="loss",
+                    text_buff=0.5,
+                )
+                gpl.clean_plot(axs[i1, i2])
+                gpl.clean_plot_bottom(axs[i1, i2])
+            elif i2 == 0 and i1 == len(inds1) - 1:
+                gpl.make_xaxis_scale_bar(
+                    axs[i1, i2],
+                    magnitude=2,
+                    double=False,
+                    anchor=0,
+                    label="epoch",
+                    text_buff=0.4,
+                )
+                gpl.clean_plot(axs[i1, i2], 1)
+            else:
+                gpl.clean_plot_all(axs[i1, i2])
+
+
+class SIFigureAlignmentIndexNoise(ModularizerFigure):
+    def __init__(self, fig_key="alignment-index-noise", colors=colors, **kwargs):
+        fsize = (6, 4.4)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = ("panel_noise_levels",)
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        eg_grid = pu.make_mxn_gridspec(self.gs, 5, 5, 0, 100, 0, 100, 5, 5)
+        eg_axs = self.get_axs(eg_grid, squeeze=True, sharey="all")
+        gss["panel_noise_levels"] = eg_axs
+
+        self.gss = gss
+
+    def panel_noise_levels(self, recompute=False):
+        key = "panel_noise_levels"
+        axs = self.gss[key]
+
+        noise_bounds = self.params.getlist("noise_bounds", typefunc=float)
+        n_levels = self.params.getint("n_levels")
+        noise_levels = np.linspace(*noise_bounds, n_levels)
+        n_reps = self.params.getint("n_reps")
+        folder = self.params.get("sim_folder")
+        rep_ind = 0
+        if self.data.get(key) is None or recompute:
+            params_all, (stim, reps_all, _, _) = maux.load_rep_sweep(folder)
+            params, (reps,) = maux.organize_rep_sweep(params_all, reps_all)
+
+            mixing = 1 - params["dm_input_mixing"] / 100
+            n_tasks = params["tasks_per_group"]
+            inds1 = get_equally_spaced_inds(len(mixing), axs.shape[0])
+            inds2 = get_equally_spaced_inds(len(n_tasks), axs.shape[1])
+            noiseless = np.zeros_like(axs)
+            noisy = np.zeros(axs.shape + (n_reps, n_levels))
+            for i1, i2 in u.make_array_ind_iterator(axs.shape):
+                reps_i1i2 = reps[inds1[i1], inds2[i2], rep_ind]
+                reps_i1i2 = skp.StandardScaler().fit_transform(reps_i1i2)
+                noiseless[i1, i2] = ma.compute_subspace_specialization(stim, reps_i1i2)
+                for j, nl in enumerate(noise_levels):
+                    for k in range(n_reps):
+                        reps_noise_k = reps_i1i2 + sts.norm(0, nl).rvs(reps_i1i2.shape)
+                        ai_ind = ma.compute_subspace_specialization(stim, reps_noise_k)
+                        noisy[i1, i2, k, j] = ai_ind
+            self.data[key] = (mixing[inds1], n_tasks[inds2], noiseless, noisy)
+
+        mixing, n_tasks, noiseless, noisy = self.data[key]
+        for i, j in u.make_array_ind_iterator(axs.shape):
+            ax_ij = axs[i, j]
+            gpl.plot_trace_werr(
+                noise_levels,
+                noisy[i, j],
+                ax=ax_ij,
+                color=self.structured_unstructured_cmap(mixing[i]),
+                confstd=True,
+            )
+            gpl.add_hlines(noiseless[i, j], ax_ij)
 
 
 class FigureModularityControlled(ModularizerFigure):
