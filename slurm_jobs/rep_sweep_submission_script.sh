@@ -11,5 +11,5 @@ mkdir $out_folder
 nl_str=(0 5 10 15 20 25 30 35 40 45 50 55 60 65 70 75 80 85 90 95 100)
 
 for nls in ${nl_str[@]}; do
-    sbatch slurm_jobs/rep_sweep.sbatch --dm_input_mixing $nls --output_mainfolder $out_folder --act_func tanh
+    sbatch slurm_jobs/rep_sweep.sbatch --dm_input_mixing $nls --output_mainfolder $out_folder --act_func relu
 done
