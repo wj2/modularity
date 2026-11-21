@@ -453,7 +453,6 @@ def train_n_activity_models(
             total_power=total_power,
         )
         fdg = dg.CompositeMDDG(d_lvs, d_ctx, weights=[input_dim, n_contexts])
-        print("blah")
     else:
         inp_dim = input_dim + n_contexts - remove_last_inp
         fdg = dg.MixedDiscreteDataGenerator(
@@ -820,7 +819,7 @@ def train_n_models(
     group_maker=ms.random_groups,
     model_type=ms.LinearModularizer,
     epochs=5,
-    verbose=True,
+    verbose=False,
     act_reg_weight=0,
     noise=0.1,
     inp_noise=0.01,
@@ -3399,7 +3398,7 @@ def compute_subspace_specialization(
 
 
 def generate_null_distribution(
-    n_inp, n_reps=1000, func=compute_subspace_specialization, **kwargs
+    n_inp, n_reps=100, func=compute_subspace_specialization, **kwargs
 ):
     null = np.zeros(n_reps)
     for i in range(n_reps):

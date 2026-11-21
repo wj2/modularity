@@ -1473,7 +1473,6 @@ def plot_context_scatter_labels(
         else:
             colors = cmap(np.linspace(0.01, 0.99, n_clusts))
     else:
-        colors = (None,) * len(u_labels)
         if len(u_labels) == 1:
             colors = (colors[1],)
         if len(u_labels) == 2:
@@ -1627,6 +1626,7 @@ def plot_context_clusters(
     context_colors=None,
     gap=0.05,
     fontsize="small",
+    f=None,
 ):
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(fwid, fwid))
@@ -1642,12 +1642,9 @@ def plot_context_clusters(
     a_full = np.concatenate(activity, axis=0)
     gap = int(np.round(gap * n_samps))
     vmax = np.mean(a_full) + np.std(a_full)
-    # gpl.pcolormesh(
-    #     a_full[:, sort_inds], vmax=vmax, cmap=cmap, rasterized=True, ax=ax,
-    # )
-    # xts = np.arange(0, a_full.shape[1] + 1, 50)
-    # ax.set_xticks(xts)
-    ax.imshow(a_full[:, sort_inds], aspect="auto", vmax=vmax, vmin=0, cmap=cmap)
+    m = ax.imshow(a_full[:, sort_inds], aspect="auto", vmax=vmax, vmin=0, cmap=cmap)
+    if f is not None:
+        f.colorbar(m, ax=ax)
     for i, a in enumerate(activity):
         n_samps = a.shape[0]
         gpl.make_yaxis_scale_bar(

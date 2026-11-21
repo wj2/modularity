@@ -1316,7 +1316,7 @@ class FigureControlledInput(ModularizerFigure):
 
         nl_strengths = self.params.getlist("nl_str_egs", typefunc=float)
         vis_grid = pu.make_mxn_gridspec(
-            self.gs, len(nl_strengths), 2, 0, 70, 30, 100, 10, 20
+            self.gs, len(nl_strengths), 2, 0, 70, 20, 100, 10, 25
         )
         gss["panel_vis"] = self.get_axs(
             vis_grid,
@@ -1416,7 +1416,7 @@ class FigureControlledInput(ModularizerFigure):
             ax_clust, ax_scatt = axs[i]
 
             mv.plot_context_clusters(
-                im_ident, ax=ax_clust, cmap=cmap, context_colors=(c1_color, c2_color)
+                im_ident, ax=ax_clust, cmap=cmap, context_colors=(c1_color, c2_color), f=self.f,
             )
             mv.plot_optimal_context_scatter(
                 im_ident, ax=ax_scatt, colors=(c1_color, neutral_color, c2_color)
@@ -3337,7 +3337,7 @@ class SIFigureNullDistributions(ModularizerFigure):
         ps_grid = pu.make_mxn_gridspec(self.gs, n_funcs, 2, 0, 100, 0, 100, 10, 17)
         gss["panel_nulls"] = self.get_axs(
             ps_grid,
-            squeeze=True,
+            squeeze=False,
         )
 
         self.gss = gss
@@ -3364,7 +3364,7 @@ class SIFigureNullDistributions(ModularizerFigure):
                     [
                         ma.generate_null_distribution(
                             n_inp,
-                            func=ma.compute_contextual_fraction,
+                            func=ma.compute_frac_reps,
                             act_func=func,
                             mix=mix,
                         )
@@ -3376,7 +3376,7 @@ class SIFigureNullDistributions(ModularizerFigure):
             self.data[key] = out
 
         null_dict = self.data[key]
-        for i, (func, (null_ss, null_cf)) in enumerate(null_dict):
+        for i, (func, (null_ss, null_cf)) in enumerate(null_dict.items()):
             gpl.plot_trace_werr(
                 mixes,
                 null_cf,
@@ -3466,6 +3466,100 @@ class SIFigureMultipleThresholds(ModularizerFigure):
                 axs[i, j].set_yticks([0, 0.5, 1])
                 axs[i, j].set_xlabel("number of outputs")
                 axs[i, j].set_ylabel("input structure")
+
+
+class SweepFigure:
+    def panel_param_sweep(self, reload_=False):
+        key = "panel_param_sweep"
+        axs = self.gss[key]
+
+        thr = self.params.getfloat("thr")
+        funcs = {
+            "mean fraction": ft.partial(ma.compute_frac_reps, thr=thr),
+            "variance fraction": ft.partial(ma.compute_frac_reps_std, thr=thr),
+            "subspace specialization": ma.compute_subspace_specialization,
+        }
+        if self.data.get(key) is None or reload_:
+            folder = self.params.get("sweep_folder")
+            params_all, (stim, reps_all, _, _) = maux.load_rep_sweep(folder)
+            params, (reps,) = maux.organize_rep_sweep(params_all, reps_all)
+
+            sweeps = {}
+            for i, (kf, func) in enumerate(funcs.items()):
+                sweep_f = np.zeros(reps.shape[:2] + (reps.shape[2],))
+                for ind in u.make_array_ind_iterator(reps.shape[:2]):
+                    rep_ind = reps[ind]
+                    sweep_f[ind] = [func(stim, ri) for ri in rep_ind]
+                sweeps[kf] = sweep_f
+
+            self.data[key] = (params, sweeps)
+
+        cmaps = {"subspace specialization": "Oranges"}
+        params, sweeps = self.data[key]
+        for i, (kf, sweep_f) in enumerate(sweeps.items()):
+            cb_m = gpl.pcolormesh(
+                params["tasks_per_group"],
+                1 - params["dm_input_mixing"] / 100,
+                np.mean(sweep_f, axis=-1),
+                ax=axs[i],
+                cmap=cmaps.get(kf, "Blues"),
+            )
+            self.f.colorbar(cb_m, ax=axs[i])
+            axs[i].set_xticks([1, 10, 20])
+            axs[i].set_yticks([0, 0.5, 1])
+            axs[i].set_xlabel("number of outputs")
+            axs[i].set_ylabel("input structure")    
+
+
+
+class SIFigureSingleContextVariable(ModularizerFigure, SweepFigure):
+    def __init__(self, fig_key="single-context-variable", colors=colors, **kwargs):
+        fsize = (6, 4.4)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = (
+            "panel_param_sweep",
+        )
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        ps_grid = pu.make_mxn_gridspec(self.gs, 1, 3, 0, 100, 0, 100, 10, 17)
+        gss["panel_param_sweep"] = self.get_axs(
+            ps_grid,
+            squeeze=True,
+        )
+
+        self.gss = gss
+
+
+class SIFigureSeparateContext(ModularizerFigure, SweepFigure):
+    def __init__(self, fig_key="separate-context", colors=colors, **kwargs):
+        fsize = (6, 4.4)
+        cf = u.ConfigParserColor()
+        cf.read(config_path)
+
+        params = cf[fig_key]
+        self.fig_key = fig_key
+        self.panel_keys = (
+            "panel_param_sweep",
+        )
+        super().__init__(fsize, params, colors=colors, **kwargs)
+
+    def make_gss(self):
+        gss = {}
+
+        ps_grid = pu.make_mxn_gridspec(self.gs, 1, 3, 0, 100, 0, 100, 10, 17)
+        gss["panel_param_sweep"] = self.get_axs(
+            ps_grid,
+            squeeze=True,
+        )
+
+        self.gss = gss
 
 
 class FigureModularityActivation(ModularizerFigure):
@@ -3622,7 +3716,7 @@ class SIFigureLossDynamics(ModularizerFigure):
         for i1, i2 in u.make_array_ind_iterator(axs.shape):
             l_i12 = losses[inds1[i1], inds2[i2]]
             lin = 1 - params["dm_input_mixing"][inds1[i1]] / 100
-            axs[i1, i2].plot(l_i12[:, :max_epochs].T, color=cmap(lin), lw=0.5)
+            axs[i1, i2].plot(l_i12[:, :max_epochs].T, color=cmap(1 - lin), lw=0.5)
             if i1 == 0 and i2 == 0:
                 gpl.make_yaxis_scale_bar(
                     axs[i1, i2],
